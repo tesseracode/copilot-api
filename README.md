@@ -1,4 +1,4 @@
-# Copilot API Proxy
+# Copilot API Proxy (Tesserabox Fork)
 
 > [!WARNING]
 > This is a reverse-engineered proxy of GitHub Copilot API. It is not supported by GitHub, and may break unexpectedly. Use at your own risk.
@@ -51,10 +51,29 @@ https://github.com/user-attachments/assets/7654b383-669d-4eb9-b23c-06d7aefee8c5
 
 ## Installation
 
+> [!NOTE]
+> This is a fork of [ericc-ch/copilot-api](https://github.com/ericc-ch/copilot-api) with fixes for 1M context window model ID translation. If you have the upstream package installed globally via `npm i -g copilot-api`, linking this fork will override it. See below for how to link/unlink.
+
 To install dependencies, run:
 
 ```sh
 bun install
+```
+
+### Linking this fork globally
+
+Build and link to override the global `copilot-api` command:
+
+```sh
+bun run build
+npm link
+```
+
+This replaces the globally installed `copilot-api` binary with this fork. To revert back to the upstream package:
+
+```sh
+npm unlink -g copilot-api
+npm i -g copilot-api
 ```
 
 ## Using with Docker
