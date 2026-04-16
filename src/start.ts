@@ -66,6 +66,15 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   const serverUrl = `http://localhost:${options.port}`
 
+  // Detect 1M context from ANTHROPIC_MODEL env var (set before proxy starts)
+  const anthropicModelEnv = process.env.ANTHROPIC_MODEL ?? ""
+  const is1MFromEnv =
+    anthropicModelEnv.includes("[1m]") || anthropicModelEnv.endsWith("-1m")
+  if (is1MFromEnv) {
+    state.is1MContext = true
+    consola.info("1M context window mode enabled (from ANTHROPIC_MODEL)")
+  }
+
   if (options.claudeCode) {
     invariant(state.models, "Models should be loaded by now")
 
@@ -76,6 +85,13 @@ export async function runServer(options: RunServerOptions): Promise<void> {
         options: state.models.data.map((model) => model.id),
       },
     )
+
+    // Detect 1M context from interactive selection
+
+    state.is1MContext = state.is1MContext || selectedModel.endsWith("-1m")
+    if (selectedModel.endsWith("-1m")) {
+      consola.info("1M context window mode enabled (from model selection)")
+    }
 
     const selectedSmallModel = await consola.prompt(
       "Select a small model to use with Claude Code",

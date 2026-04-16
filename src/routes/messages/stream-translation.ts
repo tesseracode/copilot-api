@@ -1,3 +1,4 @@
+import { copilotToAnthropicModelId } from "~/lib/model-mapping"
 import { type ChatCompletionChunk } from "~/services/copilot/create-chat-completions"
 
 import {
@@ -38,7 +39,7 @@ export function translateChunkToAnthropicEvents(
         type: "message",
         role: "assistant",
         content: [],
-        model: chunk.model,
+        model: copilotToAnthropicModelId(chunk.model),
         stop_reason: null,
         stop_sequence: null,
         usage: {

@@ -1,4 +1,9 @@
 import {
+  anthropicToCopilotModelId,
+  copilotToAnthropicModelId,
+} from "~/lib/model-mapping"
+import { state } from "~/lib/state"
+import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
   type ContentPart,
@@ -47,13 +52,7 @@ export function translateToOpenAI(
 }
 
 function translateModelName(model: string): string {
-  // Subagent requests use a specific model number which Copilot doesn't support
-  if (model.startsWith("claude-sonnet-4-")) {
-    return model.replace(/^claude-sonnet-4-.*/, "claude-sonnet-4")
-  } else if (model.startsWith("claude-opus-")) {
-    return model.replace(/^claude-opus-4-.*/, "claude-opus-4")
-  }
-  return model
+  return anthropicToCopilotModelId(model, state.is1MContext)
 }
 
 function translateAnthropicMessagesToOpenAI(
@@ -308,7 +307,7 @@ export function translateToAnthropic(
     id: response.id,
     type: "message",
     role: "assistant",
-    model: response.model,
+    model: copilotToAnthropicModelId(response.model),
     content: [...allTextBlocks, ...allToolUseBlocks],
     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
     stop_sequence: null,

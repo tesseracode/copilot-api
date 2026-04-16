@@ -12,6 +12,9 @@ export interface State {
   rateLimitWait: boolean
   showToken: boolean
 
+  // 1M context window flag (derived from ANTHROPIC_MODEL env var)
+  is1MContext: boolean
+
   // Rate limiting configuration
   rateLimitSeconds?: number
   lastRequestTimestamp?: number
@@ -20,6 +23,7 @@ export interface State {
 export const state: State = {
   accountType: "individual",
   manualApprove: false,
+  is1MContext: false,
   rateLimitWait: false,
   showToken: false,
 }
