@@ -4,6 +4,7 @@ import consola from "consola"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
+import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
@@ -13,6 +14,11 @@ import {
   type ChatCompletionResponse,
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
+import {
+  createResponses,
+  createResponsesStreamState,
+  translateResponsesStreamEvent,
+} from "~/services/copilot/create-responses"
 
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
@@ -47,6 +53,15 @@ export async function handleCompletion(c: Context) {
     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
   }
 
+  const endpoint = resolveEndpoint(payload.model, state.models)
+
+  // Route to /responses for GPT-5.x and models that only support it
+  if (endpoint === "/responses") {
+    consola.debug(`Using /responses endpoint for model: ${payload.model}`)
+    return handleResponsesEndpoint(c, payload)
+  }
+
+  // Existing /chat/completions path
   const response = await createChatCompletions(payload)
 
   if (isNonStreaming(response)) {
@@ -59,6 +74,43 @@ export async function handleCompletion(c: Context) {
     for await (const chunk of response) {
       consola.debug("Streaming chunk:", JSON.stringify(chunk))
       await stream.writeSSE(chunk as SSEMessage)
+    }
+  })
+}
+
+async function handleResponsesEndpoint(
+  c: Context,
+  payload: ChatCompletionsPayload,
+) {
+  const response = await createResponses(payload)
+
+  if (isNonStreaming(response)) {
+    consola.debug("Non-streaming /responses result:", JSON.stringify(response))
+    return c.json(response)
+  }
+
+  consola.debug("Streaming /responses response")
+  return streamSSE(c, async (stream) => {
+    const streamState = createResponsesStreamState()
+
+    for await (const rawEvent of response) {
+      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+
+      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
+      const eventType =
+        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
+
+      const chunks = translateResponsesStreamEvent(
+        { event: eventType, data: parsed },
+        streamState,
+      )
+
+      for (const chunk of chunks) {
+        consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
+        await stream.writeSSE({
+          data: JSON.stringify(chunk),
+        })
+      }
     }
   })
 }
