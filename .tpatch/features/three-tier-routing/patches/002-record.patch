@@ -1,0 +1,828 @@
+diff --git a/src/lib/endpoint-routing.ts b/src/lib/endpoint-routing.ts
+new file mode 100644
+index 0000000..571737b
+--- /dev/null
++++ b/src/lib/endpoint-routing.ts
+@@ -0,0 +1,30 @@
++import type { ModelsResponse } from "~/services/copilot/get-models"
++
++export type UpstreamEndpoint =
++  | "/v1/messages"
++  | "/responses"
++  | "/chat/completions"
++
++/**
++ * Resolve which upstream Copilot API endpoint to use for a given model,
++ * based on the model's supported_endpoints from the cached /models response.
++ */
++export function resolveEndpoint(
++  modelId: string,
++  cachedModels?: ModelsResponse,
++): UpstreamEndpoint {
++  const model = cachedModels?.data.find((m) => m.id === modelId)
++  const endpoints = model?.supported_endpoints ?? []
++  const isClaude = modelId.startsWith("claude-")
++
++  // 1. Native Anthropic passthrough for Claude models
++  if (isClaude && endpoints.includes("/v1/messages")) {
++    return "/v1/messages"
++  }
++  // 2. Prefer /responses for richer capabilities (GPT-5.x)
++  if (endpoints.includes("/responses")) {
++    return "/responses"
++  }
++  // 3. Fallback to existing /chat/completions
++  return "/chat/completions"
++}
+diff --git a/src/lib/model-mapping.ts b/src/lib/model-mapping.ts
+index d3f4400..4746787 100644
+--- a/src/lib/model-mapping.ts
++++ b/src/lib/model-mapping.ts
+@@ -1,3 +1,5 @@
++import { state } from "./state"
++
+ // Forward map: Anthropic dash format → Copilot dot format
+ const MODEL_ID_MAP: Record<string, string> = {
+   "claude-opus-4-6": "claude-opus-4.6",
+@@ -6,6 +8,7 @@ const MODEL_ID_MAP: Record<string, string> = {
+   "claude-sonnet-4-5": "claude-sonnet-4.5",
+   "claude-sonnet-4": "claude-sonnet-4",
+   "claude-opus-4": "claude-opus-4",
++  "claude-haiku-4-5": "claude-haiku-4.5",
+ }
+ 
+ // Reverse map: Copilot dot format → Anthropic dash format
+@@ -16,6 +19,7 @@ const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
+ /**
+  * Convert an Anthropic-style model ID to a Copilot-style model ID.
+  * Strips date suffixes, converts dashes to dots, and appends -1m if needed.
++ * Only appends -1m if the model actually has a 1M variant in the cached models.
+  */
+ export function anthropicToCopilotModelId(
+   model: string,
+@@ -23,6 +27,12 @@ export function anthropicToCopilotModelId(
+ ): string {
+   let base = model
+ 
++  // Strip [1m] suffix if present (Claude Code sends this)
++  const has1MSuffix = base.endsWith("[1m]")
++  if (has1MSuffix) {
++    base = base.slice(0, -4)
++  }
++
+   // Strip date suffixes (e.g. claude-sonnet-4-20250514 → claude-sonnet-4)
+   if (/^claude-sonnet-4-\d{8}/.test(base)) {
+     base = "claude-sonnet-4"
+@@ -31,7 +41,16 @@ export function anthropicToCopilotModelId(
+   }
+ 
+   const mapped = MODEL_ID_MAP[base] ?? base
+-  return is1M ? `${mapped}-1m` : mapped
++  const use1M = is1M || has1MSuffix
++
++  // Only append -1m if the 1M variant actually exists in the model catalog
++  if (use1M) {
++    const candidate = `${mapped}-1m`
++    const exists = state.models?.data.some((m) => m.id === candidate)
++    if (exists) return candidate
++  }
++
++  return mapped
+ }
+ 
+ /**
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index 04a5ae9..34063ec 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -4,6 +4,7 @@ import consola from "consola"
+ import { streamSSE, type SSEMessage } from "hono/streaming"
+ 
+ import { awaitApproval } from "~/lib/approval"
++import { resolveEndpoint } from "~/lib/endpoint-routing"
+ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
+ import { getTokenCount } from "~/lib/tokenizer"
+@@ -13,6 +14,11 @@ import {
+   type ChatCompletionResponse,
+   type ChatCompletionsPayload,
+ } from "~/services/copilot/create-chat-completions"
++import {
++  createResponses,
++  createResponsesStreamState,
++  translateResponsesStreamEvent,
++} from "~/services/copilot/create-responses"
+ 
+ export async function handleCompletion(c: Context) {
+   await checkRateLimit(state)
+@@ -47,6 +53,15 @@ export async function handleCompletion(c: Context) {
+     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
+   }
+ 
++  const endpoint = resolveEndpoint(payload.model, state.models)
++
++  // Route to /responses for GPT-5.x and models that only support it
++  if (endpoint === "/responses") {
++    consola.debug(`Using /responses endpoint for model: ${payload.model}`)
++    return handleResponsesEndpoint(c, payload)
++  }
++
++  // Existing /chat/completions path
+   const response = await createChatCompletions(payload)
+ 
+   if (isNonStreaming(response)) {
+@@ -63,6 +78,43 @@ export async function handleCompletion(c: Context) {
+   })
+ }
+ 
++async function handleResponsesEndpoint(
++  c: Context,
++  payload: ChatCompletionsPayload,
++) {
++  const response = await createResponses(payload)
++
++  if (isNonStreaming(response)) {
++    consola.debug("Non-streaming /responses result:", JSON.stringify(response))
++    return c.json(response)
++  }
++
++  consola.debug("Streaming /responses response")
++  return streamSSE(c, async (stream) => {
++    const streamState = createResponsesStreamState()
++
++    for await (const rawEvent of response) {
++      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
++
++      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
++      const eventType =
++        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
++
++      const chunks = translateResponsesStreamEvent(
++        { event: eventType, data: parsed },
++        streamState,
++      )
++
++      for (const chunk of chunks) {
++        consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
++        await stream.writeSSE({
++          data: JSON.stringify(chunk),
++        })
++      }
++    }
++  })
++}
++
+ const isNonStreaming = (
+   response: Awaited<ReturnType<typeof createChatCompletions>>,
+ ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+diff --git a/src/routes/messages/anthropic-types.ts b/src/routes/messages/anthropic-types.ts
+index 881fffc..29f0398 100644
+--- a/src/routes/messages/anthropic-types.ts
++++ b/src/routes/messages/anthropic-types.ts
+@@ -19,7 +19,7 @@ export interface AnthropicMessagesPayload {
+     name?: string
+   }
+   thinking?: {
+-    type: "enabled"
++    type: "enabled" | "disabled" | "adaptive"
+     budget_tokens?: number
+   }
+   service_tier?: "auto" | "standard_only"
+diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
+index 85dbf62..f8f4a07 100644
+--- a/src/routes/messages/handler.ts
++++ b/src/routes/messages/handler.ts
+@@ -4,6 +4,8 @@ import consola from "consola"
+ import { streamSSE } from "hono/streaming"
+ 
+ import { awaitApproval } from "~/lib/approval"
++import { resolveEndpoint } from "~/lib/endpoint-routing"
++import { anthropicToCopilotModelId } from "~/lib/model-mapping"
+ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
+ import {
+@@ -11,6 +13,10 @@ import {
+   type ChatCompletionChunk,
+   type ChatCompletionResponse,
+ } from "~/services/copilot/create-chat-completions"
++import {
++  forwardNativeMessagesNonStreaming,
++  forwardNativeMessagesStreaming,
++} from "~/services/copilot/forward-native-messages"
+ 
+ import {
+   type AnthropicMessagesPayload,
+@@ -28,16 +34,29 @@ export async function handleCompletion(c: Context) {
+   const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
+   consola.debug("Anthropic request payload:", JSON.stringify(anthropicPayload))
+ 
++  if (state.manualApprove) {
++    await awaitApproval()
++  }
++
++  const copilotModelId = anthropicToCopilotModelId(
++    anthropicPayload.model,
++    state.is1MContext,
++  )
++  const endpoint = resolveEndpoint(copilotModelId, state.models)
++
++  // Native Anthropic passthrough for Claude models
++  if (endpoint === "/v1/messages") {
++    consola.debug(`Using native /v1/messages passthrough for ${copilotModelId}`)
++    return handleNativePassthrough(c, anthropicPayload)
++  }
++
++  // Existing /chat/completions translation path
+   const openAIPayload = translateToOpenAI(anthropicPayload)
+   consola.debug(
+     "Translated OpenAI request payload:",
+     JSON.stringify(openAIPayload),
+   )
+ 
+-  if (state.manualApprove) {
+-    await awaitApproval()
+-  }
+-
+   const response = await createChatCompletions(openAIPayload)
+ 
+   if (isNonStreaming(response)) {
+@@ -86,6 +105,25 @@ export async function handleCompletion(c: Context) {
+   })
+ }
+ 
++async function handleNativePassthrough(
++  c: Context,
++  payload: AnthropicMessagesPayload,
++) {
++  if (!payload.stream) {
++    const response = await forwardNativeMessagesNonStreaming(payload)
++    return c.json(response)
++  }
++
++  return streamSSE(c, async (stream) => {
++    for await (const event of forwardNativeMessagesStreaming(payload)) {
++      await stream.writeSSE({
++        event: event.type,
++        data: JSON.stringify(event.data),
++      })
++    }
++  })
++}
++
+ const isNonStreaming = (
+   response: Awaited<ReturnType<typeof createChatCompletions>>,
+ ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+diff --git a/src/routes/models/route.ts b/src/routes/models/route.ts
+index 5254e2a..7fd5101 100644
+--- a/src/routes/models/route.ts
++++ b/src/routes/models/route.ts
+@@ -21,6 +21,10 @@ modelRoutes.get("/", async (c) => {
+       created_at: new Date(0).toISOString(), // No date available from source
+       owned_by: model.vendor,
+       display_name: model.name,
++      capabilities: model.capabilities,
++      supported_endpoints: model.supported_endpoints,
++      preview: model.preview,
++      model_picker_enabled: model.model_picker_enabled,
+     }))
+ 
+     return c.json({
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+new file mode 100644
+index 0000000..33aa33c
+--- /dev/null
++++ b/src/services/copilot/create-responses.ts
+@@ -0,0 +1,410 @@
++import consola from "consola"
++import { events } from "fetch-event-stream"
++import { randomUUID } from "node:crypto"
++
++import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
++import { HTTPError } from "~/lib/error"
++import { state } from "~/lib/state"
++
++import type {
++  ChatCompletionChunk,
++  ChatCompletionResponse,
++  ChatCompletionsPayload,
++  ToolCall,
++} from "./create-chat-completions"
++
++// ── Request translation: OpenAI Chat Completions → Responses API ──
++
++interface ResponsesPayload {
++  model: string
++  input: Array<ResponsesInput>
++  max_output_tokens?: number
++  temperature?: number | null
++  top_p?: number | null
++  tools?: Array<ResponsesTool>
++  tool_choice?: string | { type: string; name?: string }
++  stream?: boolean
++  reasoning?: { effort: string }
++}
++
++type ResponsesInput =
++  | {
++      type: "message"
++      role: "developer" | "user" | "assistant"
++      content: string | Array<ResponsesContentPart>
++    }
++  | { type: "function_call"; name: string; arguments: string; call_id: string }
++  | { type: "function_call_output"; call_id: string; output: string }
++
++interface ResponsesContentPart {
++  type: "input_text" | "input_image"
++  text?: string
++  image_url?: string
++  detail?: string
++}
++
++interface ResponsesTool {
++  type: "function"
++  name: string
++  description?: string
++  parameters: Record<string, unknown>
++}
++
++function translateMessageContent(
++  content:
++    | string
++    | Array<{
++        type: string
++        text?: string
++        image_url?: { url: string; detail?: string }
++      }>
++    | undefined,
++): string | Array<ResponsesContentPart> {
++  if (typeof content === "string") return content
++  if (!content) return ""
++  return content.map((p) => {
++    if (p.type === "text")
++      return { type: "input_text" as const, text: p.text ?? "" }
++    return {
++      type: "input_image" as const,
++      image_url: p.image_url?.url,
++      detail: p.image_url?.detail,
++    }
++  })
++}
++
++function translateMessages(
++  messages: ChatCompletionsPayload["messages"],
++): Array<ResponsesInput> {
++  const input: Array<ResponsesInput> = []
++
++  for (const msg of messages) {
++    switch (msg.role) {
++      case "system":
++      case "developer": {
++        input.push({
++          type: "message",
++          role: "developer",
++          content: translateMessageContent(msg.content ?? ""),
++        })
++
++        break
++      }
++      case "user": {
++        input.push({
++          type: "message",
++          role: "user",
++          content: translateMessageContent(msg.content ?? ""),
++        })
++
++        break
++      }
++      case "assistant": {
++        if (msg.content) {
++          input.push({
++            type: "message",
++            role: "assistant",
++            content: translateMessageContent(msg.content),
++          })
++        }
++        if (msg.tool_calls) {
++          for (const tc of msg.tool_calls) {
++            input.push({
++              type: "function_call",
++              name: tc.function.name,
++              arguments: tc.function.arguments,
++              call_id: tc.id,
++            })
++          }
++        }
++
++        break
++      }
++      case "tool": {
++        input.push({
++          type: "function_call_output",
++          call_id: msg.tool_call_id ?? "",
++          output:
++            typeof msg.content === "string" ?
++              msg.content
++            : JSON.stringify(msg.content),
++        })
++
++        break
++      }
++      // No default
++    }
++  }
++
++  return input
++}
++
++function translateTools(
++  payload: ChatCompletionsPayload,
++): Partial<ResponsesPayload> {
++  const result: Partial<ResponsesPayload> = {}
++
++  if (payload.tools) {
++    result.tools = payload.tools.map((t) => ({
++      type: "function" as const,
++      name: t.function.name,
++      description: t.function.description,
++      parameters: t.function.parameters,
++    }))
++  }
++
++  if (payload.tool_choice) {
++    result.tool_choice =
++      typeof payload.tool_choice === "string" ?
++        payload.tool_choice
++      : { type: "function", name: payload.tool_choice.function.name }
++  }
++
++  return result
++}
++
++export function translateRequestToResponses(
++  payload: ChatCompletionsPayload,
++): ResponsesPayload {
++  const result: ResponsesPayload = {
++    model: payload.model,
++    input: translateMessages(payload.messages),
++    stream: payload.stream ?? undefined,
++    ...translateTools(payload),
++  }
++
++  if (payload.max_tokens !== null && payload.max_tokens !== undefined)
++    result.max_output_tokens = payload.max_tokens
++  if (payload.temperature !== null && payload.temperature !== undefined)
++    result.temperature = payload.temperature
++  if (payload.top_p !== null && payload.top_p !== undefined)
++    result.top_p = payload.top_p
++
++  return result
++}
++
++// ── Response translation: Responses API → OpenAI Chat Completions ──
++
++interface ResponsesResponse {
++  id: string
++  object: string
++  created_at?: number
++  model: string
++  output: Array<ResponsesOutputItem>
++  usage?: {
++    input_tokens: number
++    output_tokens: number
++    total_tokens: number
++  }
++  status?: string
++}
++
++type ResponsesOutputItem =
++  | {
++      type: "message"
++      role: "assistant"
++      content: Array<ResponsesMessageContent>
++    }
++  | { type: "function_call"; name: string; arguments: string; call_id: string }
++
++interface ResponsesMessageContent {
++  type: "output_text"
++  text: string
++}
++
++export function translateResponsesNonStreaming(
++  resp: ResponsesResponse,
++): ChatCompletionResponse {
++  let textContent = ""
++  const toolCalls: Array<ToolCall> = []
++
++  for (const item of resp.output) {
++    if (item.type === "message") {
++      textContent += item.content.map((c) => c.text).join("")
++    } else {
++      toolCalls.push({
++        id: item.call_id,
++        type: "function",
++        function: { name: item.name, arguments: item.arguments },
++      })
++    }
++  }
++
++  const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
++
++  return {
++    id: resp.id,
++    object: "chat.completion",
++    created: resp.created_at ?? Math.floor(Date.now() / 1000),
++    model: resp.model,
++    choices: [
++      {
++        index: 0,
++        message: {
++          role: "assistant",
++          content: textContent || null,
++          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
++        },
++        logprobs: null,
++        finish_reason: finishReason,
++      },
++    ],
++    usage:
++      resp.usage ?
++        {
++          prompt_tokens: resp.usage.input_tokens,
++          completion_tokens: resp.usage.output_tokens,
++          total_tokens: resp.usage.total_tokens,
++        }
++      : undefined,
++  }
++}
++
++// ── Streaming translation: Responses API SSE → Chat Completions chunks ──
++
++export interface ResponsesStreamState {
++  responseId: string
++  model: string
++  toolCallIndex: number
++  activeToolCalls: Record<string, boolean>
++}
++
++export function createResponsesStreamState(): ResponsesStreamState {
++  return {
++    responseId: "",
++    model: "",
++    toolCallIndex: 0,
++    activeToolCalls: {},
++  }
++}
++
++function makeChunk(
++  streamState: ResponsesStreamState,
++  delta: Record<string, unknown>,
++  finishReason: string | null,
++): ChatCompletionChunk {
++  return {
++    id: streamState.responseId || `chatcmpl-${randomUUID()}`,
++    object: "chat.completion.chunk",
++    created: Math.floor(Date.now() / 1000),
++    model: streamState.model,
++    choices: [
++      {
++        index: 0,
++        delta: delta as ChatCompletionChunk["choices"][0]["delta"],
++        finish_reason:
++          finishReason as ChatCompletionChunk["choices"][0]["finish_reason"],
++        logprobs: null,
++      },
++    ],
++  }
++}
++
++export function* translateResponsesStreamEvent(
++  event: {
++    event: string
++    data: {
++      delta?: string
++      call_id?: string
++      name?: string
++      id?: string
++      model?: string
++    }
++  },
++  streamState: ResponsesStreamState,
++): Generator<ChatCompletionChunk> {
++  const { event: eventType, data } = event
++
++  switch (eventType) {
++    case "response.created": {
++      streamState.responseId = data.id ?? ""
++      streamState.model = data.model ?? ""
++      yield makeChunk(streamState, { role: "assistant", content: "" }, null)
++      break
++    }
++
++    case "response.output_text.delta": {
++      if (data.delta) {
++        yield makeChunk(streamState, { content: data.delta }, null)
++      }
++      break
++    }
++
++    case "response.function_call_arguments.delta": {
++      const toolIndex = streamState.toolCallIndex
++      const callId = data.call_id ?? ""
++
++      if (!streamState.activeToolCalls[callId]) {
++        streamState.activeToolCalls[callId] = true
++        yield makeChunk(
++          streamState,
++          {
++            tool_calls: [
++              {
++                index: toolIndex,
++                id: callId,
++                type: "function",
++                function: { name: data.name, arguments: data.delta ?? "" },
++              },
++            ],
++          },
++          null,
++        )
++        streamState.toolCallIndex++
++      } else {
++        yield makeChunk(
++          streamState,
++          {
++            tool_calls: [
++              {
++                index: toolIndex,
++                function: { arguments: data.delta ?? "" },
++              },
++            ],
++          },
++          null,
++        )
++      }
++      break
++    }
++
++    case "response.completed": {
++      const hasToolCalls = Object.keys(streamState.activeToolCalls).length > 0
++      yield makeChunk(streamState, {}, hasToolCalls ? "tool_calls" : "stop")
++      break
++    }
++
++    default: {
++      break
++    }
++  }
++}
++
++// ── Service function: call the upstream /responses endpoint ──
++
++export async function createResponses(payload: ChatCompletionsPayload) {
++  if (!state.copilotToken) throw new Error("Copilot token not found")
++
++  const responsesPayload = translateRequestToResponses(payload)
++
++  const url = `${copilotBaseUrl(state)}/responses`
++  consola.debug(`Sending /responses request for model: ${payload.model}`)
++
++  const response = await fetch(url, {
++    method: "POST",
++    headers: copilotHeaders(state),
++    body: JSON.stringify(responsesPayload),
++  })
++
++  if (!response.ok) {
++    consola.error("Failed to create responses", response)
++    throw new HTTPError("Failed to create responses", response)
++  }
++
++  if (payload.stream) {
++    return events(response)
++  }
++
++  const rawResponse = (await response.json()) as ResponsesResponse
++  return translateResponsesNonStreaming(rawResponse)
++}
+diff --git a/src/services/copilot/forward-native-messages.ts b/src/services/copilot/forward-native-messages.ts
+new file mode 100644
+index 0000000..2105d98
+--- /dev/null
++++ b/src/services/copilot/forward-native-messages.ts
+@@ -0,0 +1,105 @@
++import consola from "consola"
++import { events } from "fetch-event-stream"
++
++import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
++
++import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
++import { HTTPError } from "~/lib/error"
++import { anthropicToCopilotModelId } from "~/lib/model-mapping"
++import { state } from "~/lib/state"
++
++/**
++ * Downgrade thinking.type from 'adaptive' to 'enabled',
++ * since the Copilot /v1/messages endpoint doesn't support adaptive yet.
++ */
++function normalizeThinking(
++  body: Record<string, unknown>,
++): Record<string, unknown> {
++  const thinking = body.thinking as
++    | { type: string; budget_tokens?: number }
++    | undefined
++  if (thinking?.type === "adaptive") {
++    const maxTokens =
++      typeof body.max_tokens === "number" ? body.max_tokens : 16384
++    body.thinking = {
++      type: "enabled",
++      budget_tokens: Math.max(1024, maxTokens - 1),
++    }
++  }
++  return body
++}
++
++/**
++ * Forward a /v1/messages request directly to the upstream Copilot API's
++ * native Anthropic /v1/messages endpoint, with minimal transformation.
++ */
++export async function forwardNativeMessages(
++  payload: AnthropicMessagesPayload,
++): Promise<Response> {
++  const copilotModelId = anthropicToCopilotModelId(
++    payload.model,
++    state.is1MContext,
++  )
++
++  const body = normalizeThinking({
++    ...payload,
++    model: copilotModelId,
++  })
++
++  const url = `${copilotBaseUrl(state)}/v1/messages`
++
++  consola.debug(
++    `Native passthrough: ${payload.model} -> ${copilotModelId} via ${url}`,
++  )
++
++  const response = await fetch(url, {
++    method: "POST",
++    headers: copilotHeaders(state),
++    body: JSON.stringify(body),
++  })
++
++  if (!response.ok) {
++    throw new HTTPError(
++      `Native /v1/messages request failed for model ${copilotModelId}`,
++      response,
++    )
++  }
++
++  return response
++}
++
++/**
++ * Forward a native /v1/messages request and return the parsed JSON response.
++ */
++export async function forwardNativeMessagesNonStreaming(
++  payload: AnthropicMessagesPayload,
++) {
++  const response = await forwardNativeMessages({
++    ...payload,
++    stream: false,
++  })
++  return await response.json()
++}
++
++/**
++ * Forward a native /v1/messages request in streaming mode and yield SSE events.
++ */
++export async function* forwardNativeMessagesStreaming(
++  payload: AnthropicMessagesPayload,
++) {
++  const response = await forwardNativeMessages({
++    ...payload,
++    stream: true,
++  })
++
++  const stream = events(response)
++  for await (const event of stream) {
++    if (!event.data || event.data === "[DONE]") continue
++    try {
++      const data = JSON.parse(event.data) as Record<string, unknown>
++      yield { type: (event.event ?? data.type) as string, data }
++    } catch {
++      consola.warn("Failed to parse native stream event:", event.data)
++    }
++  }
++}
+diff --git a/src/services/copilot/get-models.ts b/src/services/copilot/get-models.ts
+index 3cfa30a..efd61f2 100644
+--- a/src/services/copilot/get-models.ts
++++ b/src/services/copilot/get-models.ts
+@@ -46,6 +46,7 @@ export interface Model {
+   name: string
+   object: string
+   preview: boolean
++  supported_endpoints?: Array<string>
+   vendor: string
+   version: string
+   policy?: {

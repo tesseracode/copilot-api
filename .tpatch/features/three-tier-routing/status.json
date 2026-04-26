@@ -1,0 +1,16 @@
+{
+  "id": "three-tier-routing",
+  "slug": "three-tier-routing",
+  "title": "Three-tier endpoint routing: native /v1/messages passthrough for Claude, /responses API for GPT-5.x, /chat/completions fallback for legacy models",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-26T22:35:54Z",
+  "updated_at": "2026-04-26T23:14:50Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "b56b9dac5001ece67ef801a01e750d92d9d02861",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

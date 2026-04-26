@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "operations": [
+    { "type": "write-file", "path": "src/lib/endpoint-routing.ts", "content": "/* See recorded patch — new file: endpoint routing resolver */\n" },
+    { "type": "write-file", "path": "src/services/copilot/forward-native-messages.ts", "content": "/* See recorded patch — new file: native /v1/messages forwarder */\n" },
+    { "type": "write-file", "path": "src/services/copilot/create-responses.ts", "content": "/* See recorded patch — new file: /responses API translator */\n" },
+    { "type": "replace-in-file", "path": "src/services/copilot/get-models.ts", "search": "  preview: boolean\n  vendor:", "replace": "  preview: boolean\n  supported_endpoints?: string[]\n  vendor:" },
+    { "type": "replace-in-file", "path": "src/routes/models/route.ts", "search": "      display_name: model.name,\n    }))", "replace": "      display_name: model.name,\n      capabilities: model.capabilities,\n      supported_endpoints: model.supported_endpoints,\n      preview: model.preview,\n      model_picker_enabled: model.model_picker_enabled,\n    }))" }
+  ]
+}
