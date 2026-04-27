@@ -1,6 +1,8 @@
 import type { ModelsResponse } from "~/services/copilot/get-models"
 
 export interface State {
+  hideInternal: boolean
+  modelFilter?: string
   githubToken?: string
   copilotToken?: string
 
@@ -21,6 +23,7 @@ export interface State {
 }
 
 export const state: State = {
+  hideInternal: false,
   accountType: "individual",
   manualApprove: false,
   is1MContext: false,
