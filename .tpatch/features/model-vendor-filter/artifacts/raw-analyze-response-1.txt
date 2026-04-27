@@ -1,0 +1,34 @@
+```json
+{
+  "summary": "This feature request proposes adding a new command-line flag, `--model-filter`, to the application. When the server is started with this flag and a specified vendor name (e.g., `--model-filter anthropic`), the `GET /models` API endpoint will be filtered to only return models associated with that particular vendor. This allows users to selectively view available models from a single provider instead of the entire list.",
+  "compatibility": {
+    "status": "compatible",
+    "reasoning": "This is an additive feature that introduces a new, optional command-line flag. It does not alter the existing behavior of the `/models` endpoint when the flag is omitted. The project structure, particularly `src/lib/model-mapping.ts`, already implies a concept of different model providers or 'vendors', making the filtering logic a natural extension of the existing architecture."
+  },
+  "affected_areas": [
+    "src/main.ts",
+    "src/routes/models/",
+    "src/lib/model-mapping.ts",
+    "src/lib/state.ts"
+  ],
+  "acceptance_criteria": [
+    "When the server is started without the `--model-filter` flag, a request to `GET /models` returns all available models.",
+    "When the server is started with `--model-filter somevendor`, a request to `GET /models` returns only the models associated with `somevendor`.",
+    "When the server is started with `--model-filter non-existent-vendor`, a request to `GET /models` returns an empty list.",
+    "The new command-line flag must be documented in the `README.md` or equivalent help output.",
+    "The application should start without errors if an unknown vendor is provided to the flag."
+  ],
+  "implementation_notes": [
+    "Command-line argument parsing will need to be added or updated, likely in `src/main.ts` or `src/start.ts`. Consider using a lightweight argument parsing library if one is not already in use.",
+    "The value of the `--model-filter` flag should be stored in a global state or configuration object, potentially by extending the state management in `src/lib/state.ts`.",
+    "The logic for the `GET /models` endpoint, located in the `src/routes/models/` directory, must be modified to read the filter value from the state and apply it to the list of models returned.",
+    "The model data in `src/lib/model-mapping.ts` will likely need to be augmented with a `vendor` property for each model if it doesn't already exist, or the filtering logic will need to infer the vendor from the model's properties.",
+    "Ensure the vendor name comparison is case-insensitive for better user experience."
+  ],
+  "unresolved_questions": [
+    "Where is the definitive list of 'vendors' defined in the codebase? Is it explicit in `src/lib/model-mapping.ts` or inferred from model names?",
+    "How should the application behave if the `--model-filter` flag is provided with an empty string (e.g., `--model-filter \"\"`)?",
+    "Should the flag support multiple vendors, for example, `--model-filter anthropic,openai`? The current request only specifies a single vendor."
+  ]
+}
+```

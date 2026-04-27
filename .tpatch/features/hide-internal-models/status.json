@@ -1,0 +1,13 @@
+{
+  "id": "hide-internal-models",
+  "slug": "hide-internal-models",
+  "title": "Add a --hide-internal CLI flag that filters out models whose ID contains 'internal' or starts with 'accounts/' from the /models response",
+  "state": "implementing",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-26T23:40:24Z",
+  "updated_at": "2026-04-26T23:45:19Z",
+  "last_command": "implement",
+  "notes": "Apply recipe generated",
+  "apply": {},
+  "reconcile": {}
+}

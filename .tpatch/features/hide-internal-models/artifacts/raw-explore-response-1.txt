@@ -1,0 +1,30 @@
+## Relevant Files
+
+- **src/lib/state.ts** - Add `hideInternal: boolean` field
+- **src/main.ts** - Parse `--hide-internal` CLI flag and env var
+- **src/routes/models/route.ts** - Apply filter to model list
+- **src/lib/filter-models.ts** - New utility file with filter logic (create)
+- **src/start.ts** - May need flag registration depending on arg parsing pattern
+
+## Minimal Changeset
+
+### `src/lib/filter-models.ts` (new file)
+```ts
+export function isInternalModel(id: string): boolean {
+  return id.includes('internal') || id.startsWith('accounts/');
+}
+
+export function filterModels<T extends { id: string }>(models: T[], hideInternal: boolean): T[] {
+  if (!hideInternal) return models;
+  return models.filter(m => !isInternalModel(m.id));
+}
+```
+
+### `src/lib/state.ts`
+Add `hideInternal: boolean` (default `false`) to the state interface/object.
+
+### `src/main.ts`
+Register `--hide-internal` boolean flag with help text `"Filter out internal and account-scoped models from /models"`. Read `process.env.HIDE_INTERNAL_MODELS === 'true'` as fallback. Set `state.hideInternal = cliFlag || envFlag`.
+
+### `src/routes/models/route.ts`
+After fetching models, call `filterModels(models, state.hideInternal)` before serializing the response. Import from `../lib/filter-models`.

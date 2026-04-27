@@ -1,0 +1,135 @@
+As a senior software engineer, I've analyzed the request and the provided codebase structure. Here are the specific files and changes required to implement the `model-vendor-filter` feature.
+
+## Relevant Files
+
+1.  **`src/main.ts`**
+    *   **Description**: This is the application's main entry point. It's responsible for parsing command-line arguments. We will modify it to recognize and process the new `--model-filter` flag.
+2.  **`src/lib/state.ts`**
+    *   **Description**: This file defines the global application state. We need to add a new property here to store the value of the model vendor filter so it can be accessed by other parts of the application, like the API routes.
+3.  **`src/lib/model-mapping.ts`**
+    *   **Description**: This file contains the definitions of all supported models. We will need to ensure each model object has a `vendor` property, which is crucial for the filtering logic to work correctly.
+4.  **`src/routes/models/route.ts`**
+    *   **Description**: This file defines the API route and handler for `GET /models`. The core filtering logic will be implemented here, where we'll read the filter from the global state and apply it to the list of models before sending the response.
+
+## Minimal Changeset
+
+Here is the minimal set of changes required to implement the feature as specified.
+
+### 1. `src/lib/state.ts`
+
+We'll add `modelFilter` to the `Config` interface and the `config` object to hold the filter value.
+
+```typescript
+// src/lib/state.ts
+
+export interface Config {
+  // ... existing properties
+  port: number;
+  host: string;
+  modelFilter?: string; // Add this line
+}
+
+export const config: Config = {
+  // ... existing properties
+  port: 8080,
+  host: '0.0.0.0',
+  modelFilter: undefined, // Add this line
+};
+```
+
+### 2. `src/main.ts`
+
+We'll update the command-line argument parsing to recognize `--model-filter` and store its value in our newly created config property.
+
+```typescript
+// src/main.ts
+
+import { config } from './lib/state';
+// ... other imports
+
+async function main() {
+  // ... existing argument parsing logic
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    // ... existing flag handling
+    if (args[i] === '--model-filter') {
+      const filterValue = args[++i];
+      if (filterValue && filterValue.trim() !== '') {
+        config.modelFilter = filterValue.trim();
+      }
+    }
+  }
+  // ... rest of the function
+}
+
+main();
+```
+
+### 3. `src/lib/model-mapping.ts`
+
+We need to ensure each model has a `vendor` property. Based on the existing structure, this likely means adding it to each model object in the `MODEL_FAMILIES` array.
+
+```typescript
+// src/lib/model-mapping.ts
+
+// ... other imports
+
+export const MODEL_FAMILIES = [
+  {
+    id: 'gpt-4-turbo',
+    name: 'GPT-4 Turbo',
+    vendor: 'OpenAI', // Add vendor property
+    // ... other properties
+  },
+  {
+    id: 'gpt-4',
+    name: 'GPT-4',
+    vendor: 'OpenAI', // Add vendor property
+    // ... other properties
+  },
+  {
+    id: 'claude-3-opus-20240229',
+    name: 'Claude 3 Opus',
+    vendor: 'Anthropic', // Add vendor property
+    // ... other properties
+  },
+  // ... and so on for all other models
+];
+```
+
+### 4. `src/routes/models/route.ts`
+
+Finally, we'll modify the `GET /models` route handler to apply the filter.
+
+```typescript
+// src/routes/models/route.ts
+
+import { Hono } from 'hono';
+import { MODEL_FAMILIES } from '../../lib/model-mapping';
+import { config } from '../../lib/state'; // Import config
+
+const models = new Hono();
+
+models.get('/', (c) => {
+  let availableModels = MODEL_FAMILIES;
+
+  if (config.modelFilter) {
+    const filter = config.modelFilter.toLowerCase();
+    availableModels = MODEL_FAMILIES.filter(
+      (model) => model.vendor?.toLowerCase() === filter,
+    );
+  }
+
+  return c.json({
+    object: 'list',
+    data: availableModels.map((model) => ({
+      id: model.id,
+      object: 'model',
+      created: Math.floor(Date.now() / 1000),
+      owned_by: model.vendor || 'unknown',
+    })),
+  });
+});
+
+export default models;
+```

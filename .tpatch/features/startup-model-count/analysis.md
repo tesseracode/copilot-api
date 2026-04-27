@@ -1,0 +1,51 @@
+# Analysis: startup-model-count
+
+## Summary
+
+Add the number of currently available models to the application's startup banner so that, when the server boots, operators see a message like "Available models: 37 models loaded" alongside the existing startup information. This likely requires locating the startup logging path, determining the authoritative source of registered/available models, computing a count at startup time, and rendering that count in a stable, human-readable banner message without changing runtime API behavior.
+
+## Compatibility
+
+**Status**: compatible
+
+This appears to be a low-risk, additive UX/logging enhancement rather than a behavioral API change. The project already has model-related code paths under src/routes/models/ and src/lib/model-mapping.ts, and startup orchestration likely lives in src/start.ts, src/main.ts, or src/server.ts. As long as the count is derived from the same source used to serve the models endpoint, the feature should fit the existing architecture without breaking compatibility.
+
+## Affected Areas
+
+- src/start.ts
+- src/main.ts
+- src/server.ts
+- src/lib/model-mapping.ts
+- src/lib/state.ts
+- src/routes/models/
+- README.md
+- tests/
+
+## Acceptance Criteria
+
+1. When the application starts successfully, the startup banner/log output includes a model count message in the form of an explicit loaded/available model total.
+2. The reported count matches the authoritative set of models exposed by the application's model registry/source of truth rather than a hardcoded value.
+3. If the available model set changes through configuration or initialization logic, the startup banner reflects the updated count on the next startup.
+4. The feature does not alter existing API responses, request routing, authentication behavior, or model selection logic.
+5. Startup still succeeds when zero models are available, and the banner/log output handles that case gracefully (for example, showing 0 models loaded).
+6. If the project has automated tests around startup or model enumeration, they are updated or expanded to verify the banner includes the correct model count.
+
+## Implementation Notes
+
+- Identify the actual startup entry point and banner emission location; likely candidates are src/start.ts, src/main.ts, and src/server.ts.
+- Derive the count from the same source used by the models endpoint or model routing logic to avoid banner/API mismatches; likely candidates include src/lib/model-mapping.ts, src/lib/state.ts, or code under src/routes/models/.
+- Prefer a single helper or accessor for obtaining the current model list/count so the startup banner and models route stay consistent.
+- Keep the change presentation-only: avoid introducing eager model loading or network calls at startup if model availability is currently static or lazily resolved.
+- Consider pluralization and formatting in the startup message (for example, "1 model loaded" vs "37 models loaded").
+- If model availability depends on environment variables, auth state, or upstream service discovery, make sure the banner count reflects what is actually available at startup time and not merely a theoretical maximum.
+- If there is existing structured logging, add the count in a way that is compatible with current log formatting rather than printing an unrelated ad hoc line.
+
+## Unresolved Questions
+
+- Which file currently generates the startup banner: src/start.ts, src/main.ts, src/server.ts, or another module?
+- What is the canonical source of truth for "available models" in this codebase: src/lib/model-mapping.ts, an in-memory state object in src/lib/state.ts, or the implementation behind src/routes/models/?
+- Should the count reflect all configured models, only enabled models, or only models that pass runtime availability checks?
+- Does the startup banner need an exact required string/format, or is the example wording flexible?
+- Should the model count be included only in human-readable console output, or also in structured logs/telemetry if present?
+- Are there existing tests for startup logging that should be extended, or will a new focused test need to be added?
+

@@ -1,0 +1,13 @@
+{
+  "id": "health-endpoint",
+  "slug": "health-endpoint",
+  "title": "Add a GET /health endpoint that returns JSON with uptime in seconds, model count, and server version from package.json",
+  "state": "implementing",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-27T00:12:58Z",
+  "updated_at": "2026-04-27T00:13:40Z",
+  "last_command": "implement",
+  "notes": "Apply recipe generated",
+  "apply": {},
+  "reconcile": {}
+}

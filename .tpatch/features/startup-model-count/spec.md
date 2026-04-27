@@ -1,0 +1,69 @@
+# Specification: startup-model-count
+
+## Acceptance Criteria
+
+1. On successful application startup, the startup banner or startup log output includes a human-readable model count message, e.g. `Available models: 37 models loaded`.
+2. The displayed count is derived from the same authoritative model source used by the application to determine available models, not from a hardcoded or duplicated value.
+3. The reported count reflects the actual model set after startup initialization/configuration has completed, so configuration changes are reflected on the next application start.
+4. Startup continues to succeed when no models are available, and the banner/log output handles that case cleanly, e.g. `Available models: 0 models loaded`.
+5. The implementation does not change existing API response payloads, routing behavior, authentication behavior, or model selection/registration behavior.
+6. If the application distinguishes between configured models and truly available/enabled models, the startup banner uses the same definition of “available” as the models API/registry.
+7. The new banner/log output preserves existing startup logging format as much as practical and does not break structured logging, log parsing, or existing banner output.
+8. Automated tests are added or updated to verify that:
+   1. the startup output includes the model count,
+   2. the count matches the authoritative model source, and
+   3. zero-model startup is handled correctly.
+
+## Implementation Plan
+
+1. **Locate startup banner generation**
+   - Identify the actual startup entrypoint and banner/log emission path, likely in `src/start.ts`, `src/main.ts`, `src/server.ts`, or equivalent.
+   - Determine whether startup output is plain console text, logger-based, or structured logging.
+
+2. **Identify the authoritative model source**
+   - Trace how the application currently determines “available models,” likely via code in `src/lib/model-mapping.ts`, `src/lib/state.ts`, or `src/routes/models/`.
+   - Confirm whether the correct count should represent:
+     - all configured models,
+     - enabled models only, or
+     - models successfully initialized/available at runtime.
+   - Reuse the same source used by the models endpoint wherever possible.
+
+3. **Create or reuse a shared accessor**
+   - If one does not already exist, add a small helper such as `getAvailableModels()` or `getAvailableModelCount()` in the model registry/state layer.
+   - Ensure startup code and the models route can rely on the same accessor to avoid count drift.
+
+4. **Add model count to startup output**
+   - Update the startup banner/logging code to include the count once initialization is complete and the model set is known.
+   - Format the message consistently with existing banner style.
+   - Support simple pluralization if desired, e.g.:
+     - `Available models: 0 models loaded`
+     - `Available models: 1 model loaded`
+     - `Available models: 37 models loaded`
+
+5. **Preserve behavior and avoid unintended side effects**
+   - Keep the change presentation-only.
+   - Do not introduce new network calls, eager loading, or additional initialization steps solely to compute the count unless model enumeration already requires them.
+   - Ensure no changes are made to API contracts or runtime request handling.
+
+6. **Add/extend tests**
+   - Add unit or integration tests around the startup logging path.
+   - Verify:
+     - correct count is emitted for a non-empty model set,
+     - zero models produces valid startup output,
+     - the count stays aligned with the authoritative model registry source.
+   - If startup logging is hard to test directly, isolate the banner formatting into a small testable function.
+
+7. **Documentation / release notes**
+   - If the project documents startup output or operator-facing boot behavior, update `README.md` or relevant docs with the new banner example.
+   - Mention the enhancement in changelog/release notes if the repository uses them.
+
+8. **Suggested file touch points**
+   - Likely candidates:
+     - `src/start.ts`
+     - `src/main.ts`
+     - `src/server.ts`
+     - `src/lib/model-mapping.ts`
+     - `src/lib/state.ts`
+     - `src/routes/models/`
+     - `tests/`
+     - `README.md`

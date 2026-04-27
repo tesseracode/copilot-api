@@ -1,0 +1,13 @@
+{
+  "id": "startup-model-count",
+  "slug": "startup-model-count",
+  "title": "Add a model count to the startup banner, e.g. 'Available models: 37 models loaded'",
+  "state": "implementing",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-27T00:10:28Z",
+  "updated_at": "2026-04-27T00:12:34Z",
+  "last_command": "implement",
+  "notes": "Apply recipe generated",
+  "apply": {},
+  "reconcile": {}
+}

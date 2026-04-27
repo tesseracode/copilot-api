@@ -1,0 +1,246 @@
+# Health Endpoint Implementation Analysis
+
+## Relevant Files
+
+### Files to Modify
+
+| Path | Description |
+|------|-------------|
+| `src/lib/uptime.ts` | **NEW** - Uptime tracking module to initialize at startup and calculate current uptime in seconds |
+| `src/lib/version.ts` | **NEW** - Version loader module to read and cache version from package.json |
+| `src/lib/model-counter.ts` | **NEW** - Model counting helper that wraps existing model enumeration logic |
+| `src/routes/health/index.ts` | **NEW** - Health endpoint route handler that composes uptime, version, and model count |
+| `src/lib/endpoint-routing.ts` | Modify to register GET /health route |
+| `src/main.ts` | Modify to initialize uptime tracking at server startup |
+| `tests/health.unit.test.ts` | **NEW** - Unit tests for health modules (uptime, version, model counter) |
+| `tests/health.integration.test.ts` | **NEW** - Integration tests for GET /health endpoint |
+| `package.json` | Source file for version reading (no changes needed) |
+
+### Reference Files (Read-Only for Implementation Context)
+
+| Path | Purpose |
+|------|---------|
+| `src/lib/error.ts` | Error handling patterns to follow |
+| `src/lib/model-mapping.ts` | Understand existing model enumeration logic |
+| `src/services/copilot/get-models.ts` | Understand how models are retrieved |
+| `src/routes/models/route.ts` | Reference for model listing endpoint structure |
+| `src/routes/chat-completions/route.ts` | Reference for endpoint handler patterns |
+| `src/lib/state.ts` | Understand project's state management approach |
+| `tsconfig.json` | Verify `~/` alias configuration |
+
+---
+
+## Minimal Changeset
+
+### 1. Create `src/lib/uptime.ts`
+```typescript
+// Track server startup time for uptime calculation
+let startTime: number;
+
+export function initializeUptime(): void {
+  startTime = Date.now();
+}
+
+export function getUptimeSeconds(): number {
+  if (!startTime) {
+    return 0;
+  }
+  return Math.floor((Date.now() - startTime) / 1000);
+}
+```
+
+### 2. Create `src/lib/version.ts`
+```typescript
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+let cachedVersion: string;
+
+function loadVersion(): string {
+  try {
+    const packageJsonPath = join(process.cwd(), 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    return packageJson.version || 'unknown';
+  } catch (error) {
+    console.warn('Failed to read version from package.json:', error);
+    return 'unknown';
+  }
+}
+
+export function getVersion(): string {
+  if (!cachedVersion) {
+    cachedVersion = loadVersion();
+  }
+  return cachedVersion;
+}
+```
+
+### 3. Create `src/lib/model-counter.ts`
+```typescript
+import ~ from '~/lib/model-mapping';
+
+export function getModelCount(): number {
+  // Reference existing model mapping logic
+  // Count available models from the model-mapping module
+  const models = getAvailableModels(); // or similar accessor from model-mapping
+  return Array.isArray(models) ? models.length : Object.keys(models).length;
+}
+```
+*Note: Exact implementation depends on how `src/lib/model-mapping.ts` exports models. Review that file to determine the correct accessor.*
+
+### 4. Create `src/routes/health/index.ts`
+```typescript
+import { Request, Response } from 'express';
+import { getUptimeSeconds } from '~/lib/uptime';
+import { getVersion } from '~/lib/version';
+import { getModelCount } from '~/lib/model-counter';
+
+export async function healthHandler(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const response = {
+    uptime: getUptimeSeconds(),
+    modelCount: getModelCount(),
+    version: getVersion(),
+  };
+
+  res.status(200).json(response);
+}
+```
+
+### 5. Modify `src/lib/endpoint-routing.ts`
+Add route registration:
+```typescript
+// Import at top
+import { healthHandler } from '~/routes/health';
+
+// Add to route registration (likely in an array or routing config):
+{
+  method: 'get',
+  path: '/health',
+  handler: healthHandler,
+}
+```
+*Exact syntax depends on project's routing framework. Reference existing routes for pattern.*
+
+### 6. Modify `src/main.ts`
+Add uptime initialization at server startup (before route registration):
+```typescript
+import { initializeUptime } from '~/lib/uptime';
+
+// Call early in main execution, before routes are registered
+initializeUptime();
+```
+
+### 7. Create `tests/health.unit.test.ts`
+```typescript
+import { describe, it, expect, beforeEach, vi } from 'vitest'; // or jest
+import { getUptimeSeconds, initializeUptime } from '~/lib/uptime';
+import { getVersion } from '~/lib/version';
+import { getModelCount } from '~/lib/model-counter';
+
+describe('Health Module', () => {
+  describe('uptime', () => {
+    it('should return numeric uptime in seconds', () => {
+      initializeUptime();
+      const uptime = getUptimeSeconds();
+      expect(typeof uptime).toBe('number');
+      expect(uptime).toBeGreaterThanOrEqual(0);
+    });
+
+    it('uptime should increase between calls', async () => {
+      initializeUptime();
+      const uptime1 = getUptimeSeconds();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const uptime2 = getUptimeSeconds();
+      expect(uptime2).toBeGreaterThanOrEqual(uptime1);
+    });
+  });
+
+  describe('version', () => {
+    it('should return a non-empty string', () => {
+      const version = getVersion();
+      expect(typeof version).toBe('string');
+      expect(version.length).toBeGreaterThan(0);
+    });
+
+    it('should cache version after first call', () => {
+      const version1 = getVersion();
+      const version2 = getVersion();
+      expect(version1).toBe(version2);
+    });
+  });
+
+  describe('model counter', () => {
+    it('should return non-negative integer', () => {
+      const count = getModelCount();
+      expect(Number.isInteger(count)).toBe(true);
+      expect(count).toBeGreaterThanOrEqual(0);
+    });
+  });
+});
+```
+
+### 8. Create `tests/health.integration.test.ts`
+```typescript
+import { describe, it, expect } from 'vitest'; // or jest
+import request from 'supertest';
+import app from '~/server'; // or however app is exported
+
+describe('GET /health', () => {
+  it('should return 200 status', async () => {
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(200);
+  });
+
+  it('should return JSON with correct content-type', async () => {
+    const response = await request(app).get('/health');
+    expect(response.type).toMatch(/json/);
+  });
+
+  it('should include uptime, modelCount, and version fields', async () => {
+    const response = await request(app).get('/health');
+    expect(response.body).toHaveProperty('uptime');
+    expect(response.body).toHaveProperty('modelCount');
+    expect(response.body).toHaveProperty('version');
+  });
+
+  it('should have correct field types', async () => {
+    const response = await request(app).get('/health');
+    expect(typeof response.body.uptime).toBe('number');
+    expect(typeof response.body.modelCount).toBe('number');
+    expect(typeof response.body.version).toBe('string');
+  });
+
+  it('uptime should increase on subsequent requests', async () => {
+    const response1 = await request(app).get('/health');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const response2 = await request(app).get('/health');
+    expect(response2.body.uptime).toBeGreaterThanOrEqual(response1.body.uptime);
+  });
+});
+```
+
+---
+
+## Summary of Changes
+
+**Files to Create**: 5
+- `src/lib/uptime.ts`
+- `src/lib/version.ts`
+- `src/lib/model-counter.ts`
+- `src/routes/health/index.ts`
+- `tests/health.unit.test.ts`
+- `tests/health.integration.test.ts`
+
+**Files to Modify**: 2
+- `src/lib/endpoint-routing.ts` (add route registration)
+- `src/main.ts` (add uptime initialization)
+
+**Key Implementation Notes**:
+1. Review `src/lib/model-mapping.ts` to determine exact model accessor pattern for `model-counter.ts`
+2. Review `src/lib/endpoint-routing.ts` existing route structure for correct registration syntax
+3. Verify `src/main.ts` or `src/server.ts` startup pattern for uptime initialization placement
+4. Confirm test framework (Jest/Vitest/Mocha) for test file syntax
+5. No authentication required (public endpoint per spec)

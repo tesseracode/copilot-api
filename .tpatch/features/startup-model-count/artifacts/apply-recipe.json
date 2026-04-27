@@ -1,0 +1,12 @@
+{
+  "feature": "startup-model-count",
+  "operations": [
+    {
+      "type": "ensure-directory",
+      "path": "src/",
+      "content": "",
+      "search": "",
+      "replace": ""
+    }
+  ]
+}

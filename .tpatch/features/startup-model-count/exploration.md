@@ -1,0 +1,76 @@
+# Exploration: startup-model-count
+
+## Relevant Files
+
+- `src/start.ts`  
+  Primary startup/bootstrap candidate. Look for the code that completes initialization and emits the startup banner or success logs.  
+  **Relevant section:** the final startup/logging block after config/auth initialization and before or after handing off to the HTTP server.
+
+- `src/server.ts`  
+  Likely contains server creation and the `listen`/`Bun.serve` success path. If the banner is printed when the server binds to a port, this is where the model count line should be added.  
+  **Relevant section:** server start callback / `console.log` or logger call announcing host/port.
+
+- `src/main.ts`  
+  Entry-point/orchestration file. If `start.ts` delegates into `main.ts`, this may be where the app instance is created and startup responsibilities are coordinated.  
+  **Relevant section:** exported startup function or top-level boot sequence that wires together routes and server startup.
+
+- `src/routes/models/route.ts`  
+  Most important source-of-truth candidate for “available models.” Whatever data this route uses to build the `/models` response should drive the startup count.  
+  **Relevant section:** the handler logic that assembles the models array or response payload.
+
+- `src/services/copilot/get-models.ts`  
+  If the models route fetches or computes models dynamically, this is likely the authoritative model discovery layer. Startup should reuse this rather than recounting from a separate static source.  
+  **Relevant section:** exported function that returns the available model list.
+
+- `src/lib/model-mapping.ts`  
+  If the models route is backed by a static/derived mapping table, this is the other likely authority for model enumeration. Good place to add a shared accessor like `getAvailableModels()` / `getAvailableModelCount()`.  
+  **Relevant section:** exported model map/list and any helper that normalizes or filters supported models.
+
+- `src/lib/state.ts`  
+  Relevant only if startup/model initialization stores the available model set in shared runtime state.  
+  **Relevant section:** any cached registry/state object representing loaded or enabled models.
+
+- `tests/`  
+  No obvious existing startup/model-banner test file is present, so this feature likely needs a new focused test.  
+  **Relevant section:** add a new test around startup banner formatting/logging, or extend any model-route tests if they exist elsewhere after inspection.
+
+- `README.md`  
+  Only if startup output is documented or examples of boot logs are shown.  
+  **Relevant section:** operator-facing startup examples.
+
+## Minimal Changeset
+
+1. **Identify and reuse the authoritative model source**
+   - Trace `src/routes/models/route.ts` to confirm whether available models come from:
+     - `src/services/copilot/get-models.ts`, or
+     - `src/lib/model-mapping.ts`, or
+     - cached data in `src/lib/state.ts`.
+   - Do **not** hardcode the count in startup code.
+
+2. **Expose a shared model accessor if one does not already exist**
+   - Add or reuse a small helper such as:
+     - `getAvailableModels()`
+     - or `getAvailableModelCount()`
+   - Best home is the same layer the models route already depends on:
+     - `src/services/copilot/get-models.ts` if model discovery is dynamic
+     - `src/lib/model-mapping.ts` if model availability is derived from a mapping table
+
+3. **Update the startup banner/logging path**
+   - In `src/start.ts`, `src/server.ts`, or `src/main.ts`—whichever actually prints the startup banner—append a line/message like:
+     - `Available models: 0 models loaded`
+     - `Available models: 1 model loaded`
+     - `Available models: 37 models loaded`
+   - Emit this **after** initialization is complete and the authoritative model set is known.
+
+4. **Keep the change presentation-only**
+   - Avoid changing route behavior, API payloads, model registration, or startup sequencing beyond reading the existing model source and formatting the banner.
+
+5. **Add tests**
+   - Add a focused test to verify:
+     - startup output includes the model count,
+     - count matches the same model source used by the models route,
+     - zero-model case is handled cleanly.
+   - If direct startup-log testing is awkward, extract banner formatting into a tiny pure helper and test that instead.
+
+6. **Optional doc touch**
+   - Update `README.md` only if startup log examples are already documented.

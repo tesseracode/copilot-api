@@ -1,0 +1,95 @@
+# Specification: model-vendor-filter
+
+As a senior software engineer, here are the acceptance criteria and implementation plan for the `model-vendor-filter` feature. This plan builds upon the excellent analysis provided, addressing the unresolved questions and structuring the work into a clear, actionable sequence.
+
+---
+
+## Acceptance Criteria
+
+1.  **Default Behavior**: When the server is started without the `--model-filter` flag, a `GET /models` request MUST return the complete list of all available models, preserving existing functionality.
+2.  **Successful Filtering**: When the server is started with `--model-filter <vendor>`, where `<vendor>` is a valid and existing vendor name, a `GET /models` request MUST return a list containing only the models associated with that specific vendor. The vendor name comparison MUST be case-insensitive (e.g., `anthropic` and `Anthropic` should yield the same result).
+3.  **Non-Existent Vendor**: When the server is started with `--model-filter <vendor>`, where `<vendor>` does not correspond to any known model vendor, a `GET /models` request MUST return a successful `200 OK` response with an empty data array (`[]`). The server MUST start without errors.
+4.  **Empty Filter Value**: When the server is started with an empty filter value (e.g., `--model-filter ""`), it MUST behave as if the flag was not provided, returning all available models on a `GET /models` request.
+5.  **CLI Argument Validation**: The application MUST NOT crash or exit on startup if the `--model-filter` flag is provided. It should gracefully handle any string value, including non-existent vendors and empty strings.
+6.  **Documentation**: The new `--model-filter` command-line flag, its purpose, and an example of its usage MUST be documented in the project's `README.md` and/or the command-line help output.
+
+## Implementation Plan
+
+This plan is broken down into logical steps, ensuring a structured and testable development process.
+
+### Phase 1: Data Model and State Management
+
+1.  **Enrich Model Definitions**:
+    *   **File**: `src/lib/model-mapping.ts`
+    *   **Task**: Audit the existing model definitions. If a `vendor` property does not exist for each model object, add one. This property will be the source of truth for filtering.
+    *   **Example**:
+        ```typescript
+        // Before
+        { id: 'claude-3-opus-20240229', ... }
+
+        // After
+        { id: 'claude-3-opus-20240229', vendor: 'anthropic', ... }
+        { id: 'gpt-4-turbo', vendor: 'openai', ... }
+        ```
+
+2.  **Update Global State**:
+    *   **File**: `src/lib/state.ts`
+    *   **Task**: Extend the application's global state or configuration object to hold the vendor filter value.
+    *   **Example**:
+        ```typescript
+        // In the state interface/type
+        export interface AppState {
+          // ... existing properties
+          modelVendorFilter?: string;
+        }
+
+        // In the state object
+        export const state: AppState = {
+          // ... existing initial values
+          modelVendorFilter: undefined,
+        };
+        ```
+
+### Phase 2: Command-Line Argument Parsing
+
+3.  **Integrate CLI Flag**:
+    *   **File**: `src/main.ts` (or equivalent entry point)
+    *   **Task**: Update the command-line argument parsing logic to recognize the `--model-filter` flag. Use a robust library like `yargs` or `commander` if not already present.
+    *   **Action**:
+        *   Define the `--model-filter` flag, specifying it takes a string argument.
+        *   Parse the arguments at application startup.
+        *   If the flag is present, store its value in the global state (`state.modelVendorFilter`). Handle the case of an empty string (`""`) by treating it as `undefined`.
+
+### Phase 3: Filtering Logic
+
+4.  **Implement Filtering in the API Route**:
+    *   **File**: `src/routes/models/index.ts` (or equivalent handler for `GET /models`)
+    *   **Task**: Modify the route handler to apply the filter before sending the response.
+    *   **Logic**:
+        1.  Inside the handler, retrieve the `modelVendorFilter` from the global state.
+        2.  Fetch the full list of models as usual.
+        3.  If `modelVendorFilter` is `undefined` or an empty string, return the full list.
+        4.  If `modelVendorFilter` has a value, use `Array.prototype.filter()` to create a new list containing only models where `model.vendor.toLowerCase() === modelVendorFilter.toLowerCase()`.
+        5.  Return the filtered list in the API response.
+
+### Phase 4: Testing and Documentation
+
+5.  **Write Unit/Integration Tests**:
+    *   **Task**: Create tests to cover all acceptance criteria.
+    *   **Test Cases**:
+        *   Test the `GET /models` endpoint with no filter applied.
+        *   Test the endpoint with a valid vendor filter (e.g., `anthropic`).
+        *   Test the endpoint with a different valid vendor filter (e.g., `openai`).
+        *   Test the endpoint with a case-insensitive vendor filter (e.g., `Anthropic`).
+        *   Test the endpoint with a non-existent vendor, asserting an empty array is returned.
+        *   Test the argument parsing logic to ensure it correctly handles the flag and stores the value.
+
+6.  **Update Documentation**:
+    *   **File**: `README.md` and/or CLI help text generator.
+    *   **Task**: Add a new entry for the `--model-filter` flag. Clearly explain its function and provide a clear usage example.
+    *   **Example Text**:
+        > **`--model-filter <vendor>`**
+        >
+        > Filters the `GET /models` list to only include models from the specified vendor.
+        >
+        > Example: `node dist/main.js --model-filter anthropic`

@@ -1,0 +1,68 @@
+{
+  "feature": "hide-internal-models",
+  "operations": [
+    {
+      "type": "write-file",
+      "path": "src/lib/filter-models.ts",
+      "content": "export function isInternalModel(id: string): boolean {\n  return id.includes('internal') || id.startsWith('accounts/');\n}\n\nexport function filterModels\u003cT extends { id: string }\u003e(models: T[], hideInternal: boolean): T[] {\n  if (!hideInternal) return models;\n  return models.filter(m =\u003e !isInternalModel(m.id));\n}\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "src/lib/filter-models.test.ts",
+      "content": "import { isInternalModel, filterModels } from './filter-models';\n\ndescribe('isInternalModel', () =\u003e {\n  it('returns true for IDs containing \"internal\"', () =\u003e {\n    expect(isInternalModel('gpt-internal-v1')).toBe(true);\n  });\n\n  it('returns true for IDs starting with \"accounts/\"', () =\u003e {\n    expect(isInternalModel('accounts/my-org/model')).toBe(true);\n  });\n\n  it('returns true for IDs matching both conditions', () =\u003e {\n    expect(isInternalModel('accounts/internal-org/model')).toBe(true);\n  });\n\n  it('returns false for normal IDs', () =\u003e {\n    expect(isInternalModel('gpt-4o')).toBe(false);\n  });\n});\n\ndescribe('filterModels', () =\u003e {\n  const models = [\n    { id: 'gpt-4o' },\n    { id: 'internal-preview' },\n    { id: 'accounts/org/custom' },\n  ];\n\n  it('returns all models when hideInternal is false', () =\u003e {\n    expect(filterModels(models, false)).toHaveLength(3);\n  });\n\n  it('filters internal and account-scoped models when hideInternal is true', () =\u003e {\n    const result = filterModels(models, true);\n    expect(result).toHaveLength(1);\n    expect(result[0].id).toBe('gpt-4o');\n  });\n});\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/lib/state.ts",
+      "content": "",
+      "search": "export interface State {",
+      "replace": "export interface State {\n  hideInternal: boolean;"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/lib/state.ts",
+      "content": "",
+      "search": "export const state: State = {",
+      "replace": "export const state: State = {\n  hideInternal: false,"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/main.ts",
+      "content": "",
+      "search": "import { state } from './lib/state';",
+      "replace": "import { state } from './lib/state';\nimport { filterModels as _filterModels } from './lib/filter-models';"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/main.ts",
+      "content": "",
+      "search": "  '--help': Boolean,",
+      "replace": "  '--help': Boolean,\n  '--hide-internal': Boolean,"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/main.ts",
+      "content": "",
+      "search": "  if (args['--help'])",
+      "replace": "  const envHideInternal = process.env.HIDE_INTERNAL_MODELS === 'true';\n  state.hideInternal = args['--hide-internal'] ?? envHideInternal;\n\n  if (args['--help'])"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/routes/models/route.ts",
+      "content": "",
+      "search": "import { state } from '../../lib/state';",
+      "replace": "import { state } from '../../lib/state';\nimport { filterModels } from '../../lib/filter-models';"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/routes/models/route.ts",
+      "content": "",
+      "search": "  return models;",
+      "replace": "  return filterModels(models, state.hideInternal);"
+    }
+  ]
+}

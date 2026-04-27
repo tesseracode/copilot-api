@@ -1,0 +1,13 @@
+{
+  "id": "model-vendor-filter",
+  "slug": "model-vendor-filter",
+  "title": "Add a --model-filter vendor flag that filters the /models response to only show models from a specific vendor (e.g. --model-filter anthropic)",
+  "state": "implementing",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-26T23:40:24Z",
+  "updated_at": "2026-04-26T23:49:27Z",
+  "last_command": "implement",
+  "notes": "Apply recipe generated",
+  "apply": {},
+  "reconcile": {}
+}

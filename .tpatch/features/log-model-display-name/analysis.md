@@ -1,0 +1,53 @@
+# Analysis: log-model-display-name
+
+## Summary
+
+Enhance request logging so that log lines which currently include a model ID also include the model's human-readable display_name. The display name should be resolved by looking up the requested model ID in the existing cached models list, falling back gracefully when the model is not found or the cache is unavailable.
+
+## Compatibility
+
+**Status**: compatible
+
+This is an additive logging enhancement and should not alter request handling, API responses, routing behavior, authentication, or model selection. Compatibility depends on using the existing cached model data without introducing blocking network calls or changing cache semantics.
+
+## Affected Areas
+
+- src/lib/request-logger.ts
+- src/routes/models/
+- src/services/copilot/
+- src/lib/model-mapping.ts
+- src/lib/proxy.ts
+- src/routes/chat-completions/
+- src/routes/messages/
+- tests/
+
+## Acceptance Criteria
+
+1. Request log lines that include a model ID also include the corresponding model display_name when the model exists in the cached models list.
+2. If the model ID cannot be found in the cached models list, the log line still includes the model ID and uses a safe fallback for the display name, such as omitting it or logging an explicit unknown value.
+3. The implementation does not perform a network request solely for logging during normal request handling; it uses the existing cached models list.
+4. Existing request logging behavior, log levels, and request handling remain otherwise unchanged.
+5. Requests continue to succeed even if the model cache is empty, stale, unavailable, or malformed.
+6. Automated tests cover logging with a known model ID, an unknown model ID, and an unavailable or empty cached models list.
+7. The project passes `bun test` and `bun run lint`.
+
+## Implementation Notes
+
+- Identify where request log lines are assembled, likely in `src/lib/request-logger.ts`, and extend the log context/message to include `display_name` or similar.
+- Locate the existing cached models list implementation, likely under `src/routes/models/` or `src/services/copilot/`, and expose a lookup helper if one does not already exist.
+- Avoid coupling the logger directly to route-specific code if possible; prefer a small helper such as `getCachedModelDisplayName(modelId: string): string | undefined`.
+- Preserve TypeScript strictness by defining or reusing the model type that contains `id` and `display_name`.
+- Be careful about model aliases or mappings in `src/lib/model-mapping.ts`; the logged display name should correspond to the effective model ID used in the request log, or the requirement should clarify whether original or mapped IDs are intended.
+- Ensure lookup is efficient, ideally using a cached map from model ID to display name if the cached list is large or request logging is frequent.
+- Do not make the request logger asynchronous unless the surrounding call sites already support it; if the cache API is async, consider resolving display names before logging or providing a synchronous snapshot accessor.
+- Update or add tests in `tests/` that spy on console/log output or the request logger abstraction to verify display name inclusion.
+
+## Unresolved Questions
+
+- What is the exact current format of request log lines, and how should the display name be formatted alongside the model ID?
+- Should the display name be logged for the originally requested model ID, the mapped/routed model ID, or both?
+- What fallback text should be used when no display_name is available?
+- Is the cached models list already accessible synchronously from the logging path, or will a new cache accessor need to be introduced?
+- Should display names be included only for chat/message requests, or for all request types that log a model ID, such as embeddings as well?
+- Should the log field be named `display_name`, `model_display_name`, or simply included in the human-readable message?
+

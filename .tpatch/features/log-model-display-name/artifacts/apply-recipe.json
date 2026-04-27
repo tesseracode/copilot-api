@@ -1,0 +1,61 @@
+{
+  "feature": "log-model-display-name",
+  "operations": [
+    {
+      "type": "write-file",
+      "path": "src/lib/model-display-name-cache.ts",
+      "content": "type UnknownModel = {\n  id?: unknown;\n  display_name?: unknown;\n};\n\nlet cachedModelDisplayNames = new Map\u003cstring, string\u003e();\n\nfunction getModelList(models: unknown): unknown[] {\n  if (Array.isArray(models)) {\n    return models;\n  }\n\n  if (\n    models \u0026\u0026\n    typeof models === \"object\" \u0026\u0026\n    Array.isArray((models as { data?: unknown }).data)\n  ) {\n    return (models as { data: unknown[] }).data;\n  }\n\n  if (\n    models \u0026\u0026\n    typeof models === \"object\" \u0026\u0026\n    Array.isArray((models as { models?: unknown }).models)\n  ) {\n    return (models as { models: unknown[] }).models;\n  }\n\n  return [];\n}\n\nexport function updateCachedModelDisplayNames(models: unknown): void {\n  const next = new Map\u003cstring, string\u003e();\n\n  for (const entry of getModelList(models)) {\n    if (!entry || typeof entry !== \"object\") {\n      continue;\n    }\n\n    const model = entry as UnknownModel;\n\n    if (typeof model.id !== \"string\" || model.id.length === 0) {\n      continue;\n    }\n\n    if (\n      typeof model.display_name !== \"string\" ||\n      model.display_name.length === 0\n    ) {\n      continue;\n    }\n\n    next.set(model.id, model.display_name);\n  }\n\n  cachedModelDisplayNames = next;\n}\n\nexport function clearCachedModelDisplayNames(): void {\n  cachedModelDisplayNames = new Map\u003cstring, string\u003e();\n}\n\nexport function getCachedModelDisplayName(\n  modelId: string | undefined | null,\n): string | undefined {\n  if (!modelId) {\n    return undefined;\n  }\n\n  try {\n    return cachedModelDisplayNames.get(modelId);\n  } catch {\n    return undefined;\n  }\n}\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/get-models.ts",
+      "content": "",
+      "search": "import { getCopilotToken } from \"./auth\";\n",
+      "replace": "import { getCopilotToken } from \"./auth\";\nimport { updateCachedModelDisplayNames } from \"../../lib/model-display-name-cache\";\n"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/get-models.ts",
+      "content": "",
+      "search": "cachedModels = models;\n",
+      "replace": "cachedModels = models;\nupdateCachedModelDisplayNames(models);\n"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/get-models.ts",
+      "content": "",
+      "search": "cachedModels = data;\n",
+      "replace": "cachedModels = data;\nupdateCachedModelDisplayNames(data);\n"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/lib/request-logger.ts",
+      "content": "",
+      "search": "type RequestLogFields = {\n",
+      "replace": "import { getCachedModelDisplayName } from \"./model-display-name-cache\";\n\ntype RequestLogFields = {\n"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/lib/request-logger.ts",
+      "content": "",
+      "search": "  if (fields.model) {\n    logFields.model = fields.model;\n  }\n",
+      "replace": "  if (fields.model) {\n    logFields.model = fields.model;\n\n    const modelDisplayName = getCachedModelDisplayName(fields.model);\n    if (modelDisplayName) {\n      logFields.model_display_name = modelDisplayName;\n    }\n  }\n"
+    },
+    {
+      "type": "ensure-directory",
+      "path": "tests",
+      "content": "",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "tests/model-display-name-cache.test.ts",
+      "content": "import { afterEach, describe, expect, test } from \"bun:test\";\nimport {\n  clearCachedModelDisplayNames,\n  getCachedModelDisplayName,\n  updateCachedModelDisplayNames,\n} from \"../src/lib/model-display-name-cache\";\n\nafterEach(() =\u003e {\n  clearCachedModelDisplayNames();\n});\n\ndescribe(\"model display-name cache\", () =\u003e {\n  test(\"returns display_name for a known cached model id\", () =\u003e {\n    updateCachedModelDisplayNames([\n      { id: \"gpt-4.1\", display_name: \"GPT-4.1\" },\n      { id: \"claude-sonnet-4\", display_name: \"Claude Sonnet 4\" },\n    ]);\n\n    expect(getCachedModelDisplayName(\"gpt-4.1\")).toBe(\"GPT-4.1\");\n  });\n\n  test(\"returns undefined for an unknown model id\", () =\u003e {\n    updateCachedModelDisplayNames([\n      { id: \"gpt-4.1\", display_name: \"GPT-4.1\" },\n    ]);\n\n    expect(getCachedModelDisplayName(\"missing-model\")).toBeUndefined();\n  });\n\n  test(\"returns undefined when cache is empty or unavailable\", () =\u003e {\n    expect(getCachedModelDisplayName(\"gpt-4.1\")).toBeUndefined();\n\n    updateCachedModelDisplayNames(undefined);\n    expect(getCachedModelDisplayName(\"gpt-4.1\")).toBeUndefined();\n  });\n\n  test(\"safely ignores malformed model entries\", () =\u003e {\n    expect(() =\u003e {\n      updateCachedModelDisplayNames([\n        null,\n        undefined,\n        \"bad-entry\",\n        { id: \"missing-display-name\" },\n        { id: \"non-string-display-name\", display_name: 123 },\n        { id: 123, display_name: \"Bad ID\" },\n        { id: \"valid\", display_name: \"Valid Model\" },\n      ]);\n    }).not.toThrow();\n\n    expect(getCachedModelDisplayName(\"missing-display-name\")).toBeUndefined();\n    expect(getCachedModelDisplayName(\"non-string-display-name\")).toBeUndefined();\n    expect(getCachedModelDisplayName(\"valid\")).toBe(\"Valid Model\");\n  });\n\n  test(\"supports OpenAI-style response objects with data arrays\", () =\u003e {\n    updateCachedModelDisplayNames({\n      data: [{ id: \"gpt-4o\", display_name: \"GPT-4o\" }],\n    });\n\n    expect(getCachedModelDisplayName(\"gpt-4o\")).toBe(\"GPT-4o\");\n  });\n});\n",
+      "search": "",
+      "replace": ""
+    }
+  ]
+}

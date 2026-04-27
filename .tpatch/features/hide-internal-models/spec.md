@@ -1,0 +1,57 @@
+# Specification: hide-internal-models
+
+## Acceptance Criteria
+
+1. When the server is started **without** `--hide-internal`, the `GET /models` response contains all models exactly as returned by the upstream provider, with no filtering applied.
+2. When the server is started **with** `--hide-internal`, any model whose `id` contains the substring `'internal'` (case-sensitive) is excluded from the `GET /models` response.
+3. When the server is started **with** `--hide-internal`, any model whose `id` starts with `'accounts/'` is excluded from the `GET /models` response.
+4. A model whose `id` matches **both** conditions is excluded only once (no duplication or errors from double-filtering).
+5. Models whose `id` does not match either condition are always present in the response regardless of the flag.
+6. The `--hide-internal` flag appears in `--help` output with a short description (e.g., `"Filter out internal and account-scoped models from /models"`).
+7. The flag can alternatively be enabled via the environment variable `HIDE_INTERNAL_MODELS=true`; the CLI flag takes precedence if both are set.
+8. Unit tests cover the filter utility function for: IDs containing `'internal'`, IDs starting with `'accounts/'`, IDs matching both, and IDs matching neither.
+9. Integration/route tests cover the `GET /models` endpoint in both the flag-enabled and flag-disabled states, asserting correct inclusion/exclusion of models.
+10. No existing tests are broken; behavior without the flag is identical to the pre-feature baseline.
+
+---
+
+## Implementation Plan
+
+### 1. Add the filter utility (`src/lib/filter-models.ts`)
+- Create a new file exporting a pure function `isInternalModel(id: string): boolean` that returns `true` if `id.includes('internal') || id.startsWith('accounts/')`.
+- Export a second helper `filterModels(models: Model[], hideInternal: boolean): Model[]` that applies the filter only when `hideInternal` is `true`.
+- This isolation makes the logic trivially unit-testable with no framework setup.
+
+### 2. Extend shared state (`src/lib/state.ts`)
+- Add a `hideInternal: boolean` field (default `false`) to the state type/interface.
+- Ensure the field is initialized to `false` so existing startup paths that do not set it remain unaffected.
+
+### 3. Parse the CLI flag (`src/main.ts` / `src/start.ts`)
+- Using the existing argument-parsing pattern, register `--hide-internal` as a boolean flag with a help string: `"Filter out internal and account-scoped models from /models"`.
+- Also read `process.env.HIDE_INTERNAL_MODELS === 'true'` as a fallback; the explicit CLI flag overrides the env var.
+- After parsing, write the resolved value into `state.hideInternal`.
+
+### 4. Apply the filter in the models route (`src/routes/models/index.ts`)
+- After the upstream model list is fetched and before the response is serialized, call `filterModels(models, state.hideInternal)`.
+- Import `filterModels` from the new utility module; keep the route handler itself thin.
+
+### 5. Unit tests (`src/lib/filter-models.test.ts`)
+- Test `isInternalModel` with:
+  - `"gpt-internal-v1"` → `true`
+  - `"accounts/my-org/model"` → `true`
+  - `"accounts/internal-org/model"` → `true` (matches both; still one result)
+  - `"gpt-4o"` → `false`
+- Test `filterModels` with a mixed list, flag on and off.
+
+### 6. Integration/route tests (`src/routes/models/models.test.ts`)
+- Mock the upstream provider to return a fixed list including models with IDs: `"gpt-4o"`, `"internal-preview"`, `"accounts/org/custom"`.
+- Assert that without the flag, all three appear.
+- Assert that with the flag, only `"gpt-4o"` appears.
+
+### 7. Update documentation / help text
+- Ensure the `--help` output (generated from the arg-parser registration in step 3) describes the flag clearly.
+- Add a brief note to `README.md` (or equivalent) under "CLI Options".
+
+### 8. Review unresolved questions before merging
+- Confirm with stakeholders whether the `'internal'` match should remain case-sensitive (current plan) or become case-insensitive.
+- Decide whether filtering should also apply to model validation in `src/lib/endpoint-routing.ts`; if yes, reuse `isInternalModel` there in a follow-up or in the same PR.

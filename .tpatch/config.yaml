@@ -1,9 +1,9 @@
 # Tessera Patch configuration
 provider:
-  type: openai-compatible  # openai-compatible | anthropic
-  base_url: ""
-  model: ""
-  auth_env: ""  # env var name containing auth token (NOT the secret itself)
+  type: openai-compatible
+  base_url: "http://localhost:4141"
+  model: claude-haiku-4.5
+  auth_env: COPILOT_API_KEY
 
 # Merge strategy for applying patches: "3way" (default) or "rebase"
 merge_strategy: 3way
@@ -16,4 +16,4 @@ max_retries: 2
 max_tokens_implement: 16384
 
 # Shell command run by `tpatch test <slug>` (e.g. "go test ./...", "bun test")
-test_command: ""
+test_command: "npx tsc --noEmit"

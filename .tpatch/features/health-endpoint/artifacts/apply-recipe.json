@@ -1,0 +1,82 @@
+{
+  "feature": "health-endpoint",
+  "operations": [
+    {
+      "type": "ensure-directory",
+      "path": "src/lib",
+      "content": "",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "ensure-directory",
+      "path": "src/routes/health",
+      "content": "",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "ensure-directory",
+      "path": "tests",
+      "content": "",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "src/lib/uptime.ts",
+      "content": "// Track server startup time for uptime calculation\nlet startTime: number;\n\nexport function initializeUptime(): void {\n  startTime = Date.now();\n}\n\nexport function getUptimeSeconds(): number {\n  if (!startTime) {\n    return 0;\n  }\n  return Math.floor((Date.now() - startTime) / 1000);\n}\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "src/lib/version.ts",
+      "content": "import { readFileSync } from 'fs';\nimport { join } from 'path';\n\nlet cachedVersion: string;\n\nfunction loadVersion(): string {\n  try {\n    const packageJsonPath = join(process.cwd(), 'package.json');\n    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));\n    return packageJson.version || 'unknown';\n  } catch (error) {\n    console.warn('Failed to read version from package.json:', error);\n    return 'unknown';\n  }\n}\n\nexport function getVersion(): string {\n  if (!cachedVersion) {\n    cachedVersion = loadVersion();\n  }\n  return cachedVersion;\n}\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "src/lib/model-counter.ts",
+      "content": "import { getAvailableModels } from '~/lib/model-mapping';\n\nexport function getModelCount(): number {\n  try {\n    const models = getAvailableModels();\n    if (Array.isArray(models)) {\n      return models.length;\n    }\n    if (typeof models === 'object' \u0026\u0026 models !== null) {\n      return Object.keys(models).length;\n    }\n    return 0;\n  } catch (error) {\n    console.warn('Failed to get model count:', error);\n    return 0;\n  }\n}\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "src/routes/health/index.ts",
+      "content": "import { Request, Response } from 'express';\nimport { getUptimeSeconds } from '~/lib/uptime';\nimport { getVersion } from '~/lib/version';\nimport { getModelCount } from '~/lib/model-counter';\n\nexport async function healthHandler(\n  req: Request,\n  res: Response\n): Promise\u003cvoid\u003e {\n  const response = {\n    uptime: getUptimeSeconds(),\n    modelCount: getModelCount(),\n    version: getVersion(),\n  };\n\n  res.status(200).json(response);\n}\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "tests/health.unit.test.ts",
+      "content": "import { describe, it, expect, beforeEach } from 'vitest';\nimport { getUptimeSeconds, initializeUptime } from '~/lib/uptime';\nimport { getVersion } from '~/lib/version';\nimport { getModelCount } from '~/lib/model-counter';\n\ndescribe('Health Module', () =\u003e {\n  describe('uptime', () =\u003e {\n    beforeEach(() =\u003e {\n      initializeUptime();\n    });\n\n    it('should return numeric uptime in seconds', () =\u003e {\n      const uptime = getUptimeSeconds();\n      expect(typeof uptime).toBe('number');\n      expect(uptime).toBeGreaterThanOrEqual(0);\n    });\n\n    it('uptime should increase between calls', async () =\u003e {\n      const uptime1 = getUptimeSeconds();\n      await new Promise(resolve =\u003e setTimeout(resolve, 100));\n      const uptime2 = getUptimeSeconds();\n      expect(uptime2).toBeGreaterThanOrEqual(uptime1);\n    });\n  });\n\n  describe('version', () =\u003e {\n    it('should return a non-empty string', () =\u003e {\n      const version = getVersion();\n      expect(typeof version).toBe('string');\n      expect(version.length).toBeGreaterThan(0);\n    });\n\n    it('should cache version after first call', () =\u003e {\n      const version1 = getVersion();\n      const version2 = getVersion();\n      expect(version1).toBe(version2);\n    });\n  });\n\n  describe('model counter', () =\u003e {\n    it('should return non-negative integer', () =\u003e {\n      const count = getModelCount();\n      expect(Number.isInteger(count)).toBe(true);\n      expect(count).toBeGreaterThanOrEqual(0);\n    });\n  });\n});\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "write-file",
+      "path": "tests/health.integration.test.ts",
+      "content": "import { describe, it, expect } from 'vitest';\nimport request from 'supertest';\nimport { app } from '~/server';\n\ndescribe('GET /health', () =\u003e {\n  it('should return 200 status', async () =\u003e {\n    const response = await request(app).get('/health');\n    expect(response.status).toBe(200);\n  });\n\n  it('should return JSON with correct content-type', async () =\u003e {\n    const response = await request(app).get('/health');\n    expect(response.type).toMatch(/json/);\n  });\n\n  it('should include uptime, modelCount, and version fields', async () =\u003e {\n    const response = await request(app).get('/health');\n    expect(response.body).toHaveProperty('uptime');\n    expect(response.body).toHaveProperty('modelCount');\n    expect(response.body).toHaveProperty('version');\n  });\n\n  it('should have correct field types', async () =\u003e {\n    const response = await request(app).get('/health');\n    expect(typeof response.body.uptime).toBe('number');\n    expect(typeof response.body.modelCount).toBe('number');\n    expect(typeof response.body.version).toBe('string');\n  });\n\n  it('uptime should increase on subsequent requests', async () =\u003e {\n    const response1 = await request(app).get('/health');\n    await new Promise(resolve =\u003e setTimeout(resolve, 100));\n    const response2 = await request(app).get('/health');\n    expect(response2.body.uptime).toBeGreaterThanOrEqual(response1.body.uptime);\n  });\n});\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "append-file",
+      "path": "src/lib/endpoint-routing.ts",
+      "content": "\nimport { healthHandler } from '~/routes/health';\n\n// Add to route registration array/config:\n// {\n//   method: 'get',\n//   path: '/health',\n//   handler: healthHandler,\n// }\n",
+      "search": "",
+      "replace": ""
+    },
+    {
+      "type": "append-file",
+      "path": "src/main.ts",
+      "content": "\nimport { initializeUptime } from '~/lib/uptime';\n\n// Call early in main execution, before routes are registered:\n// initializeUptime();\n",
+      "search": "",
+      "replace": ""
+    }
+  ]
+}
