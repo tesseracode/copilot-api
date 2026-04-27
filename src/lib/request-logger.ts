@@ -3,6 +3,8 @@ import type { MiddlewareHandler } from "hono"
 import consola from "consola"
 import { randomUUID } from "node:crypto"
 
+import { state } from "./state"
+
 const VERBOSE_BODY_TAIL = 2000
 
 function formatHeaders(headers: Headers): string {
@@ -21,6 +23,14 @@ function formatHeaders(headers: Headers): string {
 function tailOfBody(body: string): string {
   if (body.length <= VERBOSE_BODY_TAIL) return body
   return `...[truncated ${body.length - VERBOSE_BODY_TAIL} chars]...\n${body.slice(-VERBOSE_BODY_TAIL)}`
+}
+
+function resolveModelLabel(modelId: string | undefined): string {
+  if (!modelId) return ""
+  const model = state.models?.data.find((m) => m.id === modelId)
+  if (model?.name && model.name !== modelId)
+    return ` | model: ${modelId} (${model.name})`
+  return ` | model: ${modelId}`
 }
 
 export const requestLogger: MiddlewareHandler = async (c, next) => {
@@ -43,6 +53,18 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
     `→ [${tag}] ${method} ${path} | agent: ${userAgent} | ip: ${clientIp}`,
   )
 
+  // Extract model from request body for log enrichment (non-destructive)
+  let modelLabel = ""
+  if (method === "POST") {
+    try {
+      const cloned = c.req.raw.clone()
+      const body = (await cloned.json()) as { model?: string }
+      modelLabel = resolveModelLabel(body.model)
+    } catch {
+      // body not JSON or unreadable — skip
+    }
+  }
+
   // Verbose mode: log headers and body tail (only at debug level / --verbose)
   if (consola.level >= 5) {
     consola.debug(`→ [${tag}] Headers:\n${formatHeaders(c.req.raw.headers)}`)
@@ -61,5 +83,7 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
 
   const duration = (performance.now() - start).toFixed(1)
 
-  consola.info(`← [${tag}] ${method} ${path} | ${c.res.status} | ${duration}ms`)
+  consola.info(
+    `← [${tag}] ${method} ${path} | ${c.res.status} | ${duration}ms${modelLabel}`,
+  )
 }

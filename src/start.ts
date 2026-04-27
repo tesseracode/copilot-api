@@ -25,6 +25,8 @@ interface RunServerOptions {
   claudeCode: boolean
   showToken: boolean
   proxyEnv: boolean
+  hideInternal: boolean
+  modelFilter?: string
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -46,6 +48,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.rateLimitSeconds = options.rateLimit
   state.rateLimitWait = options.rateLimitWait
   state.showToken = options.showToken
+  state.hideInternal = options.hideInternal
+  state.modelFilter = options.modelFilter
 
   await ensurePaths()
   await cacheVSCodeVersion()
@@ -60,8 +64,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   await setupCopilotToken()
   await cacheModels()
 
+  const modelCount = state.models?.data.length ?? 0
   consola.info(
-    `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
+    `Available models (${modelCount} loaded): \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
   )
 
   const serverUrl = `http://localhost:${options.port}`
@@ -200,6 +205,17 @@ export const start = defineCommand({
       default: false,
       description: "Initialize proxy from environment variables",
     },
+    "hide-internal": {
+      type: "boolean",
+      default: false,
+      description:
+        "Hide internal and account-scoped models from the /models response",
+    },
+    "model-filter": {
+      type: "string",
+      description:
+        "Filter /models response to only show models from a specific vendor (e.g. anthropic, openai)",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
@@ -218,6 +234,8 @@ export const start = defineCommand({
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
+      hideInternal: args["hide-internal"],
+      modelFilter: args["model-filter"],
     })
   },
 })
