@@ -1,0 +1,4 @@
+ .tpatch/FEATURES.md                               | 2 ++
+ .tpatch/features/hide-internal-models/status.json | 6 +++---
+ src/routes/messages/anthropic-types.ts            | 4 ++++
+ 3 files changed, 9 insertions(+), 3 deletions(-)

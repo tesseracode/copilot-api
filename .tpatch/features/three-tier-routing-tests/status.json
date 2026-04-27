@@ -1,0 +1,13 @@
+{
+  "id": "three-tier-routing-tests",
+  "slug": "three-tier-routing-tests",
+  "title": "Unit and e2e test suite for three-tier endpoint routing: endpoint resolution, /v1/messages payload sanitization, Responses API translation, model mapping, plus live API e2e matrix across all three tiers",
+  "state": "defined",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-27T01:50:35Z",
+  "updated_at": "2026-04-27T02:04:20Z",
+  "last_command": "define",
+  "notes": "Phase advanced manually (--manual); artifact authored at spec.md",
+  "apply": {},
+  "reconcile": {}
+}

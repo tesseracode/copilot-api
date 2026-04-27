@@ -2,12 +2,15 @@
   "id": "log-model-display-name",
   "slug": "log-model-display-name",
   "title": "Log the model display_name alongside the model ID in request log lines, by looking up the model in the cached models list",
-  "state": "implementing",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-04-27T00:07:09Z",
-  "updated_at": "2026-04-27T00:08:55Z",
-  "last_command": "implement",
-  "notes": "Apply recipe generated",
-  "apply": {},
+  "updated_at": "2026-04-27T02:05:54Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "ac4fefd337d4482c0e301522f3c6fc148240ffb6",
+    "has_patch": true
+  },
   "reconcile": {}
 }
