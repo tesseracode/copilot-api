@@ -18,7 +18,7 @@ We ran `tpatch cycle` on 5 cosmetic features, each driven by a different LLM mod
 - **Analysis**: Correctly identified all 4 affected files. Raised genuine unresolved questions (case sensitivity, env var support, whether to also filter in routing).
 - **Spec**: 10 acceptance criteria, each testable. Included env var override (`HIDE_INTERNAL_MODELS=true`) with CLI precedence — a thoughtful addition.
 - **Exploration**: Correct minimal changeset. Code snippets match the codebase's actual patterns.
-- **Recipe**: 9 operations. **Would apply cleanly.** Created `filter-models.ts` with proper generics, added state field, registered CLI flag, wired into route handler, even wrote tests. Import paths use the project's `~/` alias convention correctly.
+- **Recipe**: 9 operations. Created `filter-models.ts` with proper generics, added state field, registered CLI flag, wired into route handler, even wrote tests. Import paths use the project's `~/` alias convention correctly.
 - **Hallucinations**: Zero. Every file path, import, and search string references real code.
 - **Verdict**: Production-ready. Could execute this recipe and ship it.
 
@@ -94,7 +94,105 @@ We ran `tpatch cycle` on 5 cosmetic features, each driven by a different LLM mod
 
 ---
 
-## Part 3: Is tpatch a good methodology?
+## Part 3: Taking Over — Bringing LLM Output to Production
+
+After the stress test, we took all 5 features from their LLM-generated state to production quality. This phase tested tpatch's workflow for adopting, fixing, and reconstructing features that didn't generate cleanly.
+
+### What actually happened when we tried to apply
+
+**hide-internal-models (Sonnet 4.6 — "would ship"):**
+`tpatch apply --mode execute` ran 9 operations: **4 passed, 5 failed.** The `write-file` operations and `state.ts` modifications applied cleanly. The failures were all `replace-in-file` operations on `main.ts` and `route.ts` — the search strings assumed different import styles (`../../lib/state` vs `~/lib/state`) and that `main.ts` has inline arg parsing (it uses citty subcommands). The *logic* was correct but the *literal string matching* broke on import path conventions and framework patterns.
+
+**Takeaway**: Even the "best" recipe was only 44% auto-applicable. The `replace-in-file` format is the bottleneck — it demands exact byte-level accuracy from an LLM that's working from memory of files it read once.
+
+### Recovery workflow for each failure mode
+
+| Failure Mode | Example | Recovery Path | tpatch Phase Used |
+|-------------|---------|---------------|-------------------|
+| Recipe partially applies | hide-internal-models | Fix failed ops manually, record | `apply --execute` → manual fix → `record --from` |
+| Good spec, bad recipe | log-model-display-name | Implement from spec, ignore recipe | Read spec → manual implement → `record --from` |
+| Hallucinated recipe | model-vendor-filter | Rewrite from scratch using analysis as context | Read analysis → manual implement → `record --from` |
+| Timeout / no recipe | startup-model-count | Implement from spec (1-line change) | Read spec → manual implement → `record --from` |
+| Wrong framework | health-endpoint | Port design to correct framework | Read recipe for architecture → rewrite in Hono → `record --from` |
+
+### What was useful from each feature's artifacts
+
+Even when the recipe was garbage, earlier phases had value:
+
+- **Analysis**: Useful in 5/5 cases. Correctly identified affected files and raised real design questions every time, regardless of model.
+- **Spec**: Useful in 4/5 cases. Acceptance criteria guided manual implementation. Only Gemini's spec was too generic to be actionable.
+- **Exploration**: Useful in 2/5 cases. Sonnet's exploration was precise. Others were too broad or redundant with the spec.
+- **Recipe**: Useful in 1/5 cases (Sonnet's, partially). The others ranged from "good architecture document" to "fantasy novel."
+
+### The actual implementation flow
+
+For all 5 features, the actual flow was:
+
+1. Read the LLM-generated analysis and spec for context
+2. Ignore the recipe (except Sonnet's `write-file` outputs which were correct)
+3. Implement manually using the spec as acceptance criteria
+4. Run `bun test` and `npx tsc --noEmit` to verify
+5. `tpatch record <slug> --from <base-commit>` to capture the diff
+
+Time to implement all 5 features manually: **~25 minutes** (including the `output_config` fix discovered along the way).
+
+### Bonus bug found during takeover
+
+While implementing, Claude Code sent a request with `output_config: { effort: "high" }` through the native `/v1/messages` passthrough. The Copilot API rejected it: `"output_config: Extra inputs are not permitted"`. This revealed that our passthrough was blindly spreading the payload (`{ ...payload }`) instead of whitelisting supported fields.
+
+**Fix**: Rewrote `forwardNativeMessages` to explicitly whitelist Anthropic API fields. This is the kind of integration bug that only surfaces under real usage — and it only surfaced because we were *using* the proxy to drive the stress test.
+
+---
+
+## Part 4: tpatch Workflow Assessment
+
+### Were the metadata validation tools useful?
+
+**`tpatch status`**: Yes — instant visibility into which features exist and their state. When we came back to adopt the stress test results, `tpatch status` showed all 5 features in `[implementing]` state, making it clear what needed attention.
+
+**`tpatch next`**: Somewhat useful. It correctly told us the next phase, but in Path B (manual implementation), you already know what comes next. More useful for Path A workflows.
+
+**`tpatch apply --mode execute`**: Very useful as a **validation tool**, even when it fails. Running it against hide-internal-models showed exactly which operations would work and which wouldn't — a faster feedback loop than manually diffing the recipe against the codebase.
+
+**`tpatch record --from`**: Essential. This is the Path B workhorse. Every feature ended up going through this, regardless of how it was implemented. Simple, reliable, no surprises.
+
+**`tpatch cycle`**: Useful for stress testing and generating specs, but the end-to-end success rate (1/5 recipes fully applicable) means it's better as a "generate starting artifacts" tool than a "generate working code" tool.
+
+### How easy was it to take over from the LLM-generated work?
+
+**Easy, because tpatch separates intent from implementation.**
+
+The key insight: when an LLM generates a bad recipe, the *analysis* and *spec* survive. These earlier artifacts capture the *intent* of the feature — what it should do, which files are involved, what the acceptance criteria are. The recipe is just one (often broken) attempt at realizing that intent.
+
+Taking over meant:
+1. Read the analysis (30 seconds) — understand the scope
+2. Read the spec (1 minute) — understand the acceptance criteria
+3. Ignore the recipe — implement yourself
+4. Record — `tpatch record` captures your implementation with the original intent metadata intact
+
+This is fundamentally different from taking over a half-finished PR or a stale branch. A PR says "here's some code" — you have to reverse-engineer the *why*. tpatch's artifacts preserve the *why* even when the *how* is wrong.
+
+### The lifecycle we actually used
+
+```
+Request → [LLM: analyze] → [LLM: define] → [LLM: explore] → [LLM: implement]
+                                                                    ↓
+                                                              Recipe fails
+                                                                    ↓
+                                                         Human reads spec
+                                                                    ↓
+                                                       Human implements
+                                                                    ↓
+                                                         tpatch record
+                                                                    ↓
+                                                              [applied]
+```
+
+This is a hybrid Path A→B workflow: use the LLM for the thinking phases (analyze, define, explore), fall back to human for implementation, then record. It worked better than pure Path A (LLM can't reliably generate recipes) and better than pure Path B (human benefits from the structured analysis).
+
+---
+
+## Part 5: Is tpatch a good methodology?
 
 ### What tpatch actually is
 
@@ -117,6 +215,7 @@ Having used it hands-on for a real feature (three-tier routing) and then stress-
    - `/v1` health check route missing (tpatch's provider check found it)
    - `temperature` parameter unsupported on `/responses` API (tpatch's LLM calls triggered it)
    - `/v1/v1/` double-prefix bug (base_url misconfiguration)
+   - `output_config` passthrough bug (real Claude Code request rejected by Copilot)
    
    These are integration issues we wouldn't have found with unit tests alone.
 
@@ -124,15 +223,19 @@ Having used it hands-on for a real feature (three-tier routing) and then stress-
 
 4. **Feature isolation.** Each feature gets its own directory with analysis, spec, exploration, recipe, and patches. This is much better than a monolithic CHANGELOG.
 
+5. **Taking over is clean.** When an LLM generates a bad recipe, the earlier artifacts (analysis, spec) survive and provide context. `tpatch record --from` lets a human implementation slot into the same tracking structure seamlessly.
+
 ### What didn't work well
 
 1. **LLM quality variance is extreme.** Claude Sonnet 4.6 produced a production-ready recipe. Gemini fabricated an entire codebase. Same tool, same prompts, wildly different results. tpatch's value proposition depends heavily on which model drives it.
 
-2. **The implement phase is fragile.** `replace-in-file` with literal string matching means the LLM must reproduce exact code from the file — including whitespace. 3 out of 5 models failed to do this reliably. The recipe format is deterministic but the LLM generation isn't.
+2. **The implement phase is fragile.** `replace-in-file` with literal string matching means the LLM must reproduce exact code from the file — including whitespace. 4 out of 5 models failed to do this reliably. The recipe format is deterministic but the LLM generation isn't.
 
-3. **Path A (LLM-driven) requires a strong model.** Only Claude Sonnet 4.6 produced an actually-applicable recipe. For smaller/weaker models, Path B (human implements, tpatch records) is the only viable path.
+3. **Path A (LLM-driven) requires a strong model.** Only Claude Sonnet 4.6 produced a partially-applicable recipe. For smaller/weaker models, Path B (human implements, tpatch records) is the only viable path.
 
 4. **Config is single-model.** Running parallel stress tests was impossible because `config.yaml` only holds one model. We had to run sequentially, which took ~7 minutes instead of ~2.
+
+5. **`tpatch apply --execute` is all-or-nothing per operation.** When 4/9 operations succeed and 5 fail, you get a partially-modified working tree. The tool correctly reports which failed, but there's no `--continue` or `--skip` mode to interactively handle failures.
 
 ### Is it worth the hassle?
 
@@ -140,7 +243,7 @@ Having used it hands-on for a real feature (three-tier routing) and then stress-
 
 **For one-off patches: maybe not.** If you're making a single change to a fork you'll never update, tpatch's ceremony (6 phases, multiple artifacts) is overkill. Just make the change and commit.
 
-**For LLM-driven development: it depends on the model.** The structured phases (analyze → define → explore → implement) are genuinely useful as a thinking framework. But the implement phase only works with top-tier models that can faithfully reproduce file contents. For weaker models, use Path B exclusively.
+**For LLM-driven development: use the hybrid path.** Let the LLM handle analyze/define/explore (it's good at structured thinking), do the implementation yourself (Path B), then record. You get the best of both: structured intent metadata from the LLM, reliable code from a human.
 
 ### Positioning recommendation
 
@@ -158,7 +261,7 @@ No other tool gives you all four.
 
 ---
 
-## Appendix: Routing Tier Validation
+## Appendix A: Routing Tier Validation
 
 The stress test validated all 3 routing tiers under real LLM workloads:
 
@@ -169,3 +272,41 @@ The stress test validated all 3 routing tiers under real LLM workloads:
 | Chat Completions | `/chat/completions` | gemini-2.5-pro | 4 phases × 1 model = 4 calls | All passed |
 
 Total: **20 LLM API calls** across 3 routing tiers, **19 successful**, **1 timeout** (model performance, not proxy failure).
+
+## Appendix B: Integration Bugs Discovered
+
+| Bug | How Discovered | Fix |
+|-----|---------------|-----|
+| `/v1` health check 404 | tpatch provider connectivity check | Added `GET /v1` route |
+| `/v1/v1/` double prefix | Server logs showed malformed path | Fixed tpatch `base_url` config (no `/v1` suffix) |
+| `temperature` rejected on `/responses` | GPT-5.x implement phase returned 400 | Strip `temperature`/`top_p` from `/responses` translation |
+| `output_config` rejected on `/v1/messages` | Claude Code request during manual implementation | Whitelist fields in native forwarder instead of spreading payload |
+| `thinking.type: adaptive` rejected | Known from upstream report, verified during testing | Downgrade to `{ type: 'enabled', budget_tokens: max(1024, max_tokens-1) }` |
+| Model ID `[1m]` not stripped | Claude models returning "model not supported" | Strip `[1m]` suffix, only append `-1m` when variant exists in catalog |
+
+## Appendix C: Final Commit History
+
+```
+03b75b0 chore(tpatch): record 5 cosmetic features and update three-tier-routing patch
+ac4fefd feat: implement 5 cosmetic features from tpatch stress test
+6437629 docs(tpatch): case study and quality audit of 5-model stress test
+61d7dd3 chore(tpatch): stress test results across 5 models and 3 routing tiers
+77e011f fix: add /v1 route and strip temperature from /responses requests
+a89230d chore(tpatch): record three-tier-routing feature with compatibility report
+b56b9da feat: three-tier endpoint routing for full model compatibility
+8a8627b feat: add request logging middleware with verbose mode
+```
+
+## Appendix D: Feature Tracking State
+
+```
+tpatch status (final):
+  - hide-internal-models     [applied]  — Sonnet recipe → partial apply → manual fix → record
+  - log-model-display-name   [applied]  — GPT-5.5 spec → manual implement → record
+  - model-vendor-filter      [applied]  — Gemini analysis → full rewrite → record
+  - startup-model-count      [applied]  — GPT-5.4 spec → 1-line manual change → record
+  - health-endpoint          [applied]  — Haiku design → Hono port → record
+  - three-tier-routing       [applied]  — Manual Path B → record → re-record after fixes
+  - native-payload-sanitization [defined] — in progress (other thread)
+  - three-tier-routing-tests    [defined] — in progress (other thread)
+```
