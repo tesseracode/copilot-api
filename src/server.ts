@@ -15,6 +15,7 @@ server.use(requestLogger)
 server.use(cors())
 
 server.get("/", (c) => c.text("Server running"))
+server.get("/v1", (c) => c.text("Server running"))
 
 server.route("/chat/completions", completionRoutes)
 server.route("/models", modelRoutes)

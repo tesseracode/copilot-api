@@ -19,8 +19,6 @@ interface ResponsesPayload {
   model: string
   input: Array<ResponsesInput>
   max_output_tokens?: number
-  temperature?: number | null
-  top_p?: number | null
   tools?: Array<ResponsesTool>
   tool_choice?: string | { type: string; name?: string }
   stream?: boolean
@@ -175,10 +173,8 @@ export function translateRequestToResponses(
 
   if (payload.max_tokens !== null && payload.max_tokens !== undefined)
     result.max_output_tokens = payload.max_tokens
-  if (payload.temperature !== null && payload.temperature !== undefined)
-    result.temperature = payload.temperature
-  if (payload.top_p !== null && payload.top_p !== undefined)
-    result.top_p = payload.top_p
+  // Note: temperature and top_p are intentionally omitted — the /responses
+  // API rejects them for GPT-5.x models ("Unsupported parameter").
 
   return result
 }
