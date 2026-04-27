@@ -1,0 +1,452 @@
+diff --git a/src/lib/filter-models.test.ts b/src/lib/filter-models.test.ts
+new file mode 100644
+index 0000000..4e72c5f
+--- /dev/null
++++ b/src/lib/filter-models.test.ts
+@@ -0,0 +1,48 @@
++import { describe, it, expect } from "bun:test"
++
++import { filterModels, isInternalModel } from "./filter-models"
++
++describe("isInternalModel", () => {
++  it("returns true for IDs containing 'internal'", () => {
++    expect(isInternalModel("gpt-internal-v1")).toBe(true)
++  })
++
++  it("returns true for IDs starting with 'accounts/'", () => {
++    expect(isInternalModel("accounts/my-org/model")).toBe(true)
++  })
++
++  it("returns false for normal IDs", () => {
++    expect(isInternalModel("gpt-4o")).toBe(false)
++  })
++})
++
++describe("filterModels", () => {
++  const models = [
++    { id: "gpt-4o", owned_by: "OpenAI" },
++    { id: "internal-preview", owned_by: "OpenAI" },
++    { id: "accounts/org/custom", owned_by: "Custom" },
++    { id: "claude-sonnet-4", owned_by: "Anthropic" },
++  ]
++
++  it("returns all models when no filters", () => {
++    expect(filterModels(models, false)).toHaveLength(4)
++  })
++
++  it("filters internal models", () => {
++    const result = filterModels(models, true)
++    expect(result).toHaveLength(2)
++    expect(result.map((m) => m.id)).toEqual(["gpt-4o", "claude-sonnet-4"])
++  })
++
++  it("filters by vendor", () => {
++    const result = filterModels(models, false, "anthropic")
++    expect(result).toHaveLength(1)
++    expect(result[0].id).toBe("claude-sonnet-4")
++  })
++
++  it("combines internal + vendor filters", () => {
++    const result = filterModels(models, true, "openai")
++    expect(result).toHaveLength(1)
++    expect(result[0].id).toBe("gpt-4o")
++  })
++})
+diff --git a/src/lib/filter-models.ts b/src/lib/filter-models.ts
+new file mode 100644
+index 0000000..80a445b
+--- /dev/null
++++ b/src/lib/filter-models.ts
+@@ -0,0 +1,21 @@
++export function isInternalModel(id: string): boolean {
++  return id.includes("internal") || id.startsWith("accounts/")
++}
++
++export function filterModels<T extends { id: string; owned_by?: string }>(
++  models: Array<T>,
++  hideInternal: boolean,
++  vendorFilter?: string,
++): Array<T> {
++  let result = models
++  if (hideInternal) {
++    result = result.filter((m) => !isInternalModel(m.id))
++  }
++  if (vendorFilter) {
++    const lower = vendorFilter.toLowerCase()
++    result = result.filter(
++      (m) => m.owned_by?.toLowerCase().includes(lower) ?? false,
++    )
++  }
++  return result
++}
+diff --git a/src/lib/request-logger.ts b/src/lib/request-logger.ts
+index 45f4cc0..ab1b09d 100644
+--- a/src/lib/request-logger.ts
++++ b/src/lib/request-logger.ts
+@@ -3,6 +3,8 @@ import type { MiddlewareHandler } from "hono"
+ import consola from "consola"
+ import { randomUUID } from "node:crypto"
+ 
++import { state } from "./state"
++
+ const VERBOSE_BODY_TAIL = 2000
+ 
+ function formatHeaders(headers: Headers): string {
+@@ -23,6 +25,14 @@ function tailOfBody(body: string): string {
+   return `...[truncated ${body.length - VERBOSE_BODY_TAIL} chars]...\n${body.slice(-VERBOSE_BODY_TAIL)}`
+ }
+ 
++function resolveModelLabel(modelId: string | undefined): string {
++  if (!modelId) return ""
++  const model = state.models?.data.find((m) => m.id === modelId)
++  if (model?.name && model.name !== modelId)
++    return ` | model: ${modelId} (${model.name})`
++  return ` | model: ${modelId}`
++}
++
+ export const requestLogger: MiddlewareHandler = async (c, next) => {
+   const requestId = c.req.header("x-request-id") ?? randomUUID()
+   const userAgent = c.req.header("user-agent") ?? "unknown"
+@@ -43,6 +53,18 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
+     `→ [${tag}] ${method} ${path} | agent: ${userAgent} | ip: ${clientIp}`,
+   )
+ 
++  // Extract model from request body for log enrichment (non-destructive)
++  let modelLabel = ""
++  if (method === "POST") {
++    try {
++      const cloned = c.req.raw.clone()
++      const body = (await cloned.json()) as { model?: string }
++      modelLabel = resolveModelLabel(body.model)
++    } catch {
++      // body not JSON or unreadable — skip
++    }
++  }
++
+   // Verbose mode: log headers and body tail (only at debug level / --verbose)
+   if (consola.level >= 5) {
+     consola.debug(`→ [${tag}] Headers:\n${formatHeaders(c.req.raw.headers)}`)
+@@ -61,5 +83,7 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
+ 
+   const duration = (performance.now() - start).toFixed(1)
+ 
+-  consola.info(`← [${tag}] ${method} ${path} | ${c.res.status} | ${duration}ms`)
++  consola.info(
++    `← [${tag}] ${method} ${path} | ${c.res.status} | ${duration}ms${modelLabel}`,
++  )
+ }
+diff --git a/src/lib/state.ts b/src/lib/state.ts
+index 7013aec..2faca28 100644
+--- a/src/lib/state.ts
++++ b/src/lib/state.ts
+@@ -1,6 +1,8 @@
+ import type { ModelsResponse } from "~/services/copilot/get-models"
+ 
+ export interface State {
++  hideInternal: boolean
++  modelFilter?: string
+   githubToken?: string
+   copilotToken?: string
+ 
+@@ -21,6 +23,7 @@ export interface State {
+ }
+ 
+ export const state: State = {
++  hideInternal: false,
+   accountType: "individual",
+   manualApprove: false,
+   is1MContext: false,
+diff --git a/src/routes/models/route.ts b/src/routes/models/route.ts
+index 7fd5101..a78f11a 100644
+--- a/src/routes/models/route.ts
++++ b/src/routes/models/route.ts
+@@ -1,6 +1,7 @@
+ import { Hono } from "hono"
+ 
+ import { forwardError } from "~/lib/error"
++import { filterModels } from "~/lib/filter-models"
+ import { state } from "~/lib/state"
+ import { cacheModels } from "~/lib/utils"
+ 
+@@ -13,19 +14,26 @@ modelRoutes.get("/", async (c) => {
+       await cacheModels()
+     }
+ 
+-    const models = state.models?.data.map((model) => ({
+-      id: model.id,
+-      object: "model",
+-      type: "model",
+-      created: 0, // No date available from source
+-      created_at: new Date(0).toISOString(), // No date available from source
+-      owned_by: model.vendor,
+-      display_name: model.name,
+-      capabilities: model.capabilities,
+-      supported_endpoints: model.supported_endpoints,
+-      preview: model.preview,
+-      model_picker_enabled: model.model_picker_enabled,
+-    }))
++    const allModels =
++      state.models?.data.map((model) => ({
++        id: model.id,
++        object: "model",
++        type: "model",
++        created: 0, // No date available from source
++        created_at: new Date(0).toISOString(), // No date available from source
++        owned_by: model.vendor,
++        display_name: model.name,
++        capabilities: model.capabilities,
++        supported_endpoints: model.supported_endpoints,
++        preview: model.preview,
++        model_picker_enabled: model.model_picker_enabled,
++      })) ?? []
++
++    const models = filterModels(
++      allModels,
++      state.hideInternal,
++      state.modelFilter,
++    )
+ 
+     return c.json({
+       object: "list",
+diff --git a/src/server.ts b/src/server.ts
+index 5ab3193..bd8870a 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -2,6 +2,7 @@ import { Hono } from "hono"
+ import { cors } from "hono/cors"
+ 
+ import { requestLogger } from "./lib/request-logger"
++import { state } from "./lib/state"
+ import { completionRoutes } from "./routes/chat-completions/route"
+ import { embeddingRoutes } from "./routes/embeddings/route"
+ import { messageRoutes } from "./routes/messages/route"
+@@ -9,6 +10,8 @@ import { modelRoutes } from "./routes/models/route"
+ import { tokenRoute } from "./routes/token/route"
+ import { usageRoute } from "./routes/usage/route"
+ 
++const startTime = Date.now()
++
+ export const server = new Hono()
+ 
+ server.use(requestLogger)
+@@ -17,6 +20,15 @@ server.use(cors())
+ server.get("/", (c) => c.text("Server running"))
+ server.get("/v1", (c) => c.text("Server running"))
+ 
++server.get("/health", (c) =>
++  c.json({
++    status: "ok",
++    uptime_seconds: Math.floor((Date.now() - startTime) / 1000),
++    model_count: state.models?.data.length ?? 0,
++    version: process.env.npm_package_version ?? "unknown",
++  }),
++)
++
+ server.route("/chat/completions", completionRoutes)
+ server.route("/models", modelRoutes)
+ server.route("/embeddings", embeddingRoutes)
+diff --git a/src/services/copilot/forward-native-messages.ts b/src/services/copilot/forward-native-messages.ts
+index 2105d98..b8e0ed6 100644
+--- a/src/services/copilot/forward-native-messages.ts
++++ b/src/services/copilot/forward-native-messages.ts
+@@ -9,47 +9,87 @@ import { anthropicToCopilotModelId } from "~/lib/model-mapping"
+ import { state } from "~/lib/state"
+ 
+ /**
+- * Downgrade thinking.type from 'adaptive' to 'enabled',
+- * since the Copilot /v1/messages endpoint doesn't support adaptive yet.
++ * Normalize thinking config for the Copilot /v1/messages endpoint.
++ * Downgrades 'adaptive' to 'enabled' since Copilot doesn't support it.
+  */
+ function normalizeThinking(
+-  body: Record<string, unknown>,
+-): Record<string, unknown> {
+-  const thinking = body.thinking as
+-    | { type: string; budget_tokens?: number }
+-    | undefined
+-  if (thinking?.type === "adaptive") {
+-    const maxTokens =
+-      typeof body.max_tokens === "number" ? body.max_tokens : 16384
+-    body.thinking = {
++  thinking: AnthropicMessagesPayload["thinking"],
++  maxTokens: number,
++): Record<string, unknown> | undefined {
++  if (!thinking) return undefined
++  if (thinking.type === "adaptive") {
++    return {
+       type: "enabled",
+       budget_tokens: Math.max(1024, maxTokens - 1),
+     }
+   }
+-  return body
++  return thinking
+ }
+ 
++/** Whitelist of optional fields safe to forward to Copilot /v1/messages */
++const OPTIONAL_FIELDS = [
++  "system",
++  "metadata",
++  "stop_sequences",
++  "temperature",
++  "top_p",
++  "top_k",
++  "tools",
++  "tool_choice",
++  "service_tier",
++] as const
++
+ /**
+- * Forward a /v1/messages request directly to the upstream Copilot API's
+- * native Anthropic /v1/messages endpoint, with minimal transformation.
++ * Build a sanitized request body for the upstream Copilot /v1/messages endpoint.
++ * Only forward fields that the Copilot API accepts — strip extras like
++ * output_config that Claude Code sends but Copilot doesn't support.
+  */
+-export async function forwardNativeMessages(
++function buildNativeBody(
+   payload: AnthropicMessagesPayload,
+-): Promise<Response> {
++  overrides: Record<string, unknown>,
++): Record<string, unknown> {
+   const copilotModelId = anthropicToCopilotModelId(
+     payload.model,
+     state.is1MContext,
+   )
+ 
+-  const body = normalizeThinking({
+-    ...payload,
++  const body: Record<string, unknown> = {
+     model: copilotModelId,
+-  })
++    messages: payload.messages,
++    max_tokens: payload.max_tokens,
++  }
++
++  for (const field of OPTIONAL_FIELDS) {
++    if (payload[field] !== undefined) {
++      body[field] = payload[field]
++    }
++  }
++
++  const thinking = normalizeThinking(payload.thinking, payload.max_tokens)
++  if (thinking) body.thinking = thinking
++
++  Object.assign(body, overrides)
++
++  return body
++}
++
++/**
++ * Forward a /v1/messages request directly to the upstream Copilot API's
++ * native Anthropic /v1/messages endpoint, with only supported fields.
++ */
++export async function forwardNativeMessages(
++  payload: AnthropicMessagesPayload,
++  streamOverride?: boolean,
++): Promise<Response> {
++  const overrides: Record<string, unknown> = {}
++  if (streamOverride !== undefined) overrides.stream = streamOverride
++
++  const body = buildNativeBody(payload, overrides)
+ 
+   const url = `${copilotBaseUrl(state)}/v1/messages`
+ 
+   consola.debug(
+-    `Native passthrough: ${payload.model} -> ${copilotModelId} via ${url}`,
++    `Native passthrough: ${payload.model} -> ${body.model as string} via ${url}`,
+   )
+ 
+   const response = await fetch(url, {
+@@ -60,7 +100,7 @@ export async function forwardNativeMessages(
+ 
+   if (!response.ok) {
+     throw new HTTPError(
+-      `Native /v1/messages request failed for model ${copilotModelId}`,
++      `Native /v1/messages request failed for model ${body.model as string}`,
+       response,
+     )
+   }
+@@ -74,10 +114,7 @@ export async function forwardNativeMessages(
+ export async function forwardNativeMessagesNonStreaming(
+   payload: AnthropicMessagesPayload,
+ ) {
+-  const response = await forwardNativeMessages({
+-    ...payload,
+-    stream: false,
+-  })
++  const response = await forwardNativeMessages(payload, false)
+   return await response.json()
+ }
+ 
+@@ -87,10 +124,7 @@ export async function forwardNativeMessagesNonStreaming(
+ export async function* forwardNativeMessagesStreaming(
+   payload: AnthropicMessagesPayload,
+ ) {
+-  const response = await forwardNativeMessages({
+-    ...payload,
+-    stream: true,
+-  })
++  const response = await forwardNativeMessages(payload, true)
+ 
+   const stream = events(response)
+   for await (const event of stream) {
+diff --git a/src/start.ts b/src/start.ts
+index 6b3ee54..a262aea 100644
+--- a/src/start.ts
++++ b/src/start.ts
+@@ -25,6 +25,8 @@ interface RunServerOptions {
+   claudeCode: boolean
+   showToken: boolean
+   proxyEnv: boolean
++  hideInternal: boolean
++  modelFilter?: string
+ }
+ 
+ export async function runServer(options: RunServerOptions): Promise<void> {
+@@ -46,6 +48,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
+   state.rateLimitSeconds = options.rateLimit
+   state.rateLimitWait = options.rateLimitWait
+   state.showToken = options.showToken
++  state.hideInternal = options.hideInternal
++  state.modelFilter = options.modelFilter
+ 
+   await ensurePaths()
+   await cacheVSCodeVersion()
+@@ -60,8 +64,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
+   await setupCopilotToken()
+   await cacheModels()
+ 
++  const modelCount = state.models?.data.length ?? 0
+   consola.info(
+-    `Available models: \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
++    `Available models (${modelCount} loaded): \n${state.models?.data.map((model) => `- ${model.id}`).join("\n")}`,
+   )
+ 
+   const serverUrl = `http://localhost:${options.port}`
+@@ -200,6 +205,17 @@ export const start = defineCommand({
+       default: false,
+       description: "Initialize proxy from environment variables",
+     },
++    "hide-internal": {
++      type: "boolean",
++      default: false,
++      description:
++        "Hide internal and account-scoped models from the /models response",
++    },
++    "model-filter": {
++      type: "string",
++      description:
++        "Filter /models response to only show models from a specific vendor (e.g. anthropic, openai)",
++    },
+   },
+   run({ args }) {
+     const rateLimitRaw = args["rate-limit"]
+@@ -218,6 +234,8 @@ export const start = defineCommand({
+       claudeCode: args["claude-code"],
+       showToken: args["show-token"],
+       proxyEnv: args["proxy-env"],
++      hideInternal: args["hide-internal"],
++      modelFilter: args["model-filter"],
+     })
+   },
+ })

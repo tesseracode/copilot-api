@@ -1,0 +1,13 @@
+{
+  "id": "native-payload-sanitization",
+  "slug": "native-payload-sanitization",
+  "title": "Sanitize /v1/messages passthrough payloads: strip whitespace-only stop_sequences entries, and map output_config.effort to thinking budget_tokens since Copilot does not support output_config",
+  "state": "defined",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-27T01:50:26Z",
+  "updated_at": "2026-04-27T02:04:19Z",
+  "last_command": "define",
+  "notes": "Phase advanced manually (--manual); artifact authored at spec.md",
+  "apply": {},
+  "reconcile": {}
+}

@@ -2,12 +2,15 @@
   "id": "startup-model-count",
   "slug": "startup-model-count",
   "title": "Add a model count to the startup banner, e.g. 'Available models: 37 models loaded'",
-  "state": "implementing",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-04-27T00:10:28Z",
-  "updated_at": "2026-04-27T00:12:34Z",
-  "last_command": "implement",
-  "notes": "Apply recipe generated",
-  "apply": {},
+  "updated_at": "2026-04-27T02:05:54Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "ac4fefd337d4482c0e301522f3c6fc148240ffb6",
+    "has_patch": true
+  },
   "reconcile": {}
 }
