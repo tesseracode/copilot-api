@@ -202,6 +202,7 @@ type ResponsesOutputItem =
       content: Array<ResponsesMessageContent>
     }
   | { type: "function_call"; name: string; arguments: string; call_id: string }
+  | { type: "reasoning"; [key: string]: unknown }
 
 interface ResponsesMessageContent {
   type: "output_text"
@@ -217,13 +218,14 @@ export function translateResponsesNonStreaming(
   for (const item of resp.output) {
     if (item.type === "message") {
       textContent += item.content.map((c) => c.text).join("")
-    } else {
+    } else if (item.type === "function_call") {
       toolCalls.push({
         id: item.call_id,
         type: "function",
         function: { name: item.name, arguments: item.arguments },
       })
     }
+    // Skip other item types (e.g. "reasoning") — they don't map to chat completions
   }
 
   const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
