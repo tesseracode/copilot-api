@@ -1,0 +1,501 @@
+diff --git a/src/lib/model-mapping.test.ts b/src/lib/model-mapping.test.ts
+new file mode 100644
+index 0000000..35e23be
+--- /dev/null
++++ b/src/lib/model-mapping.test.ts
+@@ -0,0 +1,171 @@
++import { describe, it, expect, beforeEach } from "bun:test"
++
++import {
++  anthropicToCopilotModelId,
++  copilotToAnthropicModelId,
++} from "./model-mapping"
++import { state } from "./state"
++
++describe("anthropicToCopilotModelId", () => {
++  beforeEach(() => {
++    // Provide a model catalog with -1m variants for suffix tests
++    state.models = {
++      object: "list",
++      data: [
++        {
++          id: "claude-opus-4.6",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++        {
++          id: "claude-opus-4.6-1m",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++      ],
++    } as unknown as typeof state.models
++  })
++
++  it("maps dash format to dot format", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-6", false)).toBe(
++      "claude-opus-4.6",
++    )
++    expect(anthropicToCopilotModelId("claude-sonnet-4-6", false)).toBe(
++      "claude-sonnet-4.6",
++    )
++    expect(anthropicToCopilotModelId("claude-opus-4-5", false)).toBe(
++      "claude-opus-4.5",
++    )
++    expect(anthropicToCopilotModelId("claude-sonnet-4-5", false)).toBe(
++      "claude-sonnet-4.5",
++    )
++  })
++
++  it("handles [1m] suffix when model exists in catalog", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-6[1m]", false)).toBe(
++      "claude-opus-4.6-1m",
++    )
++  })
++
++  it("strips [1m] suffix when model not in catalog", () => {
++    expect(anthropicToCopilotModelId("claude-sonnet-4-6[1m]", false)).toBe(
++      "claude-sonnet-4.6",
++    )
++  })
++
++  it("passes through unknown models unchanged", () => {
++    expect(anthropicToCopilotModelId("gpt-4o", false)).toBe("gpt-4o")
++    expect(anthropicToCopilotModelId("some-new-model", false)).toBe(
++      "some-new-model",
++    )
++  })
++
++  it("handles haiku models", () => {
++    expect(anthropicToCopilotModelId("claude-haiku-4-5", false)).toBe(
++      "claude-haiku-4.5",
++    )
++  })
++
++  // ── -internal suffix resolution ──
++
++  it("resolves to -1m-internal when only -1m-internal exists in catalog", () => {
++    state.models = {
++      object: "list",
++      data: [
++        {
++          id: "claude-opus-4.7",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++        {
++          id: "claude-opus-4.7-1m-internal",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++      ],
++    } as unknown as typeof state.models
++
++    // is1M=true → should find -1m-internal since -1m doesn't exist
++    expect(anthropicToCopilotModelId("claude-opus-4.7", true)).toBe(
++      "claude-opus-4.7-1m-internal",
++    )
++  })
++
++  it("resolves [1m] suffix to -1m-internal when that's the only variant", () => {
++    state.models = {
++      object: "list",
++      data: [
++        {
++          id: "claude-opus-4.7",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++        {
++          id: "claude-opus-4.7-1m-internal",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++      ],
++    } as unknown as typeof state.models
++
++    // [1m] suffix → should resolve to -1m-internal
++    expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
++      "claude-opus-4.7-1m-internal",
++    )
++  })
++
++  it("prefers -1m over -1m-internal when both exist", () => {
++    state.models = {
++      object: "list",
++      data: [
++        {
++          id: "claude-opus-4.8",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++        {
++          id: "claude-opus-4.8-1m",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++        {
++          id: "claude-opus-4.8-1m-internal",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++      ],
++    } as unknown as typeof state.models
++
++    expect(anthropicToCopilotModelId("claude-opus-4.8", true)).toBe(
++      "claude-opus-4.8-1m",
++    )
++  })
++})
++
++describe("copilotToAnthropicModelId", () => {
++  it("maps dot format to dash format", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
++    expect(copilotToAnthropicModelId("claude-sonnet-4.6")).toBe(
++      "claude-sonnet-4-6",
++    )
++  })
++
++  it("handles -1m suffix", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
++      "claude-opus-4-6[1m]",
++    )
++  })
++
++  it("passes through unknown models unchanged", () => {
++    expect(copilotToAnthropicModelId("gpt-4o")).toBe("gpt-4o")
++  })
++})
+diff --git a/src/lib/model-mapping.ts b/src/lib/model-mapping.ts
+index 4746787..1f1dc9b 100644
+--- a/src/lib/model-mapping.ts
++++ b/src/lib/model-mapping.ts
+@@ -48,6 +48,13 @@ export function anthropicToCopilotModelId(
+     const candidate = `${mapped}-1m`
+     const exists = state.models?.data.some((m) => m.id === candidate)
+     if (exists) return candidate
++
++    // Try -1m-internal (transient preview suffix, will be dropped when model graduates)
++    const internalCandidate = `${mapped}-1m-internal`
++    const internalExists = state.models?.data.some(
++      (m) => m.id === internalCandidate,
++    )
++    if (internalExists) return internalCandidate
+   }
+ 
+   return mapped
+diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
+index f8f4a07..924eb49 100644
+--- a/src/routes/messages/handler.ts
++++ b/src/routes/messages/handler.ts
+@@ -28,6 +28,18 @@ import {
+ } from "./non-stream-translation"
+ import { translateChunkToAnthropicEvents } from "./stream-translation"
+ 
++const CONTEXT_1M_BETA = "context-1m-2025-08-07"
++
++/**
++ * Check if the request wants 1M context via the anthropic-beta header.
++ * The Claude Agent SDK sets `anthropic-beta: context-1m-2025-08-07`
++ * instead of appending [1m] to the model name.
++ */
++function detectWants1M(c: Context): boolean {
++  const betaHeader = c.req.header("anthropic-beta") ?? ""
++  return betaHeader.split(",").some((s) => s.trim() === CONTEXT_1M_BETA)
++}
++
+ export async function handleCompletion(c: Context) {
+   await checkRateLimit(state)
+ 
+@@ -38,16 +50,19 @@ export async function handleCompletion(c: Context) {
+     await awaitApproval()
+   }
+ 
++  // Check per-request 1M context: anthropic-beta header or global flag
++  const wants1M = detectWants1M(c) || state.is1MContext
++
+   const copilotModelId = anthropicToCopilotModelId(
+     anthropicPayload.model,
+-    state.is1MContext,
++    wants1M,
+   )
+   const endpoint = resolveEndpoint(copilotModelId, state.models)
+ 
+   // Native Anthropic passthrough for Claude models
+   if (endpoint === "/v1/messages") {
+     consola.debug(`Using native /v1/messages passthrough for ${copilotModelId}`)
+-    return handleNativePassthrough(c, anthropicPayload)
++    return handleNativePassthrough(c, anthropicPayload, wants1M)
+   }
+ 
+   // Existing /chat/completions translation path
+@@ -108,14 +123,15 @@ export async function handleCompletion(c: Context) {
+ async function handleNativePassthrough(
+   c: Context,
+   payload: AnthropicMessagesPayload,
++  is1M: boolean,
+ ) {
+   if (!payload.stream) {
+-    const response = await forwardNativeMessagesNonStreaming(payload)
++    const response = await forwardNativeMessagesNonStreaming(payload, is1M)
+     return c.json(response)
+   }
+ 
+   return streamSSE(c, async (stream) => {
+-    for await (const event of forwardNativeMessagesStreaming(payload)) {
++    for await (const event of forwardNativeMessagesStreaming(payload, is1M)) {
+       await stream.writeSSE({
+         event: event.type,
+         data: JSON.stringify(event.data),
+diff --git a/src/services/copilot/forward-native-messages.ts b/src/services/copilot/forward-native-messages.ts
+index b8e0ed6..d7f6b00 100644
+--- a/src/services/copilot/forward-native-messages.ts
++++ b/src/services/copilot/forward-native-messages.ts
+@@ -9,21 +9,121 @@ import { anthropicToCopilotModelId } from "~/lib/model-mapping"
+ import { state } from "~/lib/state"
+ 
+ /**
+- * Normalize thinking config for the Copilot /v1/messages endpoint.
+- * Downgrades 'adaptive' to 'enabled' since Copilot doesn't support it.
++ * Detect Claude model generation from the copilot model ID.
++ *
++ * Thinking type support varies by generation:
++ *   Older (haiku-4.5, sonnet-4/4.5, opus-4.5): disabled, enabled
++ *   4.6   (sonnet-4.6, opus-4.6[-1m]):          disabled, enabled, adaptive
++ *   4.7+  (opus-4.7[-1m-internal]):              disabled, adaptive (rejects enabled)
++ *
++ * Future models default to adaptive (the trend is clear).
+  */
+-function normalizeThinking(
+-  thinking: AnthropicMessagesPayload["thinking"],
++type ModelGeneration = "older" | "4.6" | "4.7+"
++
++/** Models that only accept enabled (not adaptive) */
++const OLDER_MODELS = ["haiku-4.5", "sonnet-4.5", "sonnet-4", "opus-4.5"]
++
++function detectGeneration(copilotModelId: string): ModelGeneration {
++  // Check older models first (allowlist approach)
++  if (OLDER_MODELS.some((m) => copilotModelId.includes(m))) return "older"
++  if (copilotModelId.includes("4.6")) return "4.6"
++  // 4.7 and all future models default to adaptive
++  return "4.7+"
++}
++
++/**
++ * Compute a thinking budget from effort level and max_tokens.
++ */
++function budgetFromEffort(
++  effort: string | undefined,
+   maxTokens: number,
++  existingBudget: number | undefined,
++): number {
++  let budget: number
++  switch (effort) {
++    case "low": {
++      return 0
++    } // caller handles this as disabled
++    case "medium": {
++      budget = existingBudget ?? Math.max(1024, Math.floor(maxTokens * 0.5))
++      break
++    }
++    case "high": {
++      budget = existingBudget ?? Math.max(1024, Math.floor(maxTokens * 0.8))
++      break
++    }
++    case "max": {
++      budget = Math.max(1024, maxTokens - 1)
++      break
++    }
++    default: {
++      budget = existingBudget ?? Math.max(1024, maxTokens - 1)
++    }
++  }
++  // budget_tokens must be strictly less than max_tokens
++  return Math.min(budget, maxTokens - 1)
++}
++
++interface NormalizeThinkingOpts {
++  thinking: AnthropicMessagesPayload["thinking"]
++  maxTokens: number
++  generation: ModelGeneration
++  effort?: "low" | "medium" | "high" | "max"
++}
++
++/**
++ * Normalize thinking config for the upstream Copilot /v1/messages endpoint.
++ *
++ * Applies per-generation rules:
++ *   - Older models: downgrade adaptive → enabled (they reject adaptive)
++ *   - 4.6 models: pass through as-is (they accept everything)
++ *   - 4.7 models: upgrade enabled → adaptive (they reject enabled)
++ *
++ * Also maps output_config.effort to budget_tokens.
++ */
++function normalizeThinking(
++  opts: NormalizeThinkingOpts,
+ ): Record<string, unknown> | undefined {
+-  if (!thinking) return undefined
+-  if (thinking.type === "adaptive") {
+-    return {
+-      type: "enabled",
+-      budget_tokens: Math.max(1024, maxTokens - 1),
++  const { thinking, maxTokens, generation, effort } = opts
++  // Low effort: disable thinking entirely regardless of generation
++  if (effort === "low") {
++    return { type: "disabled" }
++  }
++
++  // If no thinking config and no effort signal, nothing to do
++  if (!thinking && !effort) return undefined
++
++  const requestedType = thinking?.type ?? "enabled"
++
++  // Disabled is universally supported
++  if (requestedType === "disabled") return thinking
++
++  const budgetTokens = budgetFromEffort(
++    effort,
++    maxTokens,
++    thinking?.budget_tokens,
++  )
++
++  switch (generation) {
++    case "4.6": {
++      // 4.6 accepts everything — pass through type as-is
++      // adaptive does NOT accept budget_tokens, only enabled does
++      if (requestedType === "adaptive") {
++        return { type: "adaptive" }
++      }
++      return { type: "enabled", budget_tokens: budgetTokens }
++    }
++
++    case "4.7+": {
++      // 4.7+ rejects 'enabled' — must use adaptive (no budget_tokens)
++      return { type: "adaptive" }
++    }
++
++    default: {
++      // Older models reject 'adaptive' — must use enabled
++      return { type: "enabled", budget_tokens: budgetTokens }
+     }
+   }
+-  return thinking
+ }
+ 
+ /** Whitelist of optional fields safe to forward to Copilot /v1/messages */
+@@ -39,18 +139,33 @@ const OPTIONAL_FIELDS = [
+   "service_tier",
+ ] as const
+ 
++/**
++ * Check whether a model supports output_config.effort.
++ * Only 4.6 and 4.7-1m models support it; older and 4.7 base do not.
++ */
++function supportsEffort(
++  generation: ModelGeneration,
++  copilotModelId: string,
++): boolean {
++  if (generation === "4.6") return true
++  // 4.7-1m-internal supports effort, but 4.7 base does not
++  if (generation === "4.7+" && copilotModelId.includes("-1m")) return true
++  return false
++}
++
+ /**
+  * Build a sanitized request body for the upstream Copilot /v1/messages endpoint.
+  * Only forward fields that the Copilot API accepts — strip extras like
+  * output_config that Claude Code sends but Copilot doesn't support.
+  */
+-function buildNativeBody(
++export function buildNativeBody(
+   payload: AnthropicMessagesPayload,
+   overrides: Record<string, unknown>,
++  is1M?: boolean,
+ ): Record<string, unknown> {
+   const copilotModelId = anthropicToCopilotModelId(
+     payload.model,
+-    state.is1MContext,
++    is1M ?? state.is1MContext,
+   )
+ 
+   const body: Record<string, unknown> = {
+@@ -65,7 +180,33 @@ function buildNativeBody(
+     }
+   }
+ 
+-  const thinking = normalizeThinking(payload.thinking, payload.max_tokens)
++  // Sanitize stop_sequences: Copilot rejects whitespace-only entries (e.g. "\n" from Buddy)
++  if (body.stop_sequences) {
++    const filtered = (body.stop_sequences as Array<string>).filter((s) =>
++      s.trim(),
++    )
++    if (filtered.length > 0) {
++      body.stop_sequences = filtered
++    } else {
++      delete body.stop_sequences
++    }
++  }
++
++  const effort = payload.output_config?.effort
++  const generation = detectGeneration(copilotModelId)
++
++  // Forward output_config only to models that support it
++  if (effort && supportsEffort(generation, copilotModelId)) {
++    body.output_config = payload.output_config
++  }
++
++  const thinking = normalizeThinking({
++    thinking: payload.thinking,
++    maxTokens: payload.max_tokens,
++    generation,
++    // Only pass effort if the model does NOT support output_config natively
++    effort: supportsEffort(generation, copilotModelId) ? undefined : effort,
++  })
+   if (thinking) body.thinking = thinking
+ 
+   Object.assign(body, overrides)
+@@ -80,11 +221,12 @@ function buildNativeBody(
+ export async function forwardNativeMessages(
+   payload: AnthropicMessagesPayload,
+   streamOverride?: boolean,
++  is1M?: boolean,
+ ): Promise<Response> {
+   const overrides: Record<string, unknown> = {}
+   if (streamOverride !== undefined) overrides.stream = streamOverride
+ 
+-  const body = buildNativeBody(payload, overrides)
++  const body = buildNativeBody(payload, overrides, is1M)
+ 
+   const url = `${copilotBaseUrl(state)}/v1/messages`
+ 
+@@ -113,8 +255,9 @@ export async function forwardNativeMessages(
+  */
+ export async function forwardNativeMessagesNonStreaming(
+   payload: AnthropicMessagesPayload,
++  is1M?: boolean,
+ ) {
+-  const response = await forwardNativeMessages(payload, false)
++  const response = await forwardNativeMessages(payload, false, is1M)
+   return await response.json()
+ }
+ 
+@@ -123,8 +266,9 @@ export async function forwardNativeMessagesNonStreaming(
+  */
+ export async function* forwardNativeMessagesStreaming(
+   payload: AnthropicMessagesPayload,
++  is1M?: boolean,
+ ) {
+-  const response = await forwardNativeMessages(payload, true)
++  const response = await forwardNativeMessages(payload, true, is1M)
+ 
+   const stream = events(response)
+   for await (const event of stream) {

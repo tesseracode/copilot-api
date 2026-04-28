@@ -1,17 +1,19 @@
 # Implementation Record: internal-suffix-resolution
 
-**Recorded**: 2026-04-28T06:47:00Z
+**Recorded**: 2026-04-28T06:50:41Z
 **Files changed**: 4
 **Patch size**: 15914 bytes
 
 ## Change Summary
 
 ```
- .tpatch/FEATURES.md                                      |  7 +++++--
- .tpatch/features/native-payload-sanitization/status.json | 14 +++++++++-----
- .tpatch/features/three-tier-routing-tests/status.json    | 14 +++++++++-----
- src/routes/messages/anthropic-types.ts                   |  4 ++++
- 4 files changed, 27 insertions(+), 12 deletions(-)
+ .../artifacts/apply-recipe.json                    | 34 +++++++++++++++++++++-
+ .../artifacts/post-apply-diff.txt                  | 11 +++----
+ .../artifacts/recipe-stale.json                    |  5 ----
+ .tpatch/features/per-generation-thinking/record.md | 13 +++++----
+ .../features/per-generation-thinking/status.json   |  4 +--
+ src/routes/messages/anthropic-types.ts             |  4 +++
+ 6 files changed, 52 insertions(+), 19 deletions(-)
 ```
 
 ## Replay Instructions
