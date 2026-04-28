@@ -1,17 +1,18 @@
 # Implementation Record: per-generation-thinking
 
-**Recorded**: 2026-04-28T06:47:00Z
+**Recorded**: 2026-04-28T06:50:41Z
 **Files changed**: 4
 **Patch size**: 15914 bytes
 
 ## Change Summary
 
 ```
- .tpatch/FEATURES.md                                      |  7 +++++--
- .tpatch/features/native-payload-sanitization/status.json | 14 +++++++++-----
- .tpatch/features/three-tier-routing-tests/status.json    | 14 +++++++++-----
- src/routes/messages/anthropic-types.ts                   |  4 ++++
- 4 files changed, 27 insertions(+), 12 deletions(-)
+ .../per-generation-thinking/artifacts/post-apply-diff.txt | 11 ++++++-----
+ .../per-generation-thinking/artifacts/recipe-stale.json   |  2 +-
+ .tpatch/features/per-generation-thinking/record.md        | 15 ++++++++-------
+ .tpatch/features/per-generation-thinking/status.json      |  4 ++--
+ src/routes/messages/anthropic-types.ts                    |  4 ++++
+ 5 files changed, 21 insertions(+), 15 deletions(-)
 ```
 
 ## Replay Instructions

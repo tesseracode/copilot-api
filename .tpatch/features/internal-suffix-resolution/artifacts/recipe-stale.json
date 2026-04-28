@@ -1,5 +1,0 @@
-{
-  "stale": true,
-  "reason": "patch touches files absent from recipe: src/lib/model-mapping.test.ts, src/lib/model-mapping.ts, src/routes/messages/handler.ts, src/services/copilot/forward-native-messages.ts",
-  "detected_at": "2026-04-28T06:47:00Z"
-}
