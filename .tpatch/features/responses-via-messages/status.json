@@ -1,0 +1,12 @@
+{
+  "id": "responses-via-messages",
+  "slug": "responses-via-messages",
+  "title": "Route /responses-only models through the /v1/messages handler: when the Anthropic SDK sends GPT-5.x models to /v1/messages, translate Anthropic→OpenAI→Responses and back, with reasoning block handling",
+  "state": "requested",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-28T22:39:29Z",
+  "updated_at": "2026-04-28T22:39:29Z",
+  "last_command": "add",
+  "apply": {},
+  "reconcile": {}
+}
