@@ -1,0 +1,16 @@
+{
+  "id": "anthropic-beta-1m-detection",
+  "slug": "anthropic-beta-1m-detection",
+  "title": "Detect anthropic-beta: context-1m-2025-08-07 header per-request to activate 1M context window. The Claude Agent SDK sends this header instead of [1m] in the model name. Upgrades model to -1m variant when header is present.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-28T06:09:22Z",
+  "updated_at": "2026-04-28T06:47:00Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "f6e9076e62e1bdc66f47f629529b864c0ea6657f",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

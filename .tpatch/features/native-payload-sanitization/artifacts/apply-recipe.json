@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "type": "replace-in-file",
+      "path": "src/routes/messages/anthropic-types.ts",
+      "search": "  service_tier?: \"auto\" | \"standard_only\"\n}",
+      "replace": "  service_tier?: \"auto\" | \"standard_only\"\n  output_config?: {\n    effort?: \"low\" | \"medium\" | \"high\" | \"max\"\n    [key: string]: unknown\n  }\n}"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/forward-native-messages.ts",
+      "search": "function normalizeThinking(\n  thinking: AnthropicMessagesPayload[\"thinking\"],\n  maxTokens: number,\n): Record<string, unknown> | undefined {\n  if (!thinking) return undefined\n  if (thinking.type === \"adaptive\") {\n    return {\n      type: \"enabled\",\n      budget_tokens: Math.max(1024, maxTokens - 1),\n    }\n  }\n  return thinking\n}",
+      "replace": "function normalizeThinking(\n  thinking: AnthropicMessagesPayload[\"thinking\"],\n  maxTokens: number,\n  effort?: \"low\" | \"medium\" | \"high\" | \"max\",\n): Record<string, unknown> | undefined {\n  if (effort === \"low\") {\n    return { type: \"disabled\" }\n  }\n  if (!thinking && !effort) return undefined\n  const type = thinking?.type ?? \"enabled\"\n  let budgetTokens = thinking?.budget_tokens\n  if (type === \"adaptive\" || type === \"enabled\") {\n    switch (effort) {\n      case \"medium\": { budgetTokens = budgetTokens ?? Math.max(1024, Math.floor(maxTokens * 0.5)); break }\n      case \"high\": { budgetTokens = budgetTokens ?? Math.max(1024, Math.floor(maxTokens * 0.8)); break }\n      case \"max\": { budgetTokens = Math.max(1024, maxTokens - 1); break }\n      default: { budgetTokens = budgetTokens ?? Math.max(1024, maxTokens - 1) }\n    }\n    return { type: \"enabled\", budget_tokens: budgetTokens }\n  }\n  return thinking\n}"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/forward-native-messages.ts",
+      "search": "  const thinking = normalizeThinking(payload.thinking, payload.max_tokens)\n  if (thinking) body.thinking = thinking",
+      "replace": "  // Sanitize stop_sequences: Copilot rejects whitespace-only entries (e.g. \"\\n\" from Buddy)\n  if (body.stop_sequences) {\n    const filtered = (body.stop_sequences as Array<string>).filter((s) => s.trim())\n    if (filtered.length > 0) {\n      body.stop_sequences = filtered\n    } else {\n      delete body.stop_sequences\n    }\n  }\n\n  const effort = payload.output_config?.effort\n  const thinking = normalizeThinking(payload.thinking, payload.max_tokens, effort)\n  if (thinking) body.thinking = thinking"
+    }
+  ]
+}

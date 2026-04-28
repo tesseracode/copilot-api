@@ -1,0 +1,6 @@
+ .tpatch/FEATURES.md                                |  4 +-
+ .../native-payload-sanitization/status.json        | 14 +++--
+ .../features/three-tier-routing-tests/status.json  | 14 +++--
+ src/routes/messages/anthropic-types.ts             |  4 ++
+ src/services/copilot/forward-native-messages.ts    | 65 +++++++++++++++++++---
+ 5 files changed, 82 insertions(+), 19 deletions(-)
