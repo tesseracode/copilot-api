@@ -48,6 +48,13 @@ export function anthropicToCopilotModelId(
     const candidate = `${mapped}-1m`
     const exists = state.models?.data.some((m) => m.id === candidate)
     if (exists) return candidate
+
+    // Try -1m-internal (transient preview suffix, will be dropped when model graduates)
+    const internalCandidate = `${mapped}-1m-internal`
+    const internalExists = state.models?.data.some(
+      (m) => m.id === internalCandidate,
+    )
+    if (internalExists) return internalCandidate
   }
 
   return mapped

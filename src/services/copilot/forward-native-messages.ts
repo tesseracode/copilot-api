@@ -161,10 +161,11 @@ function supportsEffort(
 export function buildNativeBody(
   payload: AnthropicMessagesPayload,
   overrides: Record<string, unknown>,
+  is1M?: boolean,
 ): Record<string, unknown> {
   const copilotModelId = anthropicToCopilotModelId(
     payload.model,
-    state.is1MContext,
+    is1M ?? state.is1MContext,
   )
 
   const body: Record<string, unknown> = {
@@ -220,11 +221,12 @@ export function buildNativeBody(
 export async function forwardNativeMessages(
   payload: AnthropicMessagesPayload,
   streamOverride?: boolean,
+  is1M?: boolean,
 ): Promise<Response> {
   const overrides: Record<string, unknown> = {}
   if (streamOverride !== undefined) overrides.stream = streamOverride
 
-  const body = buildNativeBody(payload, overrides)
+  const body = buildNativeBody(payload, overrides, is1M)
 
   const url = `${copilotBaseUrl(state)}/v1/messages`
 
@@ -253,8 +255,9 @@ export async function forwardNativeMessages(
  */
 export async function forwardNativeMessagesNonStreaming(
   payload: AnthropicMessagesPayload,
+  is1M?: boolean,
 ) {
-  const response = await forwardNativeMessages(payload, false)
+  const response = await forwardNativeMessages(payload, false, is1M)
   return await response.json()
 }
 
@@ -263,8 +266,9 @@ export async function forwardNativeMessagesNonStreaming(
  */
 export async function* forwardNativeMessagesStreaming(
   payload: AnthropicMessagesPayload,
+  is1M?: boolean,
 ) {
-  const response = await forwardNativeMessages(payload, true)
+  const response = await forwardNativeMessages(payload, true, is1M)
 
   const stream = events(response)
   for await (const event of stream) {

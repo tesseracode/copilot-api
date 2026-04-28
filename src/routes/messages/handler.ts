@@ -28,6 +28,18 @@ import {
 } from "./non-stream-translation"
 import { translateChunkToAnthropicEvents } from "./stream-translation"
 
+const CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
+/**
+ * Check if the request wants 1M context via the anthropic-beta header.
+ * The Claude Agent SDK sets `anthropic-beta: context-1m-2025-08-07`
+ * instead of appending [1m] to the model name.
+ */
+function detectWants1M(c: Context): boolean {
+  const betaHeader = c.req.header("anthropic-beta") ?? ""
+  return betaHeader.split(",").some((s) => s.trim() === CONTEXT_1M_BETA)
+}
+
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
 
@@ -38,16 +50,19 @@ export async function handleCompletion(c: Context) {
     await awaitApproval()
   }
 
+  // Check per-request 1M context: anthropic-beta header or global flag
+  const wants1M = detectWants1M(c) || state.is1MContext
+
   const copilotModelId = anthropicToCopilotModelId(
     anthropicPayload.model,
-    state.is1MContext,
+    wants1M,
   )
   const endpoint = resolveEndpoint(copilotModelId, state.models)
 
   // Native Anthropic passthrough for Claude models
   if (endpoint === "/v1/messages") {
     consola.debug(`Using native /v1/messages passthrough for ${copilotModelId}`)
-    return handleNativePassthrough(c, anthropicPayload)
+    return handleNativePassthrough(c, anthropicPayload, wants1M)
   }
 
   // Existing /chat/completions translation path
@@ -108,14 +123,15 @@ export async function handleCompletion(c: Context) {
 async function handleNativePassthrough(
   c: Context,
   payload: AnthropicMessagesPayload,
+  is1M: boolean,
 ) {
   if (!payload.stream) {
-    const response = await forwardNativeMessagesNonStreaming(payload)
+    const response = await forwardNativeMessagesNonStreaming(payload, is1M)
     return c.json(response)
   }
 
   return streamSSE(c, async (stream) => {
-    for await (const event of forwardNativeMessagesStreaming(payload)) {
+    for await (const event of forwardNativeMessagesStreaming(payload, is1M)) {
       await stream.writeSSE({
         event: event.type,
         data: JSON.stringify(event.data),
