@@ -9,21 +9,121 @@ import { anthropicToCopilotModelId } from "~/lib/model-mapping"
 import { state } from "~/lib/state"
 
 /**
- * Normalize thinking config for the Copilot /v1/messages endpoint.
- * Downgrades 'adaptive' to 'enabled' since Copilot doesn't support it.
+ * Detect Claude model generation from the copilot model ID.
+ *
+ * Thinking type support varies by generation:
+ *   Older (haiku-4.5, sonnet-4/4.5, opus-4.5): disabled, enabled
+ *   4.6   (sonnet-4.6, opus-4.6[-1m]):          disabled, enabled, adaptive
+ *   4.7+  (opus-4.7[-1m-internal]):              disabled, adaptive (rejects enabled)
+ *
+ * Future models default to adaptive (the trend is clear).
  */
-function normalizeThinking(
-  thinking: AnthropicMessagesPayload["thinking"],
+type ModelGeneration = "older" | "4.6" | "4.7+"
+
+/** Models that only accept enabled (not adaptive) */
+const OLDER_MODELS = ["haiku-4.5", "sonnet-4.5", "sonnet-4", "opus-4.5"]
+
+function detectGeneration(copilotModelId: string): ModelGeneration {
+  // Check older models first (allowlist approach)
+  if (OLDER_MODELS.some((m) => copilotModelId.includes(m))) return "older"
+  if (copilotModelId.includes("4.6")) return "4.6"
+  // 4.7 and all future models default to adaptive
+  return "4.7+"
+}
+
+/**
+ * Compute a thinking budget from effort level and max_tokens.
+ */
+function budgetFromEffort(
+  effort: string | undefined,
   maxTokens: number,
-): Record<string, unknown> | undefined {
-  if (!thinking) return undefined
-  if (thinking.type === "adaptive") {
-    return {
-      type: "enabled",
-      budget_tokens: Math.max(1024, maxTokens - 1),
+  existingBudget: number | undefined,
+): number {
+  let budget: number
+  switch (effort) {
+    case "low": {
+      return 0
+    } // caller handles this as disabled
+    case "medium": {
+      budget = existingBudget ?? Math.max(1024, Math.floor(maxTokens * 0.5))
+      break
+    }
+    case "high": {
+      budget = existingBudget ?? Math.max(1024, Math.floor(maxTokens * 0.8))
+      break
+    }
+    case "max": {
+      budget = Math.max(1024, maxTokens - 1)
+      break
+    }
+    default: {
+      budget = existingBudget ?? Math.max(1024, maxTokens - 1)
     }
   }
-  return thinking
+  // budget_tokens must be strictly less than max_tokens
+  return Math.min(budget, maxTokens - 1)
+}
+
+interface NormalizeThinkingOpts {
+  thinking: AnthropicMessagesPayload["thinking"]
+  maxTokens: number
+  generation: ModelGeneration
+  effort?: "low" | "medium" | "high" | "max"
+}
+
+/**
+ * Normalize thinking config for the upstream Copilot /v1/messages endpoint.
+ *
+ * Applies per-generation rules:
+ *   - Older models: downgrade adaptive → enabled (they reject adaptive)
+ *   - 4.6 models: pass through as-is (they accept everything)
+ *   - 4.7 models: upgrade enabled → adaptive (they reject enabled)
+ *
+ * Also maps output_config.effort to budget_tokens.
+ */
+function normalizeThinking(
+  opts: NormalizeThinkingOpts,
+): Record<string, unknown> | undefined {
+  const { thinking, maxTokens, generation, effort } = opts
+  // Low effort: disable thinking entirely regardless of generation
+  if (effort === "low") {
+    return { type: "disabled" }
+  }
+
+  // If no thinking config and no effort signal, nothing to do
+  if (!thinking && !effort) return undefined
+
+  const requestedType = thinking?.type ?? "enabled"
+
+  // Disabled is universally supported
+  if (requestedType === "disabled") return thinking
+
+  const budgetTokens = budgetFromEffort(
+    effort,
+    maxTokens,
+    thinking?.budget_tokens,
+  )
+
+  switch (generation) {
+    case "4.6": {
+      // 4.6 accepts everything — pass through type as-is
+      // adaptive does NOT accept budget_tokens, only enabled does
+      if (requestedType === "adaptive") {
+        return { type: "adaptive" }
+      }
+      return { type: "enabled", budget_tokens: budgetTokens }
+    }
+
+    case "4.7+": {
+      // 4.7+ rejects 'enabled' — must use adaptive (no budget_tokens)
+      return { type: "adaptive" }
+    }
+
+    default: {
+      // Older models reject 'adaptive' — must use enabled
+      return { type: "enabled", budget_tokens: budgetTokens }
+    }
+  }
 }
 
 /** Whitelist of optional fields safe to forward to Copilot /v1/messages */
@@ -40,11 +140,25 @@ const OPTIONAL_FIELDS = [
 ] as const
 
 /**
+ * Check whether a model supports output_config.effort.
+ * Only 4.6 and 4.7-1m models support it; older and 4.7 base do not.
+ */
+function supportsEffort(
+  generation: ModelGeneration,
+  copilotModelId: string,
+): boolean {
+  if (generation === "4.6") return true
+  // 4.7-1m-internal supports effort, but 4.7 base does not
+  if (generation === "4.7+" && copilotModelId.includes("-1m")) return true
+  return false
+}
+
+/**
  * Build a sanitized request body for the upstream Copilot /v1/messages endpoint.
  * Only forward fields that the Copilot API accepts — strip extras like
  * output_config that Claude Code sends but Copilot doesn't support.
  */
-function buildNativeBody(
+export function buildNativeBody(
   payload: AnthropicMessagesPayload,
   overrides: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -65,7 +179,33 @@ function buildNativeBody(
     }
   }
 
-  const thinking = normalizeThinking(payload.thinking, payload.max_tokens)
+  // Sanitize stop_sequences: Copilot rejects whitespace-only entries (e.g. "\n" from Buddy)
+  if (body.stop_sequences) {
+    const filtered = (body.stop_sequences as Array<string>).filter((s) =>
+      s.trim(),
+    )
+    if (filtered.length > 0) {
+      body.stop_sequences = filtered
+    } else {
+      delete body.stop_sequences
+    }
+  }
+
+  const effort = payload.output_config?.effort
+  const generation = detectGeneration(copilotModelId)
+
+  // Forward output_config only to models that support it
+  if (effort && supportsEffort(generation, copilotModelId)) {
+    body.output_config = payload.output_config
+  }
+
+  const thinking = normalizeThinking({
+    thinking: payload.thinking,
+    maxTokens: payload.max_tokens,
+    generation,
+    // Only pass effort if the model does NOT support output_config natively
+    effort: supportsEffort(generation, copilotModelId) ? undefined : effort,
+  })
   if (thinking) body.thinking = thinking
 
   Object.assign(body, overrides)
