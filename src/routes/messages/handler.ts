@@ -14,6 +14,11 @@ import {
   type ChatCompletionResponse,
 } from "~/services/copilot/create-chat-completions"
 import {
+  createResponses,
+  createResponsesStreamState,
+  translateResponsesStreamEvent,
+} from "~/services/copilot/create-responses"
+import {
   forwardNativeMessagesNonStreaming,
   forwardNativeMessagesStreaming,
 } from "~/services/copilot/forward-native-messages"
@@ -65,13 +70,20 @@ export async function handleCompletion(c: Context) {
     return handleNativePassthrough(c, anthropicPayload, wants1M)
   }
 
-  // Existing /chat/completions translation path
+  // Translate Anthropic → OpenAI format for non-Claude models
   const openAIPayload = translateToOpenAI(anthropicPayload)
   consola.debug(
     "Translated OpenAI request payload:",
     JSON.stringify(openAIPayload),
   )
 
+  // /responses for GPT-5.x models (responses-only or preferred)
+  if (endpoint === "/responses") {
+    consola.debug(`Using /responses endpoint for ${copilotModelId}`)
+    return handleResponsesViaAnthropic(c, openAIPayload)
+  }
+
+  // /chat/completions for legacy models
   const response = await createChatCompletions(openAIPayload)
 
   if (isNonStreaming(response)) {
@@ -143,3 +155,54 @@ async function handleNativePassthrough(
 const isNonStreaming = (
   response: Awaited<ReturnType<typeof createChatCompletions>>,
 ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+
+/**
+ * Handle a request that needs the /responses endpoint but arrived via /v1/messages.
+ * Flow: Anthropic payload → already translated to OpenAI → /responses → OpenAI response → Anthropic format.
+ */
+async function handleResponsesViaAnthropic(
+  c: Context,
+  openAIPayload: Parameters<typeof createResponses>[0],
+) {
+  const response = await createResponses(openAIPayload)
+
+  if (isNonStreaming(response)) {
+    const anthropicResponse = translateToAnthropic(response)
+    return c.json(anthropicResponse)
+  }
+
+  return streamSSE(c, async (stream) => {
+    const responsesState = createResponsesStreamState()
+    const anthropicState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+    }
+
+    for await (const rawEvent of response) {
+      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+
+      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
+      const eventType =
+        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
+
+      // Responses SSE → OpenAI chunks
+      const chunks = translateResponsesStreamEvent(
+        { event: eventType, data: parsed },
+        responsesState,
+      )
+
+      // OpenAI chunks → Anthropic SSE events
+      for (const chunk of chunks) {
+        const events = translateChunkToAnthropicEvents(chunk, anthropicState)
+        for (const event of events) {
+          await stream.writeSSE({
+            event: event.type,
+            data: JSON.stringify(event),
+          })
+        }
+      }
+    }
+  })
+}
