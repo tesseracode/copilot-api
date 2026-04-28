@@ -1,0 +1,501 @@
+diff --git a/buddy-debug.log b/buddy-debug.log
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/lib/endpoint-routing.test.ts b/src/lib/endpoint-routing.test.ts
+new file mode 100644
+index 0000000..649228b
+--- /dev/null
++++ b/src/lib/endpoint-routing.test.ts
+@@ -0,0 +1,85 @@
++import { describe, it, expect } from "bun:test"
++
++import type { ModelsResponse } from "~/services/copilot/get-models"
++
++import { resolveEndpoint } from "./endpoint-routing"
++
++function mockModels(
++  entries: Array<{ id: string; supported_endpoints: Array<string> }>,
++): ModelsResponse {
++  return {
++    object: "list",
++    data: entries.map((e) => ({
++      id: e.id,
++      name: e.id,
++      version: "1.0",
++      supported_endpoints: e.supported_endpoints,
++      object: "model" as const,
++      created: 0,
++      owned_by: "test",
++    })),
++  } as unknown as ModelsResponse
++}
++
++describe("resolveEndpoint", () => {
++  const models = mockModels([
++    {
++      id: "claude-sonnet-4.6",
++      supported_endpoints: ["/v1/messages", "/chat/completions"],
++    },
++    {
++      id: "claude-opus-4.6",
++      supported_endpoints: ["/v1/messages"],
++    },
++    {
++      id: "gpt-5.5",
++      supported_endpoints: ["/responses", "/chat/completions"],
++    },
++    {
++      id: "gpt-4.1",
++      supported_endpoints: ["/chat/completions"],
++    },
++    {
++      id: "gemini-2.5-pro",
++      supported_endpoints: ["/chat/completions"],
++    },
++  ])
++
++  it("routes Claude models to /v1/messages", () => {
++    expect(resolveEndpoint("claude-sonnet-4.6", models)).toBe("/v1/messages")
++    expect(resolveEndpoint("claude-opus-4.6", models)).toBe("/v1/messages")
++  })
++
++  it("routes GPT-5.x to /responses when available", () => {
++    expect(resolveEndpoint("gpt-5.5", models)).toBe("/responses")
++  })
++
++  it("routes GPT-4.x to /chat/completions", () => {
++    expect(resolveEndpoint("gpt-4.1", models)).toBe("/chat/completions")
++  })
++
++  it("routes Gemini to /chat/completions", () => {
++    expect(resolveEndpoint("gemini-2.5-pro", models)).toBe("/chat/completions")
++  })
++
++  it("falls back to /chat/completions for unknown models", () => {
++    expect(resolveEndpoint("unknown-model", models)).toBe("/chat/completions")
++  })
++
++  it("falls back to /chat/completions when no cached models", () => {
++    expect(resolveEndpoint("claude-sonnet-4.6")).toBe("/chat/completions")
++    expect(resolveEndpoint("claude-sonnet-4.6", undefined)).toBe(
++      "/chat/completions",
++    )
++  })
++
++  it("prefers /v1/messages over /chat/completions for Claude", () => {
++    // claude-sonnet-4.6 has both endpoints — should pick /v1/messages
++    expect(resolveEndpoint("claude-sonnet-4.6", models)).toBe("/v1/messages")
++  })
++
++  it("prefers /responses over /chat/completions for dual-endpoint models", () => {
++    // gpt-5.5 has both /responses and /chat/completions
++    expect(resolveEndpoint("gpt-5.5", models)).toBe("/responses")
++  })
++})
+diff --git a/src/lib/model-mapping.test.ts b/src/lib/model-mapping.test.ts
+new file mode 100644
+index 0000000..f77134f
+--- /dev/null
++++ b/src/lib/model-mapping.test.ts
+@@ -0,0 +1,89 @@
++import { describe, it, expect, beforeEach } from "bun:test"
++
++import {
++  anthropicToCopilotModelId,
++  copilotToAnthropicModelId,
++} from "./model-mapping"
++import { state } from "./state"
++
++describe("anthropicToCopilotModelId", () => {
++  beforeEach(() => {
++    // Provide a model catalog with -1m variants for suffix tests
++    state.models = {
++      object: "list",
++      data: [
++        {
++          id: "claude-opus-4.6",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++        {
++          id: "claude-opus-4.6-1m",
++          object: "model",
++          created: 0,
++          owned_by: "anthropic",
++        },
++      ],
++    } as unknown as typeof state.models
++  })
++
++  it("maps dash format to dot format", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-6", false)).toBe(
++      "claude-opus-4.6",
++    )
++    expect(anthropicToCopilotModelId("claude-sonnet-4-6", false)).toBe(
++      "claude-sonnet-4.6",
++    )
++    expect(anthropicToCopilotModelId("claude-opus-4-5", false)).toBe(
++      "claude-opus-4.5",
++    )
++    expect(anthropicToCopilotModelId("claude-sonnet-4-5", false)).toBe(
++      "claude-sonnet-4.5",
++    )
++  })
++
++  it("handles [1m] suffix when model exists in catalog", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-6[1m]", false)).toBe(
++      "claude-opus-4.6-1m",
++    )
++  })
++
++  it("strips [1m] suffix when model not in catalog", () => {
++    expect(anthropicToCopilotModelId("claude-sonnet-4-6[1m]", false)).toBe(
++      "claude-sonnet-4.6",
++    )
++  })
++
++  it("passes through unknown models unchanged", () => {
++    expect(anthropicToCopilotModelId("gpt-4o", false)).toBe("gpt-4o")
++    expect(anthropicToCopilotModelId("some-new-model", false)).toBe(
++      "some-new-model",
++    )
++  })
++
++  it("handles haiku models", () => {
++    expect(anthropicToCopilotModelId("claude-haiku-4-5", false)).toBe(
++      "claude-haiku-4.5",
++    )
++  })
++})
++
++describe("copilotToAnthropicModelId", () => {
++  it("maps dot format to dash format", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
++    expect(copilotToAnthropicModelId("claude-sonnet-4.6")).toBe(
++      "claude-sonnet-4-6",
++    )
++  })
++
++  it("handles -1m suffix", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
++      "claude-opus-4-6[1m]",
++    )
++  })
++
++  it("passes through unknown models unchanged", () => {
++    expect(copilotToAnthropicModelId("gpt-4o")).toBe("gpt-4o")
++  })
++})
+diff --git a/src/routes/messages/anthropic-types.ts b/src/routes/messages/anthropic-types.ts
+index 29f0398..c3dc408 100644
+--- a/src/routes/messages/anthropic-types.ts
++++ b/src/routes/messages/anthropic-types.ts
+@@ -23,6 +23,10 @@ export interface AnthropicMessagesPayload {
+     budget_tokens?: number
+   }
+   service_tier?: "auto" | "standard_only"
++  output_config?: {
++    effort?: "low" | "medium" | "high" | "max"
++    [key: string]: unknown
++  }
+ }
+ 
+ export interface AnthropicTextBlock {
+diff --git a/src/services/copilot/forward-native-messages.test.ts b/src/services/copilot/forward-native-messages.test.ts
+new file mode 100644
+index 0000000..61955ed
+--- /dev/null
++++ b/src/services/copilot/forward-native-messages.test.ts
+@@ -0,0 +1,194 @@
++import { describe, it, expect } from "bun:test"
++
++import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
++
++import { buildNativeBody } from "./forward-native-messages"
++
++function basePayload(
++  overrides: Partial<AnthropicMessagesPayload> = {},
++): AnthropicMessagesPayload {
++  return {
++    model: "claude-sonnet-4-6",
++    messages: [{ role: "user", content: "Hello" }],
++    max_tokens: 8192,
++    ...overrides,
++  }
++}
++
++describe("buildNativeBody", () => {
++  describe("stop_sequences sanitization", () => {
++    it("strips whitespace-only stop sequences", () => {
++      const body = buildNativeBody(basePayload({ stop_sequences: ["\n"] }), {})
++      expect(body.stop_sequences).toBeUndefined()
++    })
++
++    it("keeps valid stop sequences", () => {
++      const body = buildNativeBody(
++        basePayload({ stop_sequences: ["END", "STOP"] }),
++        {},
++      )
++      expect(body.stop_sequences).toEqual(["END", "STOP"])
++    })
++
++    it("filters mixed stop sequences", () => {
++      const body = buildNativeBody(
++        basePayload({ stop_sequences: ["\n", "END", " \t ", "STOP"] }),
++        {},
++      )
++      expect(body.stop_sequences).toEqual(["END", "STOP"])
++    })
++
++    it("removes field when all entries are whitespace", () => {
++      const body = buildNativeBody(
++        basePayload({ stop_sequences: ["\n", " ", "\t"] }),
++        {},
++      )
++      expect(body).not.toHaveProperty("stop_sequences")
++    })
++  })
++
++  describe("thinking normalization", () => {
++    it("downgrades adaptive to enabled", () => {
++      const body = buildNativeBody(
++        basePayload({ thinking: { type: "adaptive" } }),
++        {},
++      )
++      expect(body.thinking).toEqual({
++        type: "enabled",
++        budget_tokens: Math.max(1024, 8192 - 1),
++      })
++    })
++
++    it("preserves enabled thinking with budget", () => {
++      const body = buildNativeBody(
++        basePayload({
++          thinking: { type: "enabled", budget_tokens: 4096 },
++        }),
++        {},
++      )
++      expect(body.thinking).toEqual({
++        type: "enabled",
++        budget_tokens: 4096,
++      })
++    })
++
++    it("enforces minimum budget of 1024", () => {
++      const body = buildNativeBody(
++        basePayload({
++          max_tokens: 1500,
++          thinking: { type: "adaptive" },
++        }),
++        {},
++      )
++      const thinking = body.thinking as { budget_tokens: number }
++      expect(thinking.budget_tokens).toBeGreaterThanOrEqual(1024)
++    })
++
++    it("passes disabled thinking through", () => {
++      const body = buildNativeBody(
++        basePayload({ thinking: { type: "disabled" } }),
++        {},
++      )
++      expect(body.thinking).toEqual({ type: "disabled" })
++    })
++
++    it("omits thinking when not specified", () => {
++      const body = buildNativeBody(basePayload(), {})
++      expect(body.thinking).toBeUndefined()
++    })
++  })
++
++  describe("effort mapping", () => {
++    it("maps low effort to disabled thinking", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "low" } }),
++        {},
++      )
++      expect(body.thinking).toEqual({ type: "disabled" })
++    })
++
++    it("maps medium effort to ~50% budget", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "medium" } }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.type).toBe("enabled")
++      expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.5))
++    })
++
++    it("maps high effort to ~80% budget", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "high" } }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.type).toBe("enabled")
++      expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.8))
++    })
++
++    it("maps max effort to max budget", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "max" } }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.type).toBe("enabled")
++      expect(thinking.budget_tokens).toBe(8192 - 1)
++    })
++
++    it("max effort overrides explicit budget", () => {
++      const body = buildNativeBody(
++        basePayload({
++          thinking: { type: "enabled", budget_tokens: 2048 },
++          output_config: { effort: "max" },
++        }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.budget_tokens).toBe(8192 - 1)
++    })
++  })
++
++  describe("field allowlist", () => {
++    it("does not forward output_config", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "high" } }),
++        {},
++      )
++      expect(body).not.toHaveProperty("output_config")
++    })
++
++    it("does not forward unknown fields", () => {
++      const payload = {
++        ...basePayload(),
++        anthropic_internal: { foo: "bar" },
++      } as AnthropicMessagesPayload
++      const body = buildNativeBody(payload, {})
++      expect(body).not.toHaveProperty("anthropic_internal")
++    })
++
++    it("forwards allowed optional fields", () => {
++      const body = buildNativeBody(
++        basePayload({
++          system: "You are helpful",
++          temperature: 0.7,
++          top_p: 0.9,
++          top_k: 40,
++        }),
++        {},
++      )
++      expect(body.system).toBe("You are helpful")
++      expect(body.temperature).toBe(0.7)
++      expect(body.top_p).toBe(0.9)
++      expect(body.top_k).toBe(40)
++    })
++  })
++
++  describe("overrides", () => {
++    it("applies overrides last", () => {
++      const body = buildNativeBody(basePayload(), { stream: true })
++      expect(body.stream).toBe(true)
++    })
++  })
++})
+diff --git a/src/services/copilot/forward-native-messages.ts b/src/services/copilot/forward-native-messages.ts
+index b8e0ed6..182cd02 100644
+--- a/src/services/copilot/forward-native-messages.ts
++++ b/src/services/copilot/forward-native-messages.ts
+@@ -11,18 +11,52 @@ import { state } from "~/lib/state"
+ /**
+  * Normalize thinking config for the Copilot /v1/messages endpoint.
+  * Downgrades 'adaptive' to 'enabled' since Copilot doesn't support it.
++ * Optionally adjusts budget based on output_config.effort.
+  */
+ function normalizeThinking(
+   thinking: AnthropicMessagesPayload["thinking"],
+   maxTokens: number,
++  effort?: "low" | "medium" | "high" | "max",
+ ): Record<string, unknown> | undefined {
+-  if (!thinking) return undefined
+-  if (thinking.type === "adaptive") {
+-    return {
+-      type: "enabled",
+-      budget_tokens: Math.max(1024, maxTokens - 1),
++  // Low effort: disable thinking entirely for speed
++  if (effort === "low") {
++    return { type: "disabled" }
++  }
++
++  // If no thinking config and no effort signal, nothing to do
++  if (!thinking && !effort) return undefined
++
++  const type = thinking?.type ?? "enabled"
++  let budgetTokens = thinking?.budget_tokens
++
++  // Downgrade 'adaptive' to 'enabled' — Copilot doesn't support adaptive
++  if (type === "adaptive" || type === "enabled") {
++    // Apply effort-based budget when thinking is enabled
++    switch (effort) {
++      case "medium": {
++        budgetTokens =
++          budgetTokens ?? Math.max(1024, Math.floor(maxTokens * 0.5))
++
++        break
++      }
++      case "high": {
++        budgetTokens =
++          budgetTokens ?? Math.max(1024, Math.floor(maxTokens * 0.8))
++
++        break
++      }
++      case "max": {
++        budgetTokens = Math.max(1024, maxTokens - 1)
++
++        break
++      }
++      default: {
++        budgetTokens = budgetTokens ?? Math.max(1024, maxTokens - 1)
++      }
+     }
++    return { type: "enabled", budget_tokens: budgetTokens }
+   }
++
+   return thinking
+ }
+ 
+@@ -44,7 +78,7 @@ const OPTIONAL_FIELDS = [
+  * Only forward fields that the Copilot API accepts — strip extras like
+  * output_config that Claude Code sends but Copilot doesn't support.
+  */
+-function buildNativeBody(
++export function buildNativeBody(
+   payload: AnthropicMessagesPayload,
+   overrides: Record<string, unknown>,
+ ): Record<string, unknown> {
+@@ -65,7 +99,24 @@ function buildNativeBody(
+     }
+   }
+ 
+-  const thinking = normalizeThinking(payload.thinking, payload.max_tokens)
++  // Sanitize stop_sequences: Copilot rejects whitespace-only entries (e.g. "\n" from Buddy)
++  if (body.stop_sequences) {
++    const filtered = (body.stop_sequences as Array<string>).filter((s) =>
++      s.trim(),
++    )
++    if (filtered.length > 0) {
++      body.stop_sequences = filtered
++    } else {
++      delete body.stop_sequences
++    }
++  }
++
++  const effort = payload.output_config?.effort
++  const thinking = normalizeThinking(
++    payload.thinking,
++    payload.max_tokens,
++    effort,
++  )
+   if (thinking) body.thinking = thinking
+ 
+   Object.assign(body, overrides)

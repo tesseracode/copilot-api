@@ -1,0 +1,16 @@
+{
+  "id": "internal-suffix-resolution",
+  "slug": "internal-suffix-resolution",
+  "title": "Resolve -internal model suffix: when a client requests a -1m variant that doesn't exist but a -1m-internal variant does in the catalog, resolve to the internal variant. Safe no-op when suffix is dropped.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-28T06:09:22Z",
+  "updated_at": "2026-04-28T06:47:00Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "f6e9076e62e1bdc66f47f629529b864c0ea6657f",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

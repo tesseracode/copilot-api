@@ -1,0 +1,16 @@
+{
+  "id": "per-generation-thinking",
+  "slug": "per-generation-thinking",
+  "title": "Per-generation thinking type normalization: older models get enabled+budget, 4.6 models accept both adaptive and enabled, 4.7+ models require adaptive only. Includes output_config.effort forwarding for models that support it.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-28T06:09:22Z",
+  "updated_at": "2026-04-28T06:47:00Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "f6e9076e62e1bdc66f47f629529b864c0ea6657f",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

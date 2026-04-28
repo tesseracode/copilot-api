@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "type": "write-file",
+      "path": "src/lib/endpoint-routing.test.ts",
+      "content": "-- test file for endpoint routing (applied directly) --"
+    },
+    {
+      "type": "write-file",
+      "path": "src/lib/model-mapping.test.ts",
+      "content": "-- test file for model mapping (applied directly) --"
+    },
+    {
+      "type": "write-file",
+      "path": "src/services/copilot/forward-native-messages.test.ts",
+      "content": "-- test file for payload sanitization (applied directly) --"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/forward-native-messages.ts",
+      "search": "function buildNativeBody(",
+      "replace": "export function buildNativeBody("
+    }
+  ]
+}
