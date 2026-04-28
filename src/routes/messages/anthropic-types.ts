@@ -23,6 +23,10 @@ export interface AnthropicMessagesPayload {
     budget_tokens?: number
   }
   service_tier?: "auto" | "standard_only"
+  output_config?: {
+    effort?: "low" | "medium" | "high" | "max"
+    [key: string]: unknown
+  }
 }
 
 export interface AnthropicTextBlock {
