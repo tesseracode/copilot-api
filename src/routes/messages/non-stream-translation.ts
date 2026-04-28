@@ -277,12 +277,20 @@ function translateAnthropicToolChoiceToOpenAI(
 
 // Response translation
 
+function getThinkingBlocks(
+  reasoningText: string | null | undefined,
+): Array<AnthropicThinkingBlock> {
+  if (!reasoningText) return []
+  return [{ type: "thinking", thinking: reasoningText }]
+}
+
 export function translateToAnthropic(
   response: ChatCompletionResponse,
 ): AnthropicResponse {
   // Merge content from all choices
   const allTextBlocks: Array<AnthropicTextBlock> = []
   const allToolUseBlocks: Array<AnthropicToolUseBlock> = []
+  const allThinkingBlocks: Array<AnthropicThinkingBlock> = []
   let stopReason: "stop" | "length" | "tool_calls" | "content_filter" | null =
     null // default
   stopReason = response.choices[0]?.finish_reason ?? stopReason
@@ -291,6 +299,9 @@ export function translateToAnthropic(
   for (const choice of response.choices) {
     const textBlocks = getAnthropicTextBlocks(choice.message.content)
     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)
+
+    // Map reasoning_text from GPT-5.x /responses to Anthropic thinking blocks
+    allThinkingBlocks.push(...getThinkingBlocks(choice.message.reasoning_text))
 
     allTextBlocks.push(...textBlocks)
     allToolUseBlocks.push(...toolUseBlocks)
@@ -301,14 +312,12 @@ export function translateToAnthropic(
     }
   }
 
-  // Note: GitHub Copilot doesn't generate thinking blocks, so we don't include them in responses
-
   return {
     id: response.id,
     type: "message",
     role: "assistant",
     model: copilotToAnthropicModelId(response.model),
-    content: [...allTextBlocks, ...allToolUseBlocks],
+    content: [...allThinkingBlocks, ...allTextBlocks, ...allToolUseBlocks],
     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
     stop_sequence: null,
     usage: {

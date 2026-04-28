@@ -112,6 +112,7 @@ export interface ChatCompletionResponse {
 interface ResponseMessage {
   role: "assistant"
   content: string | null
+  reasoning_text?: string | null
   tool_calls?: Array<ToolCall>
 }
 

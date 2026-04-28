@@ -202,7 +202,12 @@ type ResponsesOutputItem =
       content: Array<ResponsesMessageContent>
     }
   | { type: "function_call"; name: string; arguments: string; call_id: string }
-  | { type: "reasoning"; [key: string]: unknown }
+  | {
+      type: "reasoning"
+      id: string
+      summary?: Array<{ type: "summary_text"; text: string }>
+      encrypted_content?: string | null
+    }
 
 interface ResponsesMessageContent {
   type: "output_text"
@@ -213,19 +218,36 @@ export function translateResponsesNonStreaming(
   resp: ResponsesResponse,
 ): ChatCompletionResponse {
   let textContent = ""
+  let reasoningText = ""
   const toolCalls: Array<ToolCall> = []
 
   for (const item of resp.output) {
-    if (item.type === "message") {
-      textContent += item.content.map((c) => c.text).join("")
-    } else if (item.type === "function_call") {
-      toolCalls.push({
-        id: item.call_id,
-        type: "function",
-        function: { name: item.name, arguments: item.arguments },
-      })
+    switch (item.type) {
+      case "message": {
+        textContent += item.content.map((c) => c.text).join("")
+
+        break
+      }
+      case "function_call": {
+        toolCalls.push({
+          id: item.call_id,
+          type: "function",
+          function: { name: item.name, arguments: item.arguments },
+        })
+
+        break
+      }
+      case "reasoning": {
+        // Extract reasoning summary text if available
+        if (item.summary && item.summary.length > 0) {
+          reasoningText += item.summary.map((s) => s.text).join("\n")
+        }
+
+        break
+      }
+      // No default
     }
-    // Skip other item types (e.g. "reasoning") — they don't map to chat completions
+    // Skip other unknown item types
   }
 
   const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
@@ -241,6 +263,7 @@ export function translateResponsesNonStreaming(
         message: {
           role: "assistant",
           content: textContent || null,
+          ...(reasoningText ? { reasoning_text: reasoningText } : {}),
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         },
         logprobs: null,
