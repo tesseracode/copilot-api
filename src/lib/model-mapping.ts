@@ -2,6 +2,7 @@ import { state } from "./state"
 
 // Forward map: Anthropic dash format → Copilot dot format
 const MODEL_ID_MAP: Record<string, string> = {
+  "claude-opus-4-7": "claude-opus-4.7",
   "claude-opus-4-6": "claude-opus-4.6",
   "claude-opus-4-5": "claude-opus-4.5",
   "claude-sonnet-4-6": "claude-sonnet-4.6",
@@ -10,6 +11,9 @@ const MODEL_ID_MAP: Record<string, string> = {
   "claude-opus-4": "claude-opus-4",
   "claude-haiku-4-5": "claude-haiku-4.5",
 }
+
+/** Suffixes that encode effort level — stripped before mapping, re-appended after */
+const EFFORT_SUFFIXES = ["-xhigh", "-high"] as const
 
 // Reverse map: Copilot dot format → Anthropic dash format
 const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
@@ -33,6 +37,16 @@ export function anthropicToCopilotModelId(
     base = base.slice(0, -4)
   }
 
+  // Strip effort suffixes (-high, -xhigh) — re-appended after mapping
+  let effortSuffix = ""
+  for (const suffix of EFFORT_SUFFIXES) {
+    if (base.endsWith(suffix)) {
+      effortSuffix = suffix
+      base = base.slice(0, -suffix.length)
+      break
+    }
+  }
+
   // Strip date suffixes (e.g. claude-sonnet-4-20250514 → claude-sonnet-4)
   if (/^claude-sonnet-4-\d{8}/.test(base)) {
     base = "claude-sonnet-4"
@@ -41,6 +55,15 @@ export function anthropicToCopilotModelId(
   }
 
   const mapped = MODEL_ID_MAP[base] ?? base
+
+  // Re-append effort suffix — check catalog first
+  if (effortSuffix) {
+    const candidate = `${mapped}${effortSuffix}`
+    if (state.models?.data.some((m) => m.id === candidate)) {
+      return candidate
+    }
+  }
+
   const use1M = is1M || has1MSuffix
 
   // Only append -1m if the 1M variant actually exists in the model catalog
@@ -65,8 +88,22 @@ export function anthropicToCopilotModelId(
  * Converts dots to dashes and maps -1m back to [1m].
  */
 export function copilotToAnthropicModelId(copilotModel: string): string {
-  const is1M = copilotModel.endsWith("-1m")
-  const base = is1M ? copilotModel.slice(0, -3) : copilotModel
+  let base = copilotModel
+
+  // Strip effort suffixes — the client doesn't need to know about these
+  for (const suffix of EFFORT_SUFFIXES) {
+    if (base.endsWith(suffix)) {
+      base = base.slice(0, -suffix.length)
+      break
+    }
+  }
+
+  const is1M = base.endsWith("-1m")
+  if (is1M) base = base.slice(0, -3)
+
+  // Strip -internal suffix
+  if (base.endsWith("-internal")) base = base.slice(0, -9)
+
   const mapped = REVERSE_MODEL_ID_MAP[base] ?? base
   return is1M ? `${mapped}[1m]` : mapped
 }
