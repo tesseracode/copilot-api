@@ -1,10 +1,116 @@
+diff --git a/.gitignore b/.gitignore
+index 577a4f1..d361740 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -11,4 +11,7 @@ node_modules/
+ .eslintcache
+ 
+ # build output
+-dist/
+\ No newline at end of file
++dist/
++
++# debug logs
++buddy-debug.log
+\ No newline at end of file
+diff --git a/src/lib/endpoint-routing.test.ts b/src/lib/endpoint-routing.test.ts
+new file mode 100644
+index 0000000..649228b
+--- /dev/null
++++ b/src/lib/endpoint-routing.test.ts
+@@ -0,0 +1,85 @@
++import { describe, it, expect } from "bun:test"
++
++import type { ModelsResponse } from "~/services/copilot/get-models"
++
++import { resolveEndpoint } from "./endpoint-routing"
++
++function mockModels(
++  entries: Array<{ id: string; supported_endpoints: Array<string> }>,
++): ModelsResponse {
++  return {
++    object: "list",
++    data: entries.map((e) => ({
++      id: e.id,
++      name: e.id,
++      version: "1.0",
++      supported_endpoints: e.supported_endpoints,
++      object: "model" as const,
++      created: 0,
++      owned_by: "test",
++    })),
++  } as unknown as ModelsResponse
++}
++
++describe("resolveEndpoint", () => {
++  const models = mockModels([
++    {
++      id: "claude-sonnet-4.6",
++      supported_endpoints: ["/v1/messages", "/chat/completions"],
++    },
++    {
++      id: "claude-opus-4.6",
++      supported_endpoints: ["/v1/messages"],
++    },
++    {
++      id: "gpt-5.5",
++      supported_endpoints: ["/responses", "/chat/completions"],
++    },
++    {
++      id: "gpt-4.1",
++      supported_endpoints: ["/chat/completions"],
++    },
++    {
++      id: "gemini-2.5-pro",
++      supported_endpoints: ["/chat/completions"],
++    },
++  ])
++
++  it("routes Claude models to /v1/messages", () => {
++    expect(resolveEndpoint("claude-sonnet-4.6", models)).toBe("/v1/messages")
++    expect(resolveEndpoint("claude-opus-4.6", models)).toBe("/v1/messages")
++  })
++
++  it("routes GPT-5.x to /responses when available", () => {
++    expect(resolveEndpoint("gpt-5.5", models)).toBe("/responses")
++  })
++
++  it("routes GPT-4.x to /chat/completions", () => {
++    expect(resolveEndpoint("gpt-4.1", models)).toBe("/chat/completions")
++  })
++
++  it("routes Gemini to /chat/completions", () => {
++    expect(resolveEndpoint("gemini-2.5-pro", models)).toBe("/chat/completions")
++  })
++
++  it("falls back to /chat/completions for unknown models", () => {
++    expect(resolveEndpoint("unknown-model", models)).toBe("/chat/completions")
++  })
++
++  it("falls back to /chat/completions when no cached models", () => {
++    expect(resolveEndpoint("claude-sonnet-4.6")).toBe("/chat/completions")
++    expect(resolveEndpoint("claude-sonnet-4.6", undefined)).toBe(
++      "/chat/completions",
++    )
++  })
++
++  it("prefers /v1/messages over /chat/completions for Claude", () => {
++    // claude-sonnet-4.6 has both endpoints — should pick /v1/messages
++    expect(resolveEndpoint("claude-sonnet-4.6", models)).toBe("/v1/messages")
++  })
++
++  it("prefers /responses over /chat/completions for dual-endpoint models", () => {
++    // gpt-5.5 has both /responses and /chat/completions
++    expect(resolveEndpoint("gpt-5.5", models)).toBe("/responses")
++  })
++})
 diff --git a/src/lib/model-mapping.test.ts b/src/lib/model-mapping.test.ts
 new file mode 100644
-index 0000000..35e23be
+index 0000000..5e38016
 --- /dev/null
 +++ b/src/lib/model-mapping.test.ts
-@@ -0,0 +1,171 @@
-+import { describe, it, expect, beforeEach } from "bun:test"
+@@ -0,0 +1,214 @@
++import { describe, expect, it, beforeEach } from "bun:test"
 +
 +import {
 +  anthropicToCopilotModelId,
@@ -12,26 +118,22 @@ index 0000000..35e23be
 +} from "./model-mapping"
 +import { state } from "./state"
 +
++// Helper to set up model catalog
++function setCatalog(ids: Array<string>) {
++  state.models = {
++    object: "list",
++    data: ids.map((id) => ({
++      id,
++      object: "model",
++      created: 0,
++      owned_by: "anthropic",
++    })),
++  } as unknown as typeof state.models
++}
++
 +describe("anthropicToCopilotModelId", () => {
 +  beforeEach(() => {
-+    // Provide a model catalog with -1m variants for suffix tests
-+    state.models = {
-+      object: "list",
-+      data: [
-+        {
-+          id: "claude-opus-4.6",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+        {
-+          id: "claude-opus-4.6-1m",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+      ],
-+    } as unknown as typeof state.models
++    setCatalog(["claude-opus-4.6", "claude-opus-4.6-1m"])
 +  })
 +
 +  it("maps dash format to dot format", () => {
@@ -44,8 +146,8 @@ index 0000000..35e23be
 +    expect(anthropicToCopilotModelId("claude-opus-4-5", false)).toBe(
 +      "claude-opus-4.5",
 +    )
-+    expect(anthropicToCopilotModelId("claude-sonnet-4-5", false)).toBe(
-+      "claude-sonnet-4.5",
++    expect(anthropicToCopilotModelId("claude-opus-4-7", false)).toBe(
++      "claude-opus-4.7",
 +    )
 +  })
 +
@@ -63,9 +165,6 @@ index 0000000..35e23be
 +
 +  it("passes through unknown models unchanged", () => {
 +    expect(anthropicToCopilotModelId("gpt-4o", false)).toBe("gpt-4o")
-+    expect(anthropicToCopilotModelId("some-new-model", false)).toBe(
-+      "some-new-model",
-+    )
 +  })
 +
 +  it("handles haiku models", () => {
@@ -76,83 +175,47 @@ index 0000000..35e23be
 +
 +  // ── -internal suffix resolution ──
 +
-+  it("resolves to -1m-internal when only -1m-internal exists in catalog", () => {
-+    state.models = {
-+      object: "list",
-+      data: [
-+        {
-+          id: "claude-opus-4.7",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+        {
-+          id: "claude-opus-4.7-1m-internal",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+      ],
-+    } as unknown as typeof state.models
-+
-+    // is1M=true → should find -1m-internal since -1m doesn't exist
++  it("resolves to -1m-internal when only that variant exists", () => {
++    setCatalog(["claude-opus-4.7", "claude-opus-4.7-1m-internal"])
 +    expect(anthropicToCopilotModelId("claude-opus-4.7", true)).toBe(
 +      "claude-opus-4.7-1m-internal",
 +    )
-+  })
-+
-+  it("resolves [1m] suffix to -1m-internal when that's the only variant", () => {
-+    state.models = {
-+      object: "list",
-+      data: [
-+        {
-+          id: "claude-opus-4.7",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+        {
-+          id: "claude-opus-4.7-1m-internal",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+      ],
-+    } as unknown as typeof state.models
-+
-+    // [1m] suffix → should resolve to -1m-internal
 +    expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
 +      "claude-opus-4.7-1m-internal",
 +    )
 +  })
 +
 +  it("prefers -1m over -1m-internal when both exist", () => {
-+    state.models = {
-+      object: "list",
-+      data: [
-+        {
-+          id: "claude-opus-4.8",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+        {
-+          id: "claude-opus-4.8-1m",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+        {
-+          id: "claude-opus-4.8-1m-internal",
-+          object: "model",
-+          created: 0,
-+          owned_by: "anthropic",
-+        },
-+      ],
-+    } as unknown as typeof state.models
-+
++    setCatalog([
++      "claude-opus-4.8",
++      "claude-opus-4.8-1m",
++      "claude-opus-4.8-1m-internal",
++    ])
 +    expect(anthropicToCopilotModelId("claude-opus-4.8", true)).toBe(
 +      "claude-opus-4.8-1m",
++    )
++  })
++
++  // ── Effort suffix handling ──
++
++  it("maps -high suffix through dash→dot conversion", () => {
++    setCatalog(["claude-opus-4.7", "claude-opus-4.7-high"])
++    expect(anthropicToCopilotModelId("claude-opus-4-7-high", false)).toBe(
++      "claude-opus-4.7-high",
++    )
++  })
++
++  it("maps -xhigh suffix through dash→dot conversion", () => {
++    setCatalog(["claude-opus-4.7", "claude-opus-4.7-xhigh"])
++    expect(anthropicToCopilotModelId("claude-opus-4-7-xhigh", false)).toBe(
++      "claude-opus-4.7-xhigh",
++    )
++  })
++
++  it("falls back to base when effort variant not in catalog", () => {
++    setCatalog(["claude-opus-4.7"])
++    expect(anthropicToCopilotModelId("claude-opus-4-7-high", false)).toBe(
++      "claude-opus-4.7",
 +    )
 +  })
 +})
@@ -160,12 +223,10 @@ index 0000000..35e23be
 +describe("copilotToAnthropicModelId", () => {
 +  it("maps dot format to dash format", () => {
 +    expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
-+    expect(copilotToAnthropicModelId("claude-sonnet-4.6")).toBe(
-+      "claude-sonnet-4-6",
-+    )
++    expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
 +  })
 +
-+  it("handles -1m suffix", () => {
++  it("handles -1m suffix → [1m]", () => {
 +    expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
 +      "claude-opus-4-6[1m]",
 +    )
@@ -174,12 +235,151 @@ index 0000000..35e23be
 +  it("passes through unknown models unchanged", () => {
 +    expect(copilotToAnthropicModelId("gpt-4o")).toBe("gpt-4o")
 +  })
++
++  // ── -internal suffix stripping ──
++
++  it("strips -internal and maps -1m to [1m]", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-1m-internal")).toBe(
++      "claude-opus-4-7[1m]",
++    )
++  })
++
++  it("strips -internal from non-1m models", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-internal")).toBe(
++      "claude-opus-4-7",
++    )
++  })
++
++  // ── Effort suffix preservation ──
++
++  it("preserves -high suffix so client gets the right model back", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
++      "claude-opus-4-7-high",
++    )
++  })
++
++  it("preserves -xhigh suffix", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
++      "claude-opus-4-7-xhigh",
++    )
++  })
++
++  // ── Combined suffix scenarios ──
++
++  it("handles -1m + -internal correctly (strip order matters)", () => {
++    // This was the bug: endsWith("-1m") failed because it ended with "-1m-internal"
++    // Must strip -internal FIRST, then check -1m
++    const result = copilotToAnthropicModelId("claude-opus-4.7-1m-internal")
++    expect(result).toBe("claude-opus-4-7[1m]")
++    // Verify it doesn't produce "claude-opus-4-7-1m" (is1M=false bug)
++    expect(result).not.toBe("claude-opus-4-7-1m")
++    expect(result).not.toContain("-1m-")
++  })
++
++  // ── Full effort routing table ──
++  // These test the reverse mapping that clients see in response.model
++
++  it("response model table: base model", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
++  })
++
++  it("response model table: effort=high variant", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
++      "claude-opus-4-7-high",
++    )
++  })
++
++  it("response model table: effort=xhigh variant", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
++      "claude-opus-4-7-xhigh",
++    )
++  })
++
++  it("response model table: 1m-internal variant", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.7-1m-internal")).toBe(
++      "claude-opus-4-7[1m]",
++    )
++  })
++
++  it("response model table: 4.6 base", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
++  })
++
++  it("response model table: 4.6-1m", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
++      "claude-opus-4-6[1m]",
++    )
++  })
++
++  // ── Non-Claude models should pass through ──
++
++  it("GPT models pass through unchanged", () => {
++    expect(copilotToAnthropicModelId("gpt-5.5")).toBe("gpt-5.5")
++    expect(copilotToAnthropicModelId("gpt-5.5-2026-04-23")).toBe(
++      "gpt-5.5-2026-04-23",
++    )
++  })
++
++  it("Gemini models pass through unchanged", () => {
++    expect(copilotToAnthropicModelId("gemini-2.5-pro")).toBe("gemini-2.5-pro")
++  })
 +})
 diff --git a/src/lib/model-mapping.ts b/src/lib/model-mapping.ts
-index 4746787..1f1dc9b 100644
+index 4746787..81dc0f6 100644
 --- a/src/lib/model-mapping.ts
 +++ b/src/lib/model-mapping.ts
-@@ -48,6 +48,13 @@ export function anthropicToCopilotModelId(
+@@ -2,6 +2,7 @@ import { state } from "./state"
+ 
+ // Forward map: Anthropic dash format → Copilot dot format
+ const MODEL_ID_MAP: Record<string, string> = {
++  "claude-opus-4-7": "claude-opus-4.7",
+   "claude-opus-4-6": "claude-opus-4.6",
+   "claude-opus-4-5": "claude-opus-4.5",
+   "claude-sonnet-4-6": "claude-sonnet-4.6",
+@@ -11,6 +12,9 @@ const MODEL_ID_MAP: Record<string, string> = {
+   "claude-haiku-4-5": "claude-haiku-4.5",
+ }
+ 
++/** Suffixes that encode effort level — stripped before mapping, re-appended after */
++const EFFORT_SUFFIXES = ["-xhigh", "-high"] as const
++
+ // Reverse map: Copilot dot format → Anthropic dash format
+ const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
+   Object.entries(MODEL_ID_MAP).map(([k, v]) => [v, k]),
+@@ -33,6 +37,16 @@ export function anthropicToCopilotModelId(
+     base = base.slice(0, -4)
+   }
+ 
++  // Strip effort suffixes (-high, -xhigh) — re-appended after mapping
++  let effortSuffix = ""
++  for (const suffix of EFFORT_SUFFIXES) {
++    if (base.endsWith(suffix)) {
++      effortSuffix = suffix
++      base = base.slice(0, -suffix.length)
++      break
++    }
++  }
++
+   // Strip date suffixes (e.g. claude-sonnet-4-20250514 → claude-sonnet-4)
+   if (/^claude-sonnet-4-\d{8}/.test(base)) {
+     base = "claude-sonnet-4"
+@@ -41,6 +55,15 @@ export function anthropicToCopilotModelId(
+   }
+ 
+   const mapped = MODEL_ID_MAP[base] ?? base
++
++  // Re-append effort suffix — check catalog first
++  if (effortSuffix) {
++    const candidate = `${mapped}${effortSuffix}`
++    if (state.models?.data.some((m) => m.id === candidate)) {
++      return candidate
++    }
++  }
++
+   const use1M = is1M || has1MSuffix
+ 
+   // Only append -1m if the 1M variant actually exists in the model catalog
+@@ -48,6 +71,13 @@ export function anthropicToCopilotModelId(
      const candidate = `${mapped}-1m`
      const exists = state.models?.data.some((m) => m.id === candidate)
      if (exists) return candidate
@@ -193,11 +393,79 @@ index 4746787..1f1dc9b 100644
    }
  
    return mapped
+@@ -56,10 +86,37 @@ export function anthropicToCopilotModelId(
+ /**
+  * Convert a Copilot-style model ID back to Anthropic-style.
+  * Converts dots to dashes and maps -1m back to [1m].
++ * Preserves effort suffixes (-high, -xhigh) so the client can
++ * send the same model back for consistent behavior.
+  */
+ export function copilotToAnthropicModelId(copilotModel: string): string {
+-  const is1M = copilotModel.endsWith("-1m")
+-  const base = is1M ? copilotModel.slice(0, -3) : copilotModel
++  let base = copilotModel
++
++  // Strip suffixes in the correct order: -internal first, then -1m, then effort
++  // because model IDs are structured as: base[-1m[-internal]][-high|-xhigh]
++  // Example: claude-opus-4.7-1m-internal → strip -internal → strip -1m → base
++
++  // 1. Strip -internal (transient preview suffix)
++  const hasInternal = base.endsWith("-internal")
++  if (hasInternal) base = base.slice(0, -9)
++
++  // 2. Strip effort suffixes — preserve for re-append
++  let effortSuffix = ""
++  for (const suffix of EFFORT_SUFFIXES) {
++    if (base.endsWith(suffix)) {
++      effortSuffix = suffix
++      base = base.slice(0, -suffix.length)
++      break
++    }
++  }
++
++  // 3. Strip -1m
++  const is1M = base.endsWith("-1m")
++  if (is1M) base = base.slice(0, -3)
++
+   const mapped = REVERSE_MODEL_ID_MAP[base] ?? base
+-  return is1M ? `${mapped}[1m]` : mapped
++  const result = is1M ? `${mapped}[1m]` : mapped
++
++  // Re-append effort suffix so the client gets the right model back
++  return effortSuffix ? `${result}${effortSuffix}` : result
+ }
+diff --git a/src/routes/messages/anthropic-types.ts b/src/routes/messages/anthropic-types.ts
+index 29f0398..c3dc408 100644
+--- a/src/routes/messages/anthropic-types.ts
++++ b/src/routes/messages/anthropic-types.ts
+@@ -23,6 +23,10 @@ export interface AnthropicMessagesPayload {
+     budget_tokens?: number
+   }
+   service_tier?: "auto" | "standard_only"
++  output_config?: {
++    effort?: "low" | "medium" | "high" | "max"
++    [key: string]: unknown
++  }
+ }
+ 
+ export interface AnthropicTextBlock {
 diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
-index f8f4a07..924eb49 100644
+index f8f4a07..2208f2c 100644
 --- a/src/routes/messages/handler.ts
 +++ b/src/routes/messages/handler.ts
-@@ -28,6 +28,18 @@ import {
+@@ -13,6 +13,11 @@ import {
+   type ChatCompletionChunk,
+   type ChatCompletionResponse,
+ } from "~/services/copilot/create-chat-completions"
++import {
++  createResponses,
++  createResponsesStreamState,
++  translateResponsesStreamEvent,
++} from "~/services/copilot/create-responses"
+ import {
+   forwardNativeMessagesNonStreaming,
+   forwardNativeMessagesStreaming,
+@@ -28,6 +33,18 @@ import {
  } from "./non-stream-translation"
  import { translateChunkToAnthropicEvents } from "./stream-translation"
  
@@ -216,7 +484,7 @@ index f8f4a07..924eb49 100644
  export async function handleCompletion(c: Context) {
    await checkRateLimit(state)
  
-@@ -38,16 +50,19 @@ export async function handleCompletion(c: Context) {
+@@ -38,25 +55,35 @@ export async function handleCompletion(c: Context) {
      await awaitApproval()
    }
  
@@ -237,8 +505,25 @@ index f8f4a07..924eb49 100644
 +    return handleNativePassthrough(c, anthropicPayload, wants1M)
    }
  
-   // Existing /chat/completions translation path
-@@ -108,14 +123,15 @@ export async function handleCompletion(c: Context) {
+-  // Existing /chat/completions translation path
++  // Translate Anthropic → OpenAI format for non-Claude models
+   const openAIPayload = translateToOpenAI(anthropicPayload)
+   consola.debug(
+     "Translated OpenAI request payload:",
+     JSON.stringify(openAIPayload),
+   )
+ 
++  // /responses for GPT-5.x models (responses-only or preferred)
++  if (endpoint === "/responses") {
++    consola.debug(`Using /responses endpoint for ${copilotModelId}`)
++    return handleResponsesViaAnthropic(c, openAIPayload)
++  }
++
++  // /chat/completions for legacy models
+   const response = await createChatCompletions(openAIPayload)
+ 
+   if (isNonStreaming(response)) {
+@@ -108,14 +135,15 @@ export async function handleCompletion(c: Context) {
  async function handleNativePassthrough(
    c: Context,
    payload: AnthropicMessagesPayload,
@@ -256,8 +541,409 @@ index f8f4a07..924eb49 100644
        await stream.writeSSE({
          event: event.type,
          data: JSON.stringify(event.data),
+@@ -127,3 +155,54 @@ async function handleNativePassthrough(
+ const isNonStreaming = (
+   response: Awaited<ReturnType<typeof createChatCompletions>>,
+ ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
++
++/**
++ * Handle a request that needs the /responses endpoint but arrived via /v1/messages.
++ * Flow: Anthropic payload → already translated to OpenAI → /responses → OpenAI response → Anthropic format.
++ */
++async function handleResponsesViaAnthropic(
++  c: Context,
++  openAIPayload: Parameters<typeof createResponses>[0],
++) {
++  const response = await createResponses(openAIPayload)
++
++  if (isNonStreaming(response)) {
++    const anthropicResponse = translateToAnthropic(response)
++    return c.json(anthropicResponse)
++  }
++
++  return streamSSE(c, async (stream) => {
++    const responsesState = createResponsesStreamState()
++    const anthropicState: AnthropicStreamState = {
++      messageStartSent: false,
++      contentBlockIndex: 0,
++      contentBlockOpen: false,
++      toolCalls: {},
++    }
++
++    for await (const rawEvent of response) {
++      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
++
++      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
++      const eventType =
++        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
++
++      // Responses SSE → OpenAI chunks
++      const chunks = translateResponsesStreamEvent(
++        { event: eventType, data: parsed },
++        responsesState,
++      )
++
++      // OpenAI chunks → Anthropic SSE events
++      for (const chunk of chunks) {
++        const events = translateChunkToAnthropicEvents(chunk, anthropicState)
++        for (const event of events) {
++          await stream.writeSSE({
++            event: event.type,
++            data: JSON.stringify(event),
++          })
++        }
++      }
++    }
++  })
++}
+diff --git a/src/routes/messages/non-stream-translation.ts b/src/routes/messages/non-stream-translation.ts
+index 94c6833..fbaccda 100644
+--- a/src/routes/messages/non-stream-translation.ts
++++ b/src/routes/messages/non-stream-translation.ts
+@@ -277,12 +277,20 @@ function translateAnthropicToolChoiceToOpenAI(
+ 
+ // Response translation
+ 
++function getThinkingBlocks(
++  reasoningText: string | null | undefined,
++): Array<AnthropicThinkingBlock> {
++  if (!reasoningText) return []
++  return [{ type: "thinking", thinking: reasoningText }]
++}
++
+ export function translateToAnthropic(
+   response: ChatCompletionResponse,
+ ): AnthropicResponse {
+   // Merge content from all choices
+   const allTextBlocks: Array<AnthropicTextBlock> = []
+   const allToolUseBlocks: Array<AnthropicToolUseBlock> = []
++  const allThinkingBlocks: Array<AnthropicThinkingBlock> = []
+   let stopReason: "stop" | "length" | "tool_calls" | "content_filter" | null =
+     null // default
+   stopReason = response.choices[0]?.finish_reason ?? stopReason
+@@ -292,6 +300,9 @@ export function translateToAnthropic(
+     const textBlocks = getAnthropicTextBlocks(choice.message.content)
+     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)
+ 
++    // Map reasoning_text from GPT-5.x /responses to Anthropic thinking blocks
++    allThinkingBlocks.push(...getThinkingBlocks(choice.message.reasoning_text))
++
+     allTextBlocks.push(...textBlocks)
+     allToolUseBlocks.push(...toolUseBlocks)
+ 
+@@ -301,14 +312,12 @@ export function translateToAnthropic(
+     }
+   }
+ 
+-  // Note: GitHub Copilot doesn't generate thinking blocks, so we don't include them in responses
+-
+   return {
+     id: response.id,
+     type: "message",
+     role: "assistant",
+     model: copilotToAnthropicModelId(response.model),
+-    content: [...allTextBlocks, ...allToolUseBlocks],
++    content: [...allThinkingBlocks, ...allTextBlocks, ...allToolUseBlocks],
+     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
+     stop_sequence: null,
+     usage: {
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 8534151..64cc7d2 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -112,6 +112,7 @@ export interface ChatCompletionResponse {
+ interface ResponseMessage {
+   role: "assistant"
+   content: string | null
++  reasoning_text?: string | null
+   tool_calls?: Array<ToolCall>
+ }
+ 
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 13d567f..f7b33cb 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -98,6 +98,12 @@ function translateMessages(
+         break
+       }
+       case "assistant": {
++        // TODO: When Copilot starts populating reasoning summaries,
++        // we should detect thinking blocks in msg.content and map them
++        // to { type: "reasoning", summary: [{type: "summary_text", text}] }
++        // instead of sending them as plain assistant text. Currently
++        // thinking blocks are concatenated into content by translateToOpenAI,
++        // which works functionally but loses semantic meaning for /responses.
+         if (msg.content) {
+           input.push({
+             type: "message",
+@@ -202,6 +208,12 @@ type ResponsesOutputItem =
+       content: Array<ResponsesMessageContent>
+     }
+   | { type: "function_call"; name: string; arguments: string; call_id: string }
++  | {
++      type: "reasoning"
++      id: string
++      summary?: Array<{ type: "summary_text"; text: string }>
++      encrypted_content?: string | null
++    }
+ 
+ interface ResponsesMessageContent {
+   type: "output_text"
+@@ -212,18 +224,36 @@ export function translateResponsesNonStreaming(
+   resp: ResponsesResponse,
+ ): ChatCompletionResponse {
+   let textContent = ""
++  let reasoningText = ""
+   const toolCalls: Array<ToolCall> = []
+ 
+   for (const item of resp.output) {
+-    if (item.type === "message") {
+-      textContent += item.content.map((c) => c.text).join("")
+-    } else {
+-      toolCalls.push({
+-        id: item.call_id,
+-        type: "function",
+-        function: { name: item.name, arguments: item.arguments },
+-      })
++    switch (item.type) {
++      case "message": {
++        textContent += item.content.map((c) => c.text).join("")
++
++        break
++      }
++      case "function_call": {
++        toolCalls.push({
++          id: item.call_id,
++          type: "function",
++          function: { name: item.name, arguments: item.arguments },
++        })
++
++        break
++      }
++      case "reasoning": {
++        // Extract reasoning summary text if available
++        if (item.summary && item.summary.length > 0) {
++          reasoningText += item.summary.map((s) => s.text).join("\n")
++        }
++
++        break
++      }
++      // No default
+     }
++    // Skip other unknown item types
+   }
+ 
+   const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
+@@ -239,6 +269,7 @@ export function translateResponsesNonStreaming(
+         message: {
+           role: "assistant",
+           content: textContent || null,
++          ...(reasoningText ? { reasoning_text: reasoningText } : {}),
+           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+         },
+         logprobs: null,
+diff --git a/src/services/copilot/forward-native-messages.test.ts b/src/services/copilot/forward-native-messages.test.ts
+new file mode 100644
+index 0000000..61955ed
+--- /dev/null
++++ b/src/services/copilot/forward-native-messages.test.ts
+@@ -0,0 +1,194 @@
++import { describe, it, expect } from "bun:test"
++
++import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
++
++import { buildNativeBody } from "./forward-native-messages"
++
++function basePayload(
++  overrides: Partial<AnthropicMessagesPayload> = {},
++): AnthropicMessagesPayload {
++  return {
++    model: "claude-sonnet-4-6",
++    messages: [{ role: "user", content: "Hello" }],
++    max_tokens: 8192,
++    ...overrides,
++  }
++}
++
++describe("buildNativeBody", () => {
++  describe("stop_sequences sanitization", () => {
++    it("strips whitespace-only stop sequences", () => {
++      const body = buildNativeBody(basePayload({ stop_sequences: ["\n"] }), {})
++      expect(body.stop_sequences).toBeUndefined()
++    })
++
++    it("keeps valid stop sequences", () => {
++      const body = buildNativeBody(
++        basePayload({ stop_sequences: ["END", "STOP"] }),
++        {},
++      )
++      expect(body.stop_sequences).toEqual(["END", "STOP"])
++    })
++
++    it("filters mixed stop sequences", () => {
++      const body = buildNativeBody(
++        basePayload({ stop_sequences: ["\n", "END", " \t ", "STOP"] }),
++        {},
++      )
++      expect(body.stop_sequences).toEqual(["END", "STOP"])
++    })
++
++    it("removes field when all entries are whitespace", () => {
++      const body = buildNativeBody(
++        basePayload({ stop_sequences: ["\n", " ", "\t"] }),
++        {},
++      )
++      expect(body).not.toHaveProperty("stop_sequences")
++    })
++  })
++
++  describe("thinking normalization", () => {
++    it("downgrades adaptive to enabled", () => {
++      const body = buildNativeBody(
++        basePayload({ thinking: { type: "adaptive" } }),
++        {},
++      )
++      expect(body.thinking).toEqual({
++        type: "enabled",
++        budget_tokens: Math.max(1024, 8192 - 1),
++      })
++    })
++
++    it("preserves enabled thinking with budget", () => {
++      const body = buildNativeBody(
++        basePayload({
++          thinking: { type: "enabled", budget_tokens: 4096 },
++        }),
++        {},
++      )
++      expect(body.thinking).toEqual({
++        type: "enabled",
++        budget_tokens: 4096,
++      })
++    })
++
++    it("enforces minimum budget of 1024", () => {
++      const body = buildNativeBody(
++        basePayload({
++          max_tokens: 1500,
++          thinking: { type: "adaptive" },
++        }),
++        {},
++      )
++      const thinking = body.thinking as { budget_tokens: number }
++      expect(thinking.budget_tokens).toBeGreaterThanOrEqual(1024)
++    })
++
++    it("passes disabled thinking through", () => {
++      const body = buildNativeBody(
++        basePayload({ thinking: { type: "disabled" } }),
++        {},
++      )
++      expect(body.thinking).toEqual({ type: "disabled" })
++    })
++
++    it("omits thinking when not specified", () => {
++      const body = buildNativeBody(basePayload(), {})
++      expect(body.thinking).toBeUndefined()
++    })
++  })
++
++  describe("effort mapping", () => {
++    it("maps low effort to disabled thinking", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "low" } }),
++        {},
++      )
++      expect(body.thinking).toEqual({ type: "disabled" })
++    })
++
++    it("maps medium effort to ~50% budget", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "medium" } }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.type).toBe("enabled")
++      expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.5))
++    })
++
++    it("maps high effort to ~80% budget", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "high" } }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.type).toBe("enabled")
++      expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.8))
++    })
++
++    it("maps max effort to max budget", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "max" } }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.type).toBe("enabled")
++      expect(thinking.budget_tokens).toBe(8192 - 1)
++    })
++
++    it("max effort overrides explicit budget", () => {
++      const body = buildNativeBody(
++        basePayload({
++          thinking: { type: "enabled", budget_tokens: 2048 },
++          output_config: { effort: "max" },
++        }),
++        {},
++      )
++      const thinking = body.thinking as { type: string; budget_tokens: number }
++      expect(thinking.budget_tokens).toBe(8192 - 1)
++    })
++  })
++
++  describe("field allowlist", () => {
++    it("does not forward output_config", () => {
++      const body = buildNativeBody(
++        basePayload({ output_config: { effort: "high" } }),
++        {},
++      )
++      expect(body).not.toHaveProperty("output_config")
++    })
++
++    it("does not forward unknown fields", () => {
++      const payload = {
++        ...basePayload(),
++        anthropic_internal: { foo: "bar" },
++      } as AnthropicMessagesPayload
++      const body = buildNativeBody(payload, {})
++      expect(body).not.toHaveProperty("anthropic_internal")
++    })
++
++    it("forwards allowed optional fields", () => {
++      const body = buildNativeBody(
++        basePayload({
++          system: "You are helpful",
++          temperature: 0.7,
++          top_p: 0.9,
++          top_k: 40,
++        }),
++        {},
++      )
++      expect(body.system).toBe("You are helpful")
++      expect(body.temperature).toBe(0.7)
++      expect(body.top_p).toBe(0.9)
++      expect(body.top_k).toBe(40)
++    })
++  })
++
++  describe("overrides", () => {
++    it("applies overrides last", () => {
++      const body = buildNativeBody(basePayload(), { stream: true })
++      expect(body.stream).toBe(true)
++    })
++  })
++})
 diff --git a/src/services/copilot/forward-native-messages.ts b/src/services/copilot/forward-native-messages.ts
-index b8e0ed6..d7f6b00 100644
+index b8e0ed6..0f0eab2 100644
 --- a/src/services/copilot/forward-native-messages.ts
 +++ b/src/services/copilot/forward-native-messages.ts
 @@ -9,21 +9,121 @@ import { anthropicToCopilotModelId } from "~/lib/model-mapping"
@@ -392,10 +1078,29 @@ index b8e0ed6..d7f6b00 100644
  }
  
  /** Whitelist of optional fields safe to forward to Copilot /v1/messages */
-@@ -39,18 +139,33 @@ const OPTIONAL_FIELDS = [
+@@ -39,18 +139,91 @@ const OPTIONAL_FIELDS = [
    "service_tier",
  ] as const
  
++/**
++ * Map effort level to a model ID suffix for models that encode effort in the ID.
++ * Returns null for effort levels that don't need a suffix upgrade.
++ */
++function resolveEffortSuffix(effort: string): string | null {
++  switch (effort) {
++    case "high": {
++      return "-high"
++    }
++    case "max":
++    case "xhigh": {
++      return "-xhigh"
++    }
++    default: {
++      return null
++    } // low/medium don't have dedicated variants
++  }
++}
++
 +/**
 + * Check whether a model supports output_config.effort.
 + * Only 4.6 and 4.7-1m models support it; older and 4.7 base do not.
@@ -407,6 +1112,45 @@ index b8e0ed6..d7f6b00 100644
 +  if (generation === "4.6") return true
 +  // 4.7-1m-internal supports effort, but 4.7 base does not
 +  if (generation === "4.7+" && copilotModelId.includes("-1m")) return true
++  return false
++}
++
++interface ResolveEffortOpts {
++  copilotModelId: string
++  generation: ModelGeneration
++  effort: string | undefined
++  body: Record<string, unknown>
++  outputConfig: Record<string, unknown> | undefined
++}
++
++/**
++ * Resolve effort by upgrading the model ID or forwarding output_config.
++ * Returns whether effort was handled.
++ */
++function resolveEffort(opts: ResolveEffortOpts): boolean {
++  const { copilotModelId, generation, effort, body, outputConfig } = opts
++  if (!effort) return false
++
++  // Models that accept output_config.effort natively
++  if (supportsEffort(generation, copilotModelId)) {
++    const normalizedEffort = effort === "max" ? "xhigh" : effort
++    body.output_config = { ...outputConfig, effort: normalizedEffort }
++    return true
++  }
++
++  // Try upgrading to -high/-xhigh variant
++  const suffix = resolveEffortSuffix(effort)
++  if (suffix) {
++    const candidate = `${copilotModelId}${suffix}`
++    if (state.models?.data.some((m) => m.id === candidate)) {
++      consola.debug(
++        `Effort upgrade: ${copilotModelId} → ${candidate} (effort=${effort})`,
++      )
++      body.model = candidate
++      return true
++    }
++  }
++
 +  return false
 +}
 +
@@ -428,7 +1172,7 @@ index b8e0ed6..d7f6b00 100644
    )
  
    const body: Record<string, unknown> = {
-@@ -65,7 +180,33 @@ function buildNativeBody(
+@@ -65,7 +238,35 @@ function buildNativeBody(
      }
    }
  
@@ -448,22 +1192,24 @@ index b8e0ed6..d7f6b00 100644
 +  const effort = payload.output_config?.effort
 +  const generation = detectGeneration(copilotModelId)
 +
-+  // Forward output_config only to models that support it
-+  if (effort && supportsEffort(generation, copilotModelId)) {
-+    body.output_config = payload.output_config
-+  }
++  const effortHandled = resolveEffort({
++    copilotModelId,
++    generation,
++    effort,
++    body,
++    outputConfig: payload.output_config,
++  })
 +
 +  const thinking = normalizeThinking({
 +    thinking: payload.thinking,
 +    maxTokens: payload.max_tokens,
 +    generation,
-+    // Only pass effort if the model does NOT support output_config natively
-+    effort: supportsEffort(generation, copilotModelId) ? undefined : effort,
++    effort: effortHandled ? undefined : effort,
 +  })
    if (thinking) body.thinking = thinking
  
    Object.assign(body, overrides)
-@@ -80,11 +221,12 @@ function buildNativeBody(
+@@ -80,11 +281,12 @@ function buildNativeBody(
  export async function forwardNativeMessages(
    payload: AnthropicMessagesPayload,
    streamOverride?: boolean,
@@ -477,7 +1223,7 @@ index b8e0ed6..d7f6b00 100644
  
    const url = `${copilotBaseUrl(state)}/v1/messages`
  
-@@ -113,8 +255,9 @@ export async function forwardNativeMessages(
+@@ -113,8 +315,9 @@ export async function forwardNativeMessages(
   */
  export async function forwardNativeMessagesNonStreaming(
    payload: AnthropicMessagesPayload,
@@ -488,7 +1234,7 @@ index b8e0ed6..d7f6b00 100644
    return await response.json()
  }
  
-@@ -123,8 +266,9 @@ export async function forwardNativeMessagesNonStreaming(
+@@ -123,8 +326,9 @@ export async function forwardNativeMessagesNonStreaming(
   */
  export async function* forwardNativeMessagesStreaming(
    payload: AnthropicMessagesPayload,

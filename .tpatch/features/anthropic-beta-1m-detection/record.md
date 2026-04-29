@@ -1,24 +1,24 @@
 # Implementation Record: anthropic-beta-1m-detection
 
-**Recorded**: 2026-04-28T06:50:41Z
-**Files changed**: 4
-**Patch size**: 15914 bytes
+**Recorded**: 2026-04-29T05:11:28Z
+**Files changed**: 11
+**Patch size**: 40771 bytes
 
 ## Change Summary
 
 ```
- .../artifacts/apply-recipe.json                    | 34 +++++++++++++++++++++-
- .../artifacts/post-apply-diff.txt                  | 12 ++++----
- .../artifacts/recipe-stale.json                    |  5 ----
- .../features/internal-suffix-resolution/record.md  | 14 +++++----
- .../internal-suffix-resolution/status.json         |  4 +--
- .../artifacts/apply-recipe.json                    | 34 +++++++++++++++++++++-
- .../artifacts/post-apply-diff.txt                  | 11 +++----
- .../artifacts/recipe-stale.json                    |  5 ----
- .tpatch/features/per-generation-thinking/record.md | 13 +++++----
- .../features/per-generation-thinking/status.json   |  4 +--
- src/routes/messages/anthropic-types.ts             |  4 +++
- 11 files changed, 102 insertions(+), 38 deletions(-)
+ .../artifacts/post-apply.patch                     | 976 ++++++++++++++++++---
+ .../artifacts/apply-recipe.json                    |   9 +-
+ .../artifacts/post-apply-diff.txt                  |   4 +-
+ .../effort-model-suffix/artifacts/post-apply.patch | 324 ++++++-
+ .tpatch/features/effort-model-suffix/record.md     |  10 +-
+ .tpatch/features/effort-model-suffix/status.json   |   4 +-
+ .../artifacts/apply-recipe.json                    |  57 +-
+ .../artifacts/post-apply-diff.txt                  |  14 +-
+ .../artifacts/post-apply.patch                     | 976 ++++++++++++++++++---
+ .../features/internal-suffix-resolution/record.md  |  20 +-
+ .../internal-suffix-resolution/status.json         |   4 +-
+ 11 files changed, 2128 insertions(+), 270 deletions(-)
 ```
 
 ## Replay Instructions

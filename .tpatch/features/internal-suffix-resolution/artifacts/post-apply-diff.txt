@@ -1,7 +1,7 @@
- .../artifacts/apply-recipe.json                    | 34 +++++++++++++++++++++-
- .../artifacts/post-apply-diff.txt                  | 11 +++----
- .../artifacts/recipe-stale.json                    |  5 ----
- .tpatch/features/per-generation-thinking/record.md | 13 +++++----
- .../features/per-generation-thinking/status.json   |  4 +--
- src/routes/messages/anthropic-types.ts             |  4 +++
- 6 files changed, 52 insertions(+), 19 deletions(-)
+ .../artifacts/apply-recipe.json                    |   9 +-
+ .../artifacts/post-apply-diff.txt                  |   4 +-
+ .../effort-model-suffix/artifacts/post-apply.patch | 324 ++++++-
+ .tpatch/features/effort-model-suffix/record.md     |  10 +-
+ .tpatch/features/effort-model-suffix/status.json   |   4 +-
+ .../artifacts/post-apply.patch                     | 976 ++++++++++++++++++---
+ 6 files changed, 1195 insertions(+), 132 deletions(-)

@@ -1,19 +1,19 @@
 # Implementation Record: internal-suffix-resolution
 
-**Recorded**: 2026-04-28T06:50:41Z
-**Files changed**: 4
-**Patch size**: 15914 bytes
+**Recorded**: 2026-04-29T05:11:28Z
+**Files changed**: 11
+**Patch size**: 40771 bytes
 
 ## Change Summary
 
 ```
- .../artifacts/apply-recipe.json                    | 34 +++++++++++++++++++++-
- .../artifacts/post-apply-diff.txt                  | 11 +++----
- .../artifacts/recipe-stale.json                    |  5 ----
- .tpatch/features/per-generation-thinking/record.md | 13 +++++----
- .../features/per-generation-thinking/status.json   |  4 +--
- src/routes/messages/anthropic-types.ts             |  4 +++
- 6 files changed, 52 insertions(+), 19 deletions(-)
+ .../artifacts/apply-recipe.json                    |   9 +-
+ .../artifacts/post-apply-diff.txt                  |   4 +-
+ .../effort-model-suffix/artifacts/post-apply.patch | 324 ++++++-
+ .tpatch/features/effort-model-suffix/record.md     |  10 +-
+ .tpatch/features/effort-model-suffix/status.json   |   4 +-
+ .../artifacts/post-apply.patch                     | 976 ++++++++++++++++++---
+ 6 files changed, 1195 insertions(+), 132 deletions(-)
 ```
 
 ## Replay Instructions
