@@ -138,17 +138,19 @@ describe("copilotToAnthropicModelId", () => {
     )
   })
 
-  // ── Effort suffix preservation ──
+  // ── Effort suffix stripping ──
+  // Callers like Claude Code's getCanonicalName() don't recognize -high/-xhigh.
+  // Effort is a request-time concern; response uses base model identity.
 
-  it("preserves -high suffix so client gets the right model back", () => {
+  it("strips -high suffix for clean response model", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
-      "claude-opus-4-7-high",
+      "claude-opus-4-7",
     )
   })
 
-  it("preserves -xhigh suffix", () => {
+  it("strips -xhigh suffix for clean response model", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
-      "claude-opus-4-7-xhigh",
+      "claude-opus-4-7",
     )
   })
 
@@ -171,15 +173,15 @@ describe("copilotToAnthropicModelId", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
   })
 
-  it("response model table: effort=high variant", () => {
+  it("response model table: effort=high variant stripped to base", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
-      "claude-opus-4-7-high",
+      "claude-opus-4-7",
     )
   })
 
-  it("response model table: effort=xhigh variant", () => {
+  it("response model table: effort=xhigh variant stripped to base", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
-      "claude-opus-4-7-xhigh",
+      "claude-opus-4-7",
     )
   })
 
