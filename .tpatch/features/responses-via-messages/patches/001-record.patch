@@ -1,0 +1,254 @@
+diff --git a/.gitignore b/.gitignore
+index 577a4f1..d361740 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -11,4 +11,7 @@ node_modules/
+ .eslintcache
+ 
+ # build output
+-dist/
+\ No newline at end of file
++dist/
++
++# debug logs
++buddy-debug.log
+\ No newline at end of file
+diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
+index 924eb49..2208f2c 100644
+--- a/src/routes/messages/handler.ts
++++ b/src/routes/messages/handler.ts
+@@ -13,6 +13,11 @@ import {
+   type ChatCompletionChunk,
+   type ChatCompletionResponse,
+ } from "~/services/copilot/create-chat-completions"
++import {
++  createResponses,
++  createResponsesStreamState,
++  translateResponsesStreamEvent,
++} from "~/services/copilot/create-responses"
+ import {
+   forwardNativeMessagesNonStreaming,
+   forwardNativeMessagesStreaming,
+@@ -65,13 +70,20 @@ export async function handleCompletion(c: Context) {
+     return handleNativePassthrough(c, anthropicPayload, wants1M)
+   }
+ 
+-  // Existing /chat/completions translation path
++  // Translate Anthropic → OpenAI format for non-Claude models
+   const openAIPayload = translateToOpenAI(anthropicPayload)
+   consola.debug(
+     "Translated OpenAI request payload:",
+     JSON.stringify(openAIPayload),
+   )
+ 
++  // /responses for GPT-5.x models (responses-only or preferred)
++  if (endpoint === "/responses") {
++    consola.debug(`Using /responses endpoint for ${copilotModelId}`)
++    return handleResponsesViaAnthropic(c, openAIPayload)
++  }
++
++  // /chat/completions for legacy models
+   const response = await createChatCompletions(openAIPayload)
+ 
+   if (isNonStreaming(response)) {
+@@ -143,3 +155,54 @@ async function handleNativePassthrough(
+ const isNonStreaming = (
+   response: Awaited<ReturnType<typeof createChatCompletions>>,
+ ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
++
++/**
++ * Handle a request that needs the /responses endpoint but arrived via /v1/messages.
++ * Flow: Anthropic payload → already translated to OpenAI → /responses → OpenAI response → Anthropic format.
++ */
++async function handleResponsesViaAnthropic(
++  c: Context,
++  openAIPayload: Parameters<typeof createResponses>[0],
++) {
++  const response = await createResponses(openAIPayload)
++
++  if (isNonStreaming(response)) {
++    const anthropicResponse = translateToAnthropic(response)
++    return c.json(anthropicResponse)
++  }
++
++  return streamSSE(c, async (stream) => {
++    const responsesState = createResponsesStreamState()
++    const anthropicState: AnthropicStreamState = {
++      messageStartSent: false,
++      contentBlockIndex: 0,
++      contentBlockOpen: false,
++      toolCalls: {},
++    }
++
++    for await (const rawEvent of response) {
++      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
++
++      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
++      const eventType =
++        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
++
++      // Responses SSE → OpenAI chunks
++      const chunks = translateResponsesStreamEvent(
++        { event: eventType, data: parsed },
++        responsesState,
++      )
++
++      // OpenAI chunks → Anthropic SSE events
++      for (const chunk of chunks) {
++        const events = translateChunkToAnthropicEvents(chunk, anthropicState)
++        for (const event of events) {
++          await stream.writeSSE({
++            event: event.type,
++            data: JSON.stringify(event),
++          })
++        }
++      }
++    }
++  })
++}
+diff --git a/src/routes/messages/non-stream-translation.ts b/src/routes/messages/non-stream-translation.ts
+index 94c6833..fbaccda 100644
+--- a/src/routes/messages/non-stream-translation.ts
++++ b/src/routes/messages/non-stream-translation.ts
+@@ -277,12 +277,20 @@ function translateAnthropicToolChoiceToOpenAI(
+ 
+ // Response translation
+ 
++function getThinkingBlocks(
++  reasoningText: string | null | undefined,
++): Array<AnthropicThinkingBlock> {
++  if (!reasoningText) return []
++  return [{ type: "thinking", thinking: reasoningText }]
++}
++
+ export function translateToAnthropic(
+   response: ChatCompletionResponse,
+ ): AnthropicResponse {
+   // Merge content from all choices
+   const allTextBlocks: Array<AnthropicTextBlock> = []
+   const allToolUseBlocks: Array<AnthropicToolUseBlock> = []
++  const allThinkingBlocks: Array<AnthropicThinkingBlock> = []
+   let stopReason: "stop" | "length" | "tool_calls" | "content_filter" | null =
+     null // default
+   stopReason = response.choices[0]?.finish_reason ?? stopReason
+@@ -292,6 +300,9 @@ export function translateToAnthropic(
+     const textBlocks = getAnthropicTextBlocks(choice.message.content)
+     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)
+ 
++    // Map reasoning_text from GPT-5.x /responses to Anthropic thinking blocks
++    allThinkingBlocks.push(...getThinkingBlocks(choice.message.reasoning_text))
++
+     allTextBlocks.push(...textBlocks)
+     allToolUseBlocks.push(...toolUseBlocks)
+ 
+@@ -301,14 +312,12 @@ export function translateToAnthropic(
+     }
+   }
+ 
+-  // Note: GitHub Copilot doesn't generate thinking blocks, so we don't include them in responses
+-
+   return {
+     id: response.id,
+     type: "message",
+     role: "assistant",
+     model: copilotToAnthropicModelId(response.model),
+-    content: [...allTextBlocks, ...allToolUseBlocks],
++    content: [...allThinkingBlocks, ...allTextBlocks, ...allToolUseBlocks],
+     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
+     stop_sequence: null,
+     usage: {
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 8534151..64cc7d2 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -112,6 +112,7 @@ export interface ChatCompletionResponse {
+ interface ResponseMessage {
+   role: "assistant"
+   content: string | null
++  reasoning_text?: string | null
+   tool_calls?: Array<ToolCall>
+ }
+ 
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 13d567f..f7b33cb 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -98,6 +98,12 @@ function translateMessages(
+         break
+       }
+       case "assistant": {
++        // TODO: When Copilot starts populating reasoning summaries,
++        // we should detect thinking blocks in msg.content and map them
++        // to { type: "reasoning", summary: [{type: "summary_text", text}] }
++        // instead of sending them as plain assistant text. Currently
++        // thinking blocks are concatenated into content by translateToOpenAI,
++        // which works functionally but loses semantic meaning for /responses.
+         if (msg.content) {
+           input.push({
+             type: "message",
+@@ -202,6 +208,12 @@ type ResponsesOutputItem =
+       content: Array<ResponsesMessageContent>
+     }
+   | { type: "function_call"; name: string; arguments: string; call_id: string }
++  | {
++      type: "reasoning"
++      id: string
++      summary?: Array<{ type: "summary_text"; text: string }>
++      encrypted_content?: string | null
++    }
+ 
+ interface ResponsesMessageContent {
+   type: "output_text"
+@@ -212,18 +224,36 @@ export function translateResponsesNonStreaming(
+   resp: ResponsesResponse,
+ ): ChatCompletionResponse {
+   let textContent = ""
++  let reasoningText = ""
+   const toolCalls: Array<ToolCall> = []
+ 
+   for (const item of resp.output) {
+-    if (item.type === "message") {
+-      textContent += item.content.map((c) => c.text).join("")
+-    } else {
+-      toolCalls.push({
+-        id: item.call_id,
+-        type: "function",
+-        function: { name: item.name, arguments: item.arguments },
+-      })
++    switch (item.type) {
++      case "message": {
++        textContent += item.content.map((c) => c.text).join("")
++
++        break
++      }
++      case "function_call": {
++        toolCalls.push({
++          id: item.call_id,
++          type: "function",
++          function: { name: item.name, arguments: item.arguments },
++        })
++
++        break
++      }
++      case "reasoning": {
++        // Extract reasoning summary text if available
++        if (item.summary && item.summary.length > 0) {
++          reasoningText += item.summary.map((s) => s.text).join("\n")
++        }
++
++        break
++      }
++      // No default
+     }
++    // Skip other unknown item types
+   }
+ 
+   const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
+@@ -239,6 +269,7 @@ export function translateResponsesNonStreaming(
+         message: {
+           role: "assistant",
+           content: textContent || null,
++          ...(reasoningText ? { reasoning_text: reasoningText } : {}),
+           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+         },
+         logprobs: null,

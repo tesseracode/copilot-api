@@ -2,11 +2,15 @@
   "id": "responses-via-messages",
   "slug": "responses-via-messages",
   "title": "Route /responses-only models through the /v1/messages handler: when the Anthropic SDK sends GPT-5.x models to /v1/messages, translate Anthropic→OpenAI→Responses and back, with reasoning block handling",
-  "state": "requested",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-04-28T22:39:29Z",
-  "updated_at": "2026-04-28T22:39:29Z",
-  "last_command": "add",
-  "apply": {},
+  "updated_at": "2026-04-29T00:28:45Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "eb9b3e9c29c91dad13dadb8b549f2f409696c3ae",
+    "has_patch": true
+  },
   "reconcile": {}
 }
