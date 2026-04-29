@@ -1,0 +1,16 @@
+{
+  "id": "effort-model-suffix",
+  "slug": "effort-model-suffix",
+  "title": "Effort-to-model-suffix upgrade: map output_config.effort to -high/-xhigh model variants for models that reject effort as a parameter (e.g. opus-4.7 base). Strip suffixes in model ID mapping. Normalize effort max→xhigh.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-29T04:53:31Z",
+  "updated_at": "2026-04-29T04:53:32Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "200234101a45b508af99242d0f4529f98971b3bd",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

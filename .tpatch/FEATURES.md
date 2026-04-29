@@ -3,6 +3,7 @@
 | Slug | Title | State | Compatibility |
 |------|-------|-------|---------------|
 | `anthropic-beta-1m-detection` | Detect anthropic-beta: context-1m-2025-08-07 header per-request to activate 1M context window. The Claude Agent SDK sends this header instead of [1m] in the model name. Upgrades model to -1m variant when header is present. | applied | unknown |
+| `effort-model-suffix` | Effort-to-model-suffix upgrade: map output_config.effort to -high/-xhigh model variants for models that reject effort as a parameter (e.g. opus-4.7 base). Strip suffixes in model ID mapping. Normalize effort max→xhigh. | applied | unknown |
 | `health-endpoint` | Add a GET /health endpoint that returns JSON with uptime in seconds, model count, and server version from package.json | applied | unknown |
 | `hide-internal-models` | Add a --hide-internal CLI flag that filters out models whose ID contains 'internal' or starts with 'accounts/' from the /models response | applied | unknown |
 | `internal-suffix-resolution` | Resolve -internal model suffix: when a client requests a -1m variant that doesn't exist but a -1m-internal variant does in the catalog, resolve to the internal variant. Safe no-op when suffix is dropped. | applied | unknown |
