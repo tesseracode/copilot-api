@@ -187,13 +187,11 @@ async function handleResponsesViaAnthropic(
       const eventType =
         rawEvent.event ?? (parsed.type as string | undefined) ?? ""
 
-      // Responses SSE → OpenAI chunks
       const chunks = translateResponsesStreamEvent(
         { event: eventType, data: parsed },
         responsesState,
       )
 
-      // OpenAI chunks → Anthropic SSE events
       for (const chunk of chunks) {
         const events = translateChunkToAnthropicEvents(chunk, anthropicState)
         for (const event of events) {

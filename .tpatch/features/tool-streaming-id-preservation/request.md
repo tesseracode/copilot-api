@@ -1,0 +1,1 @@
+Preserve stable tool-call indices across /responses streaming argument deltas so Anthropic tool calls stay parseable, and strengthen the existing /chat/completions -> /v1/messages streaming tool-call regression test to assert stable block/index mapping and full JSON reconstruction.
