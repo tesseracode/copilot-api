@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, expect, it, beforeEach } from "bun:test"
 
 import {
   anthropicToCopilotModelId,
@@ -6,26 +6,22 @@ import {
 } from "./model-mapping"
 import { state } from "./state"
 
+// Helper to set up model catalog
+function setCatalog(ids: Array<string>) {
+  state.models = {
+    object: "list",
+    data: ids.map((id) => ({
+      id,
+      object: "model",
+      created: 0,
+      owned_by: "anthropic",
+    })),
+  } as unknown as typeof state.models
+}
+
 describe("anthropicToCopilotModelId", () => {
   beforeEach(() => {
-    // Provide a model catalog with -1m variants for suffix tests
-    state.models = {
-      object: "list",
-      data: [
-        {
-          id: "claude-opus-4.6",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-        {
-          id: "claude-opus-4.6-1m",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-      ],
-    } as unknown as typeof state.models
+    setCatalog(["claude-opus-4.6", "claude-opus-4.6-1m"])
   })
 
   it("maps dash format to dot format", () => {
@@ -38,8 +34,8 @@ describe("anthropicToCopilotModelId", () => {
     expect(anthropicToCopilotModelId("claude-opus-4-5", false)).toBe(
       "claude-opus-4.5",
     )
-    expect(anthropicToCopilotModelId("claude-sonnet-4-5", false)).toBe(
-      "claude-sonnet-4.5",
+    expect(anthropicToCopilotModelId("claude-opus-4-7", false)).toBe(
+      "claude-opus-4.7",
     )
   })
 
@@ -57,9 +53,6 @@ describe("anthropicToCopilotModelId", () => {
 
   it("passes through unknown models unchanged", () => {
     expect(anthropicToCopilotModelId("gpt-4o", false)).toBe("gpt-4o")
-    expect(anthropicToCopilotModelId("some-new-model", false)).toBe(
-      "some-new-model",
-    )
   })
 
   it("handles haiku models", () => {
@@ -70,83 +63,47 @@ describe("anthropicToCopilotModelId", () => {
 
   // ── -internal suffix resolution ──
 
-  it("resolves to -1m-internal when only -1m-internal exists in catalog", () => {
-    state.models = {
-      object: "list",
-      data: [
-        {
-          id: "claude-opus-4.7",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-        {
-          id: "claude-opus-4.7-1m-internal",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-      ],
-    } as unknown as typeof state.models
-
-    // is1M=true → should find -1m-internal since -1m doesn't exist
+  it("resolves to -1m-internal when only that variant exists", () => {
+    setCatalog(["claude-opus-4.7", "claude-opus-4.7-1m-internal"])
     expect(anthropicToCopilotModelId("claude-opus-4.7", true)).toBe(
       "claude-opus-4.7-1m-internal",
     )
-  })
-
-  it("resolves [1m] suffix to -1m-internal when that's the only variant", () => {
-    state.models = {
-      object: "list",
-      data: [
-        {
-          id: "claude-opus-4.7",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-        {
-          id: "claude-opus-4.7-1m-internal",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-      ],
-    } as unknown as typeof state.models
-
-    // [1m] suffix → should resolve to -1m-internal
     expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
       "claude-opus-4.7-1m-internal",
     )
   })
 
   it("prefers -1m over -1m-internal when both exist", () => {
-    state.models = {
-      object: "list",
-      data: [
-        {
-          id: "claude-opus-4.8",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-        {
-          id: "claude-opus-4.8-1m",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-        {
-          id: "claude-opus-4.8-1m-internal",
-          object: "model",
-          created: 0,
-          owned_by: "anthropic",
-        },
-      ],
-    } as unknown as typeof state.models
-
+    setCatalog([
+      "claude-opus-4.8",
+      "claude-opus-4.8-1m",
+      "claude-opus-4.8-1m-internal",
+    ])
     expect(anthropicToCopilotModelId("claude-opus-4.8", true)).toBe(
       "claude-opus-4.8-1m",
+    )
+  })
+
+  // ── Effort suffix handling ──
+
+  it("maps -high suffix through dash→dot conversion", () => {
+    setCatalog(["claude-opus-4.7", "claude-opus-4.7-high"])
+    expect(anthropicToCopilotModelId("claude-opus-4-7-high", false)).toBe(
+      "claude-opus-4.7-high",
+    )
+  })
+
+  it("maps -xhigh suffix through dash→dot conversion", () => {
+    setCatalog(["claude-opus-4.7", "claude-opus-4.7-xhigh"])
+    expect(anthropicToCopilotModelId("claude-opus-4-7-xhigh", false)).toBe(
+      "claude-opus-4.7-xhigh",
+    )
+  })
+
+  it("falls back to base when effort variant not in catalog", () => {
+    setCatalog(["claude-opus-4.7"])
+    expect(anthropicToCopilotModelId("claude-opus-4-7-high", false)).toBe(
+      "claude-opus-4.7",
     )
   })
 })
@@ -154,12 +111,10 @@ describe("anthropicToCopilotModelId", () => {
 describe("copilotToAnthropicModelId", () => {
   it("maps dot format to dash format", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
-    expect(copilotToAnthropicModelId("claude-sonnet-4.6")).toBe(
-      "claude-sonnet-4-6",
-    )
+    expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
   })
 
-  it("handles -1m suffix", () => {
+  it("handles -1m suffix → [1m]", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
       "claude-opus-4-6[1m]",
     )
@@ -167,5 +122,93 @@ describe("copilotToAnthropicModelId", () => {
 
   it("passes through unknown models unchanged", () => {
     expect(copilotToAnthropicModelId("gpt-4o")).toBe("gpt-4o")
+  })
+
+  // ── -internal suffix stripping ──
+
+  it("strips -internal and maps -1m to [1m]", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-1m-internal")).toBe(
+      "claude-opus-4-7[1m]",
+    )
+  })
+
+  it("strips -internal from non-1m models", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-internal")).toBe(
+      "claude-opus-4-7",
+    )
+  })
+
+  // ── Effort suffix preservation ──
+
+  it("preserves -high suffix so client gets the right model back", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
+      "claude-opus-4-7-high",
+    )
+  })
+
+  it("preserves -xhigh suffix", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
+      "claude-opus-4-7-xhigh",
+    )
+  })
+
+  // ── Combined suffix scenarios ──
+
+  it("handles -1m + -internal correctly (strip order matters)", () => {
+    // This was the bug: endsWith("-1m") failed because it ended with "-1m-internal"
+    // Must strip -internal FIRST, then check -1m
+    const result = copilotToAnthropicModelId("claude-opus-4.7-1m-internal")
+    expect(result).toBe("claude-opus-4-7[1m]")
+    // Verify it doesn't produce "claude-opus-4-7-1m" (is1M=false bug)
+    expect(result).not.toBe("claude-opus-4-7-1m")
+    expect(result).not.toContain("-1m-")
+  })
+
+  // ── Full effort routing table ──
+  // These test the reverse mapping that clients see in response.model
+
+  it("response model table: base model", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
+  })
+
+  it("response model table: effort=high variant", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
+      "claude-opus-4-7-high",
+    )
+  })
+
+  it("response model table: effort=xhigh variant", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
+      "claude-opus-4-7-xhigh",
+    )
+  })
+
+  it("response model table: 1m-internal variant", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.7-1m-internal")).toBe(
+      "claude-opus-4-7[1m]",
+    )
+  })
+
+  it("response model table: 4.6 base", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
+  })
+
+  it("response model table: 4.6-1m", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
+      "claude-opus-4-6[1m]",
+    )
+  })
+
+  // ── Non-Claude models should pass through ──
+
+  it("GPT models pass through unchanged", () => {
+    expect(copilotToAnthropicModelId("gpt-5.5")).toBe("gpt-5.5")
+    expect(copilotToAnthropicModelId("gpt-5.5-2026-04-23")).toBe(
+      "gpt-5.5-2026-04-23",
+    )
+  })
+
+  it("Gemini models pass through unchanged", () => {
+    expect(copilotToAnthropicModelId("gemini-2.5-pro")).toBe("gemini-2.5-pro")
   })
 })

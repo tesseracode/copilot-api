@@ -86,24 +86,37 @@ export function anthropicToCopilotModelId(
 /**
  * Convert a Copilot-style model ID back to Anthropic-style.
  * Converts dots to dashes and maps -1m back to [1m].
+ * Preserves effort suffixes (-high, -xhigh) so the client can
+ * send the same model back for consistent behavior.
  */
 export function copilotToAnthropicModelId(copilotModel: string): string {
   let base = copilotModel
 
-  // Strip effort suffixes — the client doesn't need to know about these
+  // Strip suffixes in the correct order: -internal first, then -1m, then effort
+  // because model IDs are structured as: base[-1m[-internal]][-high|-xhigh]
+  // Example: claude-opus-4.7-1m-internal → strip -internal → strip -1m → base
+
+  // 1. Strip -internal (transient preview suffix)
+  const hasInternal = base.endsWith("-internal")
+  if (hasInternal) base = base.slice(0, -9)
+
+  // 2. Strip effort suffixes — preserve for re-append
+  let effortSuffix = ""
   for (const suffix of EFFORT_SUFFIXES) {
     if (base.endsWith(suffix)) {
+      effortSuffix = suffix
       base = base.slice(0, -suffix.length)
       break
     }
   }
 
+  // 3. Strip -1m
   const is1M = base.endsWith("-1m")
   if (is1M) base = base.slice(0, -3)
 
-  // Strip -internal suffix
-  if (base.endsWith("-internal")) base = base.slice(0, -9)
-
   const mapped = REVERSE_MODEL_ID_MAP[base] ?? base
-  return is1M ? `${mapped}[1m]` : mapped
+  const result = is1M ? `${mapped}[1m]` : mapped
+
+  // Re-append effort suffix so the client gets the right model back
+  return effortSuffix ? `${result}${effortSuffix}` : result
 }
