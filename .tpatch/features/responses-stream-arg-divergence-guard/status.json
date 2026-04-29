@@ -2,11 +2,15 @@
   "id": "responses-stream-arg-divergence-guard",
   "slug": "responses-stream-arg-divergence-guard",
   "title": "Guard against tool-call argument corruption in /responses streaming translation. In src/services/copilot/create-responses.ts, syncToolArguments currently emits the full nextArguments as a delta (and overwrites the accumulator) when nextArguments does not start with the previously accumulated arguments. Because earlier deltas already reached the client, this produces duplicated/invalid JSON in tool_use input. Detect the divergence, log a warning with both prefixes, and avoid re-emitting the prefix as a delta. Add a unit test simulating response.function_call_arguments.done arriving with arguments that disagree with the accumulated stream.",
-  "state": "requested",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-04-29T22:10:05Z",
-  "updated_at": "2026-04-29T22:10:05Z",
-  "last_command": "add",
-  "apply": {},
+  "updated_at": "2026-04-29T23:34:50Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "0713ed4db091df1c1a8e2977d28eebcec2c559af",
+    "has_patch": true
+  },
   "reconcile": {}
 }
