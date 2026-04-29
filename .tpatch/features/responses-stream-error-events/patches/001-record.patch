@@ -1,0 +1,402 @@
+diff --git a/src/routes/messages/stream-translation.ts b/src/routes/messages/stream-translation.ts
+index 7dae876..a2bb082 100644
+--- a/src/routes/messages/stream-translation.ts
++++ b/src/routes/messages/stream-translation.ts
+@@ -24,7 +24,40 @@ export function translateChunkToAnthropicEvents(
+ ): Array<AnthropicStreamEventData> {
+   const events: Array<AnthropicStreamEventData> = []
+ 
+-  if (chunk.choices.length === 0) {
++  if (chunk.choices.length === 0 && !chunk.error) {
++    return events
++  }
++
++  if (chunk.error) {
++    if (!state.messageStartSent) {
++      events.push({
++        type: "message_start",
++        message: {
++          id: chunk.id,
++          type: "message",
++          role: "assistant",
++          content: [],
++          model: copilotToAnthropicModelId(chunk.model),
++          stop_reason: null,
++          stop_sequence: null,
++          usage: { input_tokens: 0, output_tokens: 0 },
++        },
++      })
++      state.messageStartSent = true
++    }
++    if (state.contentBlockOpen) {
++      events.push({
++        type: "content_block_stop",
++        index: state.contentBlockIndex,
++      })
++      state.contentBlockOpen = false
++    }
++    events.push(
++      translateErrorToAnthropicErrorEvent({
++        type: chunk.error.type,
++        message: chunk.error.message,
++      }),
++    )
+     return events
+   }
+ 
+@@ -180,12 +213,17 @@ export function translateChunkToAnthropicEvents(
+   return events
+ }
+ 
+-export function translateErrorToAnthropicErrorEvent(): AnthropicStreamEventData {
++export function translateErrorToAnthropicErrorEvent(
++  payload: { type: string; message: string } = {
++    type: "api_error",
++    message: "An unexpected error occurred during streaming.",
++  },
++): AnthropicStreamEventData {
+   return {
+     type: "error",
+     error: {
+-      type: "api_error",
+-      message: "An unexpected error occurred during streaming.",
++      type: payload.type,
++      message: payload.message,
+     },
+   }
+ }
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 64cc7d2..17ad69c 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -67,6 +67,11 @@ export interface ChatCompletionChunk {
+       rejected_prediction_tokens: number
+     }
+   }
++  error?: {
++    type: string
++    message: string
++    code?: string
++  }
+ }
+ 
+ interface Delta {
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 0ddd081..2d6b2fe 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -331,6 +331,13 @@ interface ResponsesStreamResponse {
+   id?: string
+   model?: string
+   usage?: ResponsesStreamUsage
++  error?: {
++    type?: string
++    message?: string
++  }
++  incomplete_details?: {
++    reason?: string
++  }
+ }
+ 
+ interface ResponsesStreamItem {
+@@ -344,9 +351,11 @@ interface ResponsesStreamItem {
+ interface ResponsesStreamEventData {
+   arguments?: string
+   call_id?: string
++  code?: string
+   delta?: string
+   id?: string
+   item?: ResponsesStreamItem
++  message?: string
+   model?: string
+   name?: string
+   output_index?: number
+@@ -703,6 +712,75 @@ function* handleCompletedEvent(
+   })
+ }
+ 
++function mapIncompleteReasonToFinishReason(
++  reason: string | undefined,
++): "stop" | "length" | "content_filter" {
++  switch (reason) {
++    case "max_output_tokens": {
++      return "length"
++    }
++    case "content_filter": {
++      return "content_filter"
++    }
++    default: {
++      return "stop"
++    }
++  }
++}
++
++function* handleFailedEvent(
++  streamState: ResponsesStreamState,
++  data: ResponsesStreamEventData,
++): Generator<ChatCompletionChunk> {
++  syncResponseMetadata(streamState, data)
++  const errorType = data.response?.error?.type ?? "api_error"
++  const message = data.response?.error?.message ?? "Upstream response failed"
++  consola.warn("Upstream /responses failed", { type: errorType, message })
++
++  const chunk = makeChunk(streamState, {
++    delta: {},
++    finishReason: null,
++    usage: translateResponsesUsage(data.response?.usage),
++  })
++  chunk.error = { type: errorType, message }
++  yield chunk
++}
++
++function* handleErrorEvent(
++  streamState: ResponsesStreamState,
++  data: ResponsesStreamEventData,
++): Generator<ChatCompletionChunk> {
++  const errorType = data.code ?? "api_error"
++  const message = data.message ?? "Upstream error"
++  consola.warn("Upstream /responses error event", {
++    type: errorType,
++    message,
++  })
++
++  const chunk = makeChunk(streamState, {
++    delta: {},
++    finishReason: null,
++  })
++  chunk.error = { type: errorType, message, code: data.code }
++  yield chunk
++}
++
++function* handleIncompleteEvent(
++  streamState: ResponsesStreamState,
++  data: ResponsesStreamEventData,
++): Generator<ChatCompletionChunk> {
++  syncResponseMetadata(streamState, data)
++  const finishReason = mapIncompleteReasonToFinishReason(
++    data.response?.incomplete_details?.reason,
++  )
++
++  yield makeChunk(streamState, {
++    delta: {},
++    finishReason,
++    usage: translateResponsesUsage(data.response?.usage),
++  })
++}
++
+ export function* translateResponsesStreamEvent(
+   event: {
+     event: string
+@@ -753,6 +831,21 @@ export function* translateResponsesStreamEvent(
+       break
+     }
+ 
++    case "response.failed": {
++      yield* handleFailedEvent(streamState, data)
++      break
++    }
++
++    case "response.incomplete": {
++      yield* handleIncompleteEvent(streamState, data)
++      break
++    }
++
++    case "error": {
++      yield* handleErrorEvent(streamState, data)
++      break
++    }
++
+     default: {
+       break
+     }
+diff --git a/tests/responses-stream-error-events.test.ts b/tests/responses-stream-error-events.test.ts
+new file mode 100644
+index 0000000..e64858a
+--- /dev/null
++++ b/tests/responses-stream-error-events.test.ts
+@@ -0,0 +1,185 @@
++import { describe, expect, spyOn, test } from "bun:test"
++import consola from "consola"
++
++import type { AnthropicStreamState } from "~/routes/messages/anthropic-types"
++
++import { translateChunkToAnthropicEvents } from "~/routes/messages/stream-translation"
++import {
++  createResponsesStreamState,
++  translateResponsesStreamEvent,
++} from "~/services/copilot/create-responses"
++
++function newAnthropicState(): AnthropicStreamState {
++  return {
++    messageStartSent: false,
++    contentBlockIndex: 0,
++    contentBlockOpen: false,
++    toolCalls: {},
++  }
++}
++
++function runStream(
++  events: Array<{ event: string; data: Record<string, unknown> }>,
++) {
++  const state = createResponsesStreamState()
++  const chunks = events.flatMap((event) =>
++    Array.from(translateResponsesStreamEvent(event, state)),
++  )
++  return { state, chunks }
++}
++
++function translateChunks(chunks: ReturnType<typeof runStream>["chunks"]) {
++  const anthropicState = newAnthropicState()
++  return chunks.flatMap((chunk) =>
++    translateChunkToAnthropicEvents(chunk, anthropicState),
++  )
++}
++
++const created = (id = "resp-1", model = "gpt-test") => ({
++  event: "response.created",
++  data: { response: { id, model } },
++})
++
++const textDelta = (delta: string) => ({
++  event: "response.output_text.delta",
++  data: { delta, output_index: 0 },
++})
++
++describe("Responses streaming terminal-error events", () => {
++  test("response.failed yields one chunk with error and emits Anthropic error event", () => {
++    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    try {
++      const { chunks } = runStream([
++        created(),
++        textDelta("hi"),
++        {
++          event: "response.failed",
++          data: {
++            response: {
++              id: "resp-1",
++              error: {
++                type: "rate_limit_exceeded",
++                message: "too many requests",
++              },
++            },
++          },
++        },
++      ])
++
++      const errorChunks = chunks.filter((c) => c.error)
++      expect(errorChunks).toHaveLength(1)
++      expect(errorChunks[0]?.error).toEqual({
++        type: "rate_limit_exceeded",
++        message: "too many requests",
++      })
++      expect(errorChunks[0]?.choices[0]?.finish_reason).toBeNull()
++
++      const events = translateChunks(chunks)
++      const errorEvents = events.filter((e) => e.type === "error")
++      expect(errorEvents).toHaveLength(1)
++      expect(events.at(-1)?.type).toBe("error")
++      const last = errorEvents[0] as {
++        error: { type: string; message: string }
++      }
++      expect(last.error).toEqual({
++        type: "rate_limit_exceeded",
++        message: "too many requests",
++      })
++      expect(events.some((e) => e.type === "message_stop")).toBe(false)
++      expect(events.some((e) => e.type === "content_block_stop")).toBe(true)
++      expect(warnSpy).toHaveBeenCalledTimes(1)
++    } finally {
++      warnSpy.mockRestore()
++    }
++  })
++
++  test("generic error event yields chunk with error and emits Anthropic error event", () => {
++    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    try {
++      const { chunks } = runStream([
++        created(),
++        {
++          event: "error",
++          data: { code: "internal_error", message: "boom" },
++        },
++      ])
++
++      const errorChunks = chunks.filter((c) => c.error)
++      expect(errorChunks).toHaveLength(1)
++      expect(errorChunks[0]?.error?.type).toBe("internal_error")
++      expect(errorChunks[0]?.error?.message).toBe("boom")
++
++      const events = translateChunks(chunks)
++      const errorEvents = events.filter((e) => e.type === "error")
++      expect(errorEvents).toHaveLength(1)
++      const last = errorEvents[0] as {
++        error: { type: string; message: string }
++      }
++      expect(last.error.type).toBe("internal_error")
++      expect(last.error.message).toBe("boom")
++      expect(events.some((e) => e.type === "message_stop")).toBe(false)
++      expect(warnSpy).toHaveBeenCalledTimes(1)
++    } finally {
++      warnSpy.mockRestore()
++    }
++  })
++
++  test("response.incomplete with max_output_tokens maps to length and emits message_stop", () => {
++    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    try {
++      const { chunks } = runStream([
++        created(),
++        textDelta("hi"),
++        {
++          event: "response.incomplete",
++          data: {
++            response: {
++              id: "resp-1",
++              incomplete_details: { reason: "max_output_tokens" },
++            },
++          },
++        },
++      ])
++
++      const terminal = chunks.at(-1)
++      expect(terminal?.choices[0]?.finish_reason).toBe("length")
++      expect(terminal?.error).toBeUndefined()
++
++      const events = translateChunks(chunks)
++      expect(events.some((e) => e.type === "message_stop")).toBe(true)
++      expect(events.some((e) => e.type === "error")).toBe(false)
++      const md = events.find((e) => e.type === "message_delta") as
++        | { delta: { stop_reason: string | null } }
++        | undefined
++      expect(md?.delta.stop_reason).toBe("max_tokens")
++      expect(warnSpy).not.toHaveBeenCalled()
++    } finally {
++      warnSpy.mockRestore()
++    }
++  })
++
++  test("response.incomplete with no reason maps to stop", () => {
++    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    try {
++      const { chunks } = runStream([
++        created(),
++        textDelta("hi"),
++        {
++          event: "response.incomplete",
++          data: {
++            response: {
++              id: "resp-1",
++              incomplete_details: {},
++            },
++          },
++        },
++      ])
++
++      const terminal = chunks.at(-1)
++      expect(terminal?.choices[0]?.finish_reason).toBe("stop")
++      expect(warnSpy).not.toHaveBeenCalled()
++    } finally {
++      warnSpy.mockRestore()
++    }
++  })
++})
