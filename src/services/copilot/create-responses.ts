@@ -520,11 +520,22 @@ function* syncToolArguments(
     return
   }
 
-  const missingArguments =
-    nextArguments.startsWith(toolCall.arguments) ?
-      nextArguments.slice(toolCall.arguments.length)
-    : nextArguments
+  if (!nextArguments.startsWith(toolCall.arguments)) {
+    consola.warn(
+      "Tool call argument stream diverged; preserving streamed prefix",
+      {
+        callId: toolCall.callId,
+        name: toolCall.name,
+        accumulatedLength: toolCall.arguments.length,
+        candidateLength: nextArguments.length,
+        accumulatedTail: toolCall.arguments.slice(-80),
+        candidateHead: nextArguments.slice(0, 80),
+      },
+    )
+    return
+  }
 
+  const missingArguments = nextArguments.slice(toolCall.arguments.length)
   toolCall.arguments = nextArguments
 
   if (!missingArguments) {
