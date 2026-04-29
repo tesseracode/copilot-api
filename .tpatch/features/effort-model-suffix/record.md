@@ -1,14 +1,14 @@
 # Implementation Record: effort-model-suffix
 
-**Recorded**: 2026-04-29T05:11:02Z
+**Recorded**: 2026-04-29T06:26:58Z
 **Files changed**: 3
-**Patch size**: 15646 bytes
+**Patch size**: 15662 bytes
 
 ## Change Summary
 
 ```
- .../effort-model-suffix/artifacts/post-apply.patch | 324 ++++++++++++++++++++-
- 1 file changed, 317 insertions(+), 7 deletions(-)
+ .../effort-model-suffix/artifacts/post-apply.patch | 52 ++++++++++------------
+ 1 file changed, 24 insertions(+), 28 deletions(-)
 ```
 
 ## Replay Instructions

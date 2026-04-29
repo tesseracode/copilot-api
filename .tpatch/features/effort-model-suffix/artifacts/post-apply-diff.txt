@@ -1,2 +1,2 @@
- .../effort-model-suffix/artifacts/post-apply.patch | 324 ++++++++++++++++++++-
- 1 file changed, 317 insertions(+), 7 deletions(-)
+ .../effort-model-suffix/artifacts/post-apply.patch | 52 ++++++++++------------
+ 1 file changed, 24 insertions(+), 28 deletions(-)
