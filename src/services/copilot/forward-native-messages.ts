@@ -140,6 +140,25 @@ const OPTIONAL_FIELDS = [
 ] as const
 
 /**
+ * Map effort level to a model ID suffix for models that encode effort in the ID.
+ * Returns null for effort levels that don't need a suffix upgrade.
+ */
+function resolveEffortSuffix(effort: string): string | null {
+  switch (effort) {
+    case "high": {
+      return "-high"
+    }
+    case "max":
+    case "xhigh": {
+      return "-xhigh"
+    }
+    default: {
+      return null
+    } // low/medium don't have dedicated variants
+  }
+}
+
+/**
  * Check whether a model supports output_config.effort.
  * Only 4.6 and 4.7-1m models support it; older and 4.7 base do not.
  */
@@ -150,6 +169,45 @@ function supportsEffort(
   if (generation === "4.6") return true
   // 4.7-1m-internal supports effort, but 4.7 base does not
   if (generation === "4.7+" && copilotModelId.includes("-1m")) return true
+  return false
+}
+
+interface ResolveEffortOpts {
+  copilotModelId: string
+  generation: ModelGeneration
+  effort: string | undefined
+  body: Record<string, unknown>
+  outputConfig: Record<string, unknown> | undefined
+}
+
+/**
+ * Resolve effort by upgrading the model ID or forwarding output_config.
+ * Returns whether effort was handled.
+ */
+function resolveEffort(opts: ResolveEffortOpts): boolean {
+  const { copilotModelId, generation, effort, body, outputConfig } = opts
+  if (!effort) return false
+
+  // Models that accept output_config.effort natively
+  if (supportsEffort(generation, copilotModelId)) {
+    const normalizedEffort = effort === "max" ? "xhigh" : effort
+    body.output_config = { ...outputConfig, effort: normalizedEffort }
+    return true
+  }
+
+  // Try upgrading to -high/-xhigh variant
+  const suffix = resolveEffortSuffix(effort)
+  if (suffix) {
+    const candidate = `${copilotModelId}${suffix}`
+    if (state.models?.data.some((m) => m.id === candidate)) {
+      consola.debug(
+        `Effort upgrade: ${copilotModelId} → ${candidate} (effort=${effort})`,
+      )
+      body.model = candidate
+      return true
+    }
+  }
+
   return false
 }
 
@@ -195,17 +253,19 @@ export function buildNativeBody(
   const effort = payload.output_config?.effort
   const generation = detectGeneration(copilotModelId)
 
-  // Forward output_config only to models that support it
-  if (effort && supportsEffort(generation, copilotModelId)) {
-    body.output_config = payload.output_config
-  }
+  const effortHandled = resolveEffort({
+    copilotModelId,
+    generation,
+    effort,
+    body,
+    outputConfig: payload.output_config,
+  })
 
   const thinking = normalizeThinking({
     thinking: payload.thinking,
     maxTokens: payload.max_tokens,
     generation,
-    // Only pass effort if the model does NOT support output_config natively
-    effort: supportsEffort(generation, copilotModelId) ? undefined : effort,
+    effort: effortHandled ? undefined : effort,
   })
   if (thinking) body.thinking = thinking
 
