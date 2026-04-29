@@ -24,7 +24,40 @@ export function translateChunkToAnthropicEvents(
 ): Array<AnthropicStreamEventData> {
   const events: Array<AnthropicStreamEventData> = []
 
-  if (chunk.choices.length === 0) {
+  if (chunk.choices.length === 0 && !chunk.error) {
+    return events
+  }
+
+  if (chunk.error) {
+    if (!state.messageStartSent) {
+      events.push({
+        type: "message_start",
+        message: {
+          id: chunk.id,
+          type: "message",
+          role: "assistant",
+          content: [],
+          model: copilotToAnthropicModelId(chunk.model),
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+      })
+      state.messageStartSent = true
+    }
+    if (state.contentBlockOpen) {
+      events.push({
+        type: "content_block_stop",
+        index: state.contentBlockIndex,
+      })
+      state.contentBlockOpen = false
+    }
+    events.push(
+      translateErrorToAnthropicErrorEvent({
+        type: chunk.error.type,
+        message: chunk.error.message,
+      }),
+    )
     return events
   }
 
@@ -180,12 +213,17 @@ export function translateChunkToAnthropicEvents(
   return events
 }
 
-export function translateErrorToAnthropicErrorEvent(): AnthropicStreamEventData {
+export function translateErrorToAnthropicErrorEvent(
+  payload: { type: string; message: string } = {
+    type: "api_error",
+    message: "An unexpected error occurred during streaming.",
+  },
+): AnthropicStreamEventData {
   return {
     type: "error",
     error: {
-      type: "api_error",
-      message: "An unexpected error occurred during streaming.",
+      type: payload.type,
+      message: payload.message,
     },
   }
 }

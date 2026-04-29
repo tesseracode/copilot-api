@@ -67,6 +67,11 @@ export interface ChatCompletionChunk {
       rejected_prediction_tokens: number
     }
   }
+  error?: {
+    type: string
+    message: string
+    code?: string
+  }
 }
 
 interface Delta {

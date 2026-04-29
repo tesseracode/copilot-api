@@ -331,6 +331,13 @@ interface ResponsesStreamResponse {
   id?: string
   model?: string
   usage?: ResponsesStreamUsage
+  error?: {
+    type?: string
+    message?: string
+  }
+  incomplete_details?: {
+    reason?: string
+  }
 }
 
 interface ResponsesStreamItem {
@@ -344,9 +351,11 @@ interface ResponsesStreamItem {
 interface ResponsesStreamEventData {
   arguments?: string
   call_id?: string
+  code?: string
   delta?: string
   id?: string
   item?: ResponsesStreamItem
+  message?: string
   model?: string
   name?: string
   output_index?: number
@@ -703,6 +712,75 @@ function* handleCompletedEvent(
   })
 }
 
+function mapIncompleteReasonToFinishReason(
+  reason: string | undefined,
+): "stop" | "length" | "content_filter" {
+  switch (reason) {
+    case "max_output_tokens": {
+      return "length"
+    }
+    case "content_filter": {
+      return "content_filter"
+    }
+    default: {
+      return "stop"
+    }
+  }
+}
+
+function* handleFailedEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  syncResponseMetadata(streamState, data)
+  const errorType = data.response?.error?.type ?? "api_error"
+  const message = data.response?.error?.message ?? "Upstream response failed"
+  consola.warn("Upstream /responses failed", { type: errorType, message })
+
+  const chunk = makeChunk(streamState, {
+    delta: {},
+    finishReason: null,
+    usage: translateResponsesUsage(data.response?.usage),
+  })
+  chunk.error = { type: errorType, message }
+  yield chunk
+}
+
+function* handleErrorEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  const errorType = data.code ?? "api_error"
+  const message = data.message ?? "Upstream error"
+  consola.warn("Upstream /responses error event", {
+    type: errorType,
+    message,
+  })
+
+  const chunk = makeChunk(streamState, {
+    delta: {},
+    finishReason: null,
+  })
+  chunk.error = { type: errorType, message, code: data.code }
+  yield chunk
+}
+
+function* handleIncompleteEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  syncResponseMetadata(streamState, data)
+  const finishReason = mapIncompleteReasonToFinishReason(
+    data.response?.incomplete_details?.reason,
+  )
+
+  yield makeChunk(streamState, {
+    delta: {},
+    finishReason,
+    usage: translateResponsesUsage(data.response?.usage),
+  })
+}
+
 export function* translateResponsesStreamEvent(
   event: {
     event: string
@@ -750,6 +828,21 @@ export function* translateResponsesStreamEvent(
 
     case "response.completed": {
       yield* handleCompletedEvent(streamState, data)
+      break
+    }
+
+    case "response.failed": {
+      yield* handleFailedEvent(streamState, data)
+      break
+    }
+
+    case "response.incomplete": {
+      yield* handleIncompleteEvent(streamState, data)
+      break
+    }
+
+    case "error": {
+      yield* handleErrorEvent(streamState, data)
       break
     }
 
