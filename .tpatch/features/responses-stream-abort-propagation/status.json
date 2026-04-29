@@ -1,0 +1,12 @@
+{
+  "id": "responses-stream-abort-propagation",
+  "slug": "responses-stream-abort-propagation",
+  "title": "Propagate client disconnects to upstream fetch calls so aborted SSE streams stop consuming Copilot quota. In src/routes/messages/handler.ts the streaming for-await loop never observes c.req.raw.signal, and src/services/copilot/{create-responses,create-chat-completions,forward-native-messages}.ts call fetch without an AbortSignal. Wire the request signal end-to-end (handler -\u003e service -\u003e fetch) and break the SSE consumer loop on abort. Add an integration test that asserts the upstream AbortSignal fires when the downstream consumer disconnects mid-stream.",
+  "state": "requested",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-29T22:10:06Z",
+  "updated_at": "2026-04-29T22:10:06Z",
+  "last_command": "add",
+  "apply": {},
+  "reconcile": {}
+}

@@ -1,0 +1,16 @@
+{
+  "id": "responses-stream-stable-ids-and-created",
+  "slug": "responses-stream-stable-ids-and-created",
+  "title": "Stabilise streaming chunk identity. In src/services/copilot/create-responses.ts makeChunk currently falls back to a fresh chatcmpl-randomUUID() every chunk when streamState.responseId is empty, and recomputes 'created' via Date.now() on every chunk. Generate the fallback id once per stream (cache on streamState) and freeze 'created' at stream start so all chunks of one response share id and created timestamp. Add a unit test that consumes a synthetic /responses stream where response.created arrives late and asserts every emitted chunk carries the same id and created value.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-29T22:10:08Z",
+  "updated_at": "2026-04-29T22:42:43Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "63731b3637f7b5bd76a32eec5d64ddc200287871",
+    "has_patch": true
+  },
+  "reconcile": {}
+}
