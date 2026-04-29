@@ -295,6 +295,8 @@ export interface ResponsesStreamState {
   toolCallIndex: number
   toolCallsByCallId: Partial<Record<string, ResponsesStreamToolCall>>
   toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>
+  fallbackId: string
+  created: number
 }
 
 export function createResponsesStreamState(): ResponsesStreamState {
@@ -304,6 +306,8 @@ export function createResponsesStreamState(): ResponsesStreamState {
     toolCallIndex: 0,
     toolCallsByCallId: {},
     toolCallsByOutputIndex: {},
+    fallbackId: `chatcmpl-${randomUUID()}`,
+    created: Math.floor(Date.now() / 1000),
   }
 }
 
@@ -362,9 +366,9 @@ function makeChunk(
   },
 ): ChatCompletionChunk {
   return {
-    id: streamState.responseId || `chatcmpl-${randomUUID()}`,
+    id: streamState.responseId || streamState.fallbackId,
     object: "chat.completion.chunk",
-    created: Math.floor(Date.now() / 1000),
+    created: streamState.created,
     model: streamState.model,
     usage,
     choices: [
@@ -383,9 +387,12 @@ function syncResponseMetadata(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
 ) {
-  streamState.responseId =
-    data.response?.id ?? data.id ?? streamState.responseId
-  streamState.model = data.response?.model ?? data.model ?? streamState.model
+  if (!streamState.responseId) {
+    streamState.responseId = data.response?.id ?? data.id ?? ""
+  }
+  if (!streamState.model) {
+    streamState.model = data.response?.model ?? data.model ?? ""
+  }
 }
 
 function translateResponsesUsage(
