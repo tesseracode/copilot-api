@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/create-responses.ts",
+      "search": "export interface ResponsesStreamState {\n  responseId: string\n  model: string\n  toolCallIndex: number\n  toolCallsByCallId: Partial<Record<string, ResponsesStreamToolCall>>\n  toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>\n}\n",
+      "replace": "export interface ResponsesStreamState {\n  responseId: string\n  model: string\n  toolCallIndex: number\n  toolCallsByCallId: Partial<Record<string, ResponsesStreamToolCall>>\n  toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>\n  fallbackId: string\n  created: number\n}\n"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/create-responses.ts",
+      "search": "export function createResponsesStreamState(): ResponsesStreamState {\n  return {\n    responseId: \"\",\n    model: \"\",\n    toolCallIndex: 0,\n    toolCallsByCallId: {},\n    toolCallsByOutputIndex: {},\n  }\n}\n",
+      "replace": "export function createResponsesStreamState(): ResponsesStreamState {\n  return {\n    responseId: \"\",\n    model: \"\",\n    toolCallIndex: 0,\n    toolCallsByCallId: {},\n    toolCallsByOutputIndex: {},\n    fallbackId: `chatcmpl-${randomUUID()}`,\n    created: Math.floor(Date.now() / 1000),\n  }\n}\n"
+    },
+    {
+      "type": "replace-in-file",
+      "path": "src/services/copilot/create-responses.ts",
+      "search": "    id: streamState.responseId || `chatcmpl-${randomUUID()}`,\n    object: \"chat.completion.chunk\",\n    created: Math.floor(Date.now() / 1000),\n",
+      "replace": "    id: streamState.responseId || streamState.fallbackId,\n    object: \"chat.completion.chunk\",\n    created: streamState.created,\n"
+    },
+    {
+      "type": "write-file",
+      "path": "tests/responses-stream-stable-ids.test.ts",
+      "content": "import { describe, expect, test } from \"bun:test\"\n\nimport {\n  createResponsesStreamState,\n  translateResponsesStreamEvent,\n} from \"~/services/copilot/create-responses\"\n\nconst FALLBACK_ID_RE = /^chatcmpl-[0-9a-f-]{36}$/\n\nfunction collectChunks(\n  events: Array<{ event: string; data: Record<string, unknown> }>,\n) {\n  const state = createResponsesStreamState()\n  const chunks = events.flatMap((event) =>\n    Array.from(translateResponsesStreamEvent(event, state)),\n  )\n  return { state, chunks }\n}\n\ndescribe(\"Responses streaming chunk identity\", () => {\n  test(\"all chunks share one created timestamp\", () => {\n    const { chunks } = collectChunks([\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"hello\", output_index: 0 },\n      },\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \" world\", output_index: 0 },\n      },\n      {\n        event: \"response.completed\",\n        data: { response: { id: \"resp-late\", model: \"gpt-test\" } },\n      },\n    ])\n\n    expect(chunks.length).toBeGreaterThan(0)\n    const createdValues = new Set(chunks.map((c) => c.created))\n    expect(createdValues.size).toBe(1)\n  })\n\n  test(\"upstream id from response.created is used uniformly when it arrives first\", () => {\n    const { chunks } = collectChunks([\n      {\n        event: \"response.created\",\n        data: { response: { id: \"resp-early\", model: \"gpt-test\" } },\n      },\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"hi\", output_index: 0 },\n      },\n      {\n        event: \"response.completed\",\n        data: { response: { id: \"resp-early\", model: \"gpt-test\" } },\n      },\n    ])\n\n    expect(chunks.length).toBeGreaterThan(0)\n    for (const chunk of chunks) {\n      expect(chunk.id).toBe(\"resp-early\")\n    }\n  })\n\n  test(\"fallback id is stable across chunks when response.created never arrives\", () => {\n    const { chunks } = collectChunks([\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"a\", output_index: 0 },\n      },\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"b\", output_index: 0 },\n      },\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"c\", output_index: 0 },\n      },\n    ])\n\n    expect(chunks.length).toBe(3)\n    const ids = new Set(chunks.map((c) => c.id))\n    expect(ids.size).toBe(1)\n    const [id] = ids\n    expect(id).toMatch(FALLBACK_ID_RE)\n  })\n\n  test(\"once upstream id is known via response.created, all later chunks use it\", () => {\n    const { chunks } = collectChunks([\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"pre\", output_index: 0 },\n      },\n      {\n        event: \"response.created\",\n        data: { response: { id: \"resp-mid\", model: \"gpt-test\" } },\n      },\n      {\n        event: \"response.output_text.delta\",\n        data: { delta: \"post\", output_index: 0 },\n      },\n      {\n        event: \"response.completed\",\n        data: { response: { id: \"resp-mid\", model: \"gpt-test\" } },\n      },\n    ])\n\n    const afterCreated = chunks.slice(1)\n    expect(afterCreated.length).toBeGreaterThan(0)\n    for (const chunk of afterCreated) {\n      expect(chunk.id).toBe(\"resp-mid\")\n    }\n    expect(chunks[0]?.id).toMatch(FALLBACK_ID_RE)\n  })\n})\n"
+    }
+  ]
+}
