@@ -98,6 +98,12 @@ function translateMessages(
         break
       }
       case "assistant": {
+        // TODO: When Copilot starts populating reasoning summaries,
+        // we should detect thinking blocks in msg.content and map them
+        // to { type: "reasoning", summary: [{type: "summary_text", text}] }
+        // instead of sending them as plain assistant text. Currently
+        // thinking blocks are concatenated into content by translateToOpenAI,
+        // which works functionally but loses semantic meaning for /responses.
         if (msg.content) {
           input.push({
             type: "message",

@@ -1,0 +1,12 @@
+{
+  "id": "reasoning-roundtrip",
+  "slug": "reasoning-roundtrip",
+  "title": "Map inbound thinking blocks to reasoning input items for /responses API multi-turn: when an Anthropic-format assistant message contains thinking blocks that originated from GPT-5.x reasoning, translate them back to type=reasoning input items instead of plain text. Blocked until Copilot populates reasoning summaries.",
+  "state": "requested",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-28T23:59:19Z",
+  "updated_at": "2026-04-28T23:59:19Z",
+  "last_command": "add",
+  "apply": {},
+  "reconcile": {}
+}
