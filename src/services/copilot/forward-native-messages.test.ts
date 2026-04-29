@@ -1,6 +1,8 @@
-import { describe, it, expect } from "bun:test"
+import { beforeEach, describe, expect, it } from "bun:test"
 
 import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
+
+import { state } from "~/lib/state"
 
 import { buildNativeBody } from "./forward-native-messages"
 
@@ -15,7 +17,28 @@ function basePayload(
   }
 }
 
+function setCatalog(ids: Array<string>) {
+  state.models = {
+    object: "list",
+    data: ids.map((id) => ({
+      id,
+      object: "model",
+      created: 0,
+      owned_by: "anthropic",
+    })),
+  } as unknown as typeof state.models
+}
+
 describe("buildNativeBody", () => {
+  beforeEach(() => {
+    state.is1MContext = false
+    setCatalog([
+      "claude-sonnet-4.6",
+      "claude-opus-4.7",
+      "claude-opus-4.7-1m-internal",
+    ])
+  })
+
   describe("stop_sequences sanitization", () => {
     it("strips whitespace-only stop sequences", () => {
       const body = buildNativeBody(basePayload({ stop_sequences: ["\n"] }), {})
@@ -189,6 +212,35 @@ describe("buildNativeBody", () => {
     it("applies overrides last", () => {
       const body = buildNativeBody(basePayload(), { stream: true })
       expect(body.stream).toBe(true)
+    })
+  })
+
+  describe("1M model selection", () => {
+    it("keeps the base model when 1M context is not requested", () => {
+      const body = buildNativeBody(
+        basePayload({ model: "claude-opus-4.7" }),
+        {},
+        false,
+      )
+      expect(body.model).toBe("claude-opus-4.7")
+    })
+
+    it("upgrades to the 1M variant when 1M context is requested", () => {
+      const body = buildNativeBody(
+        basePayload({ model: "claude-opus-4.7" }),
+        {},
+        true,
+      )
+      expect(body.model).toBe("claude-opus-4.7-1m-internal")
+    })
+
+    it("accepts mixed dot-format models with a [1m] suffix", () => {
+      const body = buildNativeBody(
+        basePayload({ model: "claude-opus-4.7[1m]" }),
+        {},
+        false,
+      )
+      expect(body.model).toBe("claude-opus-4.7-1m-internal")
     })
   })
 })

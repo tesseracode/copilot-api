@@ -84,6 +84,13 @@ describe("anthropicToCopilotModelId", () => {
     )
   })
 
+  it("accepts dot-format Claude IDs with a [1m] suffix", () => {
+    setCatalog(["claude-opus-4.7", "claude-opus-4.7-1m-internal"])
+    expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
+      "claude-opus-4.7-1m-internal",
+    )
+  })
+
   // ── Effort suffix handling ──
 
   it("maps -high suffix through dash→dot conversion", () => {
