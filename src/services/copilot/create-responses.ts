@@ -293,7 +293,8 @@ export interface ResponsesStreamState {
   responseId: string
   model: string
   toolCallIndex: number
-  activeToolCalls: Record<string, boolean>
+  toolCallsByCallId: Partial<Record<string, ResponsesStreamToolCall>>
+  toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>
 }
 
 export function createResponsesStreamState(): ResponsesStreamState {
@@ -301,20 +302,71 @@ export function createResponsesStreamState(): ResponsesStreamState {
     responseId: "",
     model: "",
     toolCallIndex: 0,
-    activeToolCalls: {},
+    toolCallsByCallId: {},
+    toolCallsByOutputIndex: {},
   }
+}
+
+interface ResponsesStreamToolCall {
+  arguments: string
+  callId: string
+  index: number
+  name: string
+}
+
+interface ResponsesStreamUsage {
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  input_tokens_details?: {
+    cached_tokens: number
+  }
+}
+
+interface ResponsesStreamResponse {
+  id?: string
+  model?: string
+  usage?: ResponsesStreamUsage
+}
+
+interface ResponsesStreamItem {
+  arguments?: string
+  call_id?: string
+  id?: string
+  name?: string
+  type?: string
+}
+
+interface ResponsesStreamEventData {
+  arguments?: string
+  call_id?: string
+  delta?: string
+  id?: string
+  item?: ResponsesStreamItem
+  model?: string
+  name?: string
+  output_index?: number
+  response?: ResponsesStreamResponse
 }
 
 function makeChunk(
   streamState: ResponsesStreamState,
-  delta: Record<string, unknown>,
-  finishReason: string | null,
+  {
+    delta,
+    finishReason,
+    usage,
+  }: {
+    delta: Record<string, unknown>
+    finishReason: string | null
+    usage?: ChatCompletionChunk["usage"]
+  },
 ): ChatCompletionChunk {
   return {
     id: streamState.responseId || `chatcmpl-${randomUUID()}`,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
     model: streamState.model,
+    usage,
     choices: [
       {
         index: 0,
@@ -327,16 +379,316 @@ function makeChunk(
   }
 }
 
+function syncResponseMetadata(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+) {
+  streamState.responseId =
+    data.response?.id ?? data.id ?? streamState.responseId
+  streamState.model = data.response?.model ?? data.model ?? streamState.model
+}
+
+function translateResponsesUsage(
+  usage: ResponsesStreamUsage | undefined,
+): ChatCompletionChunk["usage"] | undefined {
+  if (!usage) {
+    return undefined
+  }
+
+  return {
+    prompt_tokens: usage.input_tokens,
+    completion_tokens: usage.output_tokens,
+    total_tokens: usage.total_tokens,
+    ...(usage.input_tokens_details && {
+      prompt_tokens_details: {
+        cached_tokens: usage.input_tokens_details.cached_tokens,
+      },
+    }),
+  }
+}
+
+function getToolCallDelta(
+  toolCall: ResponsesStreamToolCall,
+  argumentsChunk: string,
+): ChatCompletionChunk["choices"][0]["delta"] {
+  return {
+    tool_calls: [
+      {
+        index: toolCall.index,
+        function: { arguments: argumentsChunk },
+      },
+    ],
+  }
+}
+
+function getNewToolCallDelta(
+  toolCall: ResponsesStreamToolCall,
+  argumentsChunk: string,
+): ChatCompletionChunk["choices"][0]["delta"] {
+  return {
+    tool_calls: [
+      {
+        index: toolCall.index,
+        id: toolCall.callId,
+        type: "function",
+        function: {
+          name: toolCall.name,
+          arguments: argumentsChunk,
+        },
+      },
+    ],
+  }
+}
+
+function getExistingToolCall(
+  streamState: ResponsesStreamState,
+  data: Pick<ResponsesStreamEventData, "call_id" | "output_index">,
+): ResponsesStreamToolCall | undefined {
+  if (data.output_index !== undefined) {
+    const outputIndexToolCall =
+      streamState.toolCallsByOutputIndex[data.output_index]
+    if (outputIndexToolCall) {
+      return outputIndexToolCall
+    }
+  }
+
+  return data.call_id ? streamState.toolCallsByCallId[data.call_id] : undefined
+}
+
+function getOrCreateToolCall(
+  streamState: ResponsesStreamState,
+  {
+    callId,
+    initialArguments = "",
+    name,
+    outputIndex,
+  }: {
+    callId?: string
+    initialArguments?: string
+    name?: string
+    outputIndex?: number
+  },
+): { isNew: boolean; toolCall: ResponsesStreamToolCall } | undefined {
+  if (!callId || !name) {
+    return undefined
+  }
+
+  const existingToolCall =
+    streamState.toolCallsByCallId[callId]
+    ?? (outputIndex !== undefined ?
+      streamState.toolCallsByOutputIndex[outputIndex]
+    : undefined)
+
+  if (existingToolCall) {
+    streamState.toolCallsByCallId[callId] = existingToolCall
+    if (outputIndex !== undefined) {
+      streamState.toolCallsByOutputIndex[outputIndex] = existingToolCall
+    }
+
+    return { isNew: false, toolCall: existingToolCall }
+  }
+
+  const toolCall: ResponsesStreamToolCall = {
+    arguments: initialArguments,
+    callId,
+    index: streamState.toolCallIndex,
+    name,
+  }
+
+  streamState.toolCallsByCallId[callId] = toolCall
+  if (outputIndex !== undefined) {
+    streamState.toolCallsByOutputIndex[outputIndex] = toolCall
+  }
+  streamState.toolCallIndex++
+
+  return { isNew: true, toolCall }
+}
+
+function* syncToolArguments(
+  streamState: ResponsesStreamState,
+  toolCall: ResponsesStreamToolCall,
+  nextArguments: string | undefined,
+): Generator<ChatCompletionChunk> {
+  if (!nextArguments || nextArguments === toolCall.arguments) {
+    return
+  }
+
+  const missingArguments =
+    nextArguments.startsWith(toolCall.arguments) ?
+      nextArguments.slice(toolCall.arguments.length)
+    : nextArguments
+
+  toolCall.arguments = nextArguments
+
+  if (!missingArguments) {
+    return
+  }
+
+  yield makeChunk(streamState, {
+    delta: getToolCallDelta(toolCall, missingArguments),
+    finishReason: null,
+  })
+}
+
+function* handleCreatedEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  syncResponseMetadata(streamState, data)
+  yield makeChunk(streamState, {
+    delta: { role: "assistant", content: "" },
+    finishReason: null,
+  })
+}
+
+function* handleOutputTextDeltaEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  if (!data.delta) {
+    return
+  }
+
+  yield makeChunk(streamState, {
+    delta: { content: data.delta },
+    finishReason: null,
+  })
+}
+
+function* handleOutputItemAddedEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  if (data.item?.type !== "function_call") {
+    return
+  }
+
+  const toolCall = getOrCreateToolCall(streamState, {
+    callId: data.item.call_id,
+    initialArguments: data.item.arguments ?? "",
+    name: data.item.name,
+    outputIndex: data.output_index,
+  })
+
+  if (!toolCall?.isNew) {
+    return
+  }
+
+  yield makeChunk(streamState, {
+    delta: getNewToolCallDelta(toolCall.toolCall, data.item.arguments ?? ""),
+    finishReason: null,
+  })
+}
+
+function* handleFunctionCallArgumentsDeltaEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  if (!data.delta) {
+    return
+  }
+
+  const existingToolCall = getExistingToolCall(streamState, data)
+  if (existingToolCall) {
+    existingToolCall.arguments += data.delta
+    yield makeChunk(streamState, {
+      delta: getToolCallDelta(existingToolCall, data.delta),
+      finishReason: null,
+    })
+    return
+  }
+
+  const toolCall = getOrCreateToolCall(streamState, {
+    callId: data.call_id,
+    initialArguments: data.delta,
+    name: data.name,
+    outputIndex: data.output_index,
+  })
+
+  if (!toolCall) {
+    return
+  }
+
+  yield makeChunk(streamState, {
+    delta: getNewToolCallDelta(toolCall.toolCall, data.delta),
+    finishReason: null,
+  })
+}
+
+function* handleFunctionCallArgumentsDoneEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  const existingToolCall = getExistingToolCall(streamState, data)
+  if (!existingToolCall) {
+    return
+  }
+
+  yield* syncToolArguments(streamState, existingToolCall, data.arguments)
+}
+
+function getExistingOrCreateCompletedToolCall(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): { isNew: boolean; toolCall: ResponsesStreamToolCall } | undefined {
+  const existingToolCall = getExistingToolCall(streamState, {
+    call_id: data.item?.call_id,
+    output_index: data.output_index,
+  })
+
+  if (existingToolCall) {
+    return { isNew: false, toolCall: existingToolCall }
+  }
+
+  return getOrCreateToolCall(streamState, {
+    callId: data.item?.call_id,
+    initialArguments: data.item?.arguments ?? "",
+    name: data.item?.name,
+    outputIndex: data.output_index,
+  })
+}
+
+function* handleOutputItemDoneEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  if (data.item?.type !== "function_call") {
+    return
+  }
+
+  const toolCall = getExistingOrCreateCompletedToolCall(streamState, data)
+  if (!toolCall) {
+    return
+  }
+
+  if (toolCall.isNew) {
+    yield makeChunk(streamState, {
+      delta: getNewToolCallDelta(toolCall.toolCall, data.item.arguments ?? ""),
+      finishReason: null,
+    })
+  }
+
+  yield* syncToolArguments(streamState, toolCall.toolCall, data.item.arguments)
+}
+
+function* handleCompletedEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  syncResponseMetadata(streamState, data)
+  const hasToolCalls = Object.keys(streamState.toolCallsByCallId).length > 0
+
+  yield makeChunk(streamState, {
+    delta: {},
+    finishReason: hasToolCalls ? "tool_calls" : "stop",
+    usage: translateResponsesUsage(data.response?.usage),
+  })
+}
+
 export function* translateResponsesStreamEvent(
   event: {
     event: string
-    data: {
-      delta?: string
-      call_id?: string
-      name?: string
-      id?: string
-      model?: string
-    }
+    data: ResponsesStreamEventData
   },
   streamState: ResponsesStreamState,
 ): Generator<ChatCompletionChunk> {
@@ -344,60 +696,42 @@ export function* translateResponsesStreamEvent(
 
   switch (eventType) {
     case "response.created": {
-      streamState.responseId = data.id ?? ""
-      streamState.model = data.model ?? ""
-      yield makeChunk(streamState, { role: "assistant", content: "" }, null)
+      yield* handleCreatedEvent(streamState, data)
+      break
+    }
+
+    case "response.in_progress": {
+      syncResponseMetadata(streamState, data)
       break
     }
 
     case "response.output_text.delta": {
-      if (data.delta) {
-        yield makeChunk(streamState, { content: data.delta }, null)
-      }
+      yield* handleOutputTextDeltaEvent(streamState, data)
+      break
+    }
+
+    case "response.output_item.added": {
+      yield* handleOutputItemAddedEvent(streamState, data)
       break
     }
 
     case "response.function_call_arguments.delta": {
-      const toolIndex = streamState.toolCallIndex
-      const callId = data.call_id ?? ""
+      yield* handleFunctionCallArgumentsDeltaEvent(streamState, data)
+      break
+    }
 
-      if (!streamState.activeToolCalls[callId]) {
-        streamState.activeToolCalls[callId] = true
-        yield makeChunk(
-          streamState,
-          {
-            tool_calls: [
-              {
-                index: toolIndex,
-                id: callId,
-                type: "function",
-                function: { name: data.name, arguments: data.delta ?? "" },
-              },
-            ],
-          },
-          null,
-        )
-        streamState.toolCallIndex++
-      } else {
-        yield makeChunk(
-          streamState,
-          {
-            tool_calls: [
-              {
-                index: toolIndex,
-                function: { arguments: data.delta ?? "" },
-              },
-            ],
-          },
-          null,
-        )
-      }
+    case "response.function_call_arguments.done": {
+      yield* handleFunctionCallArgumentsDoneEvent(streamState, data)
+      break
+    }
+
+    case "response.output_item.done": {
+      yield* handleOutputItemDoneEvent(streamState, data)
       break
     }
 
     case "response.completed": {
-      const hasToolCalls = Object.keys(streamState.activeToolCalls).length > 0
-      yield makeChunk(streamState, {}, hasToolCalls ? "tool_calls" : "stop")
+      yield* handleCompletedEvent(streamState, data)
       break
     }
 

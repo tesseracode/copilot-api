@@ -1,0 +1,17 @@
+{
+  "id": "tool-streaming-id-preservation",
+  "slug": "tool-streaming-id-preservation",
+  "title": "Preserve stable tool-call indices across /responses streaming argument deltas so Anthropic tool calls stay parseable",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-04-29T17:19:52Z",
+  "updated_at": "2026-04-29T21:14:56Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-04-29T17:54:01Z",
+    "base_commit": "a2f03167b5e6fa313140b52b6eee0c6455b2a8c0",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

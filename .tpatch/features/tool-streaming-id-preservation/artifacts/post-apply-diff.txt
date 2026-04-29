@@ -1,0 +1,5 @@
+ .tpatch/FEATURES.md                      |   1 +
+ src/routes/messages/handler.ts           |   2 -
+ src/services/copilot/create-responses.ts | 440 +++++++++++++++++++++++++++----
+ tests/anthropic-response.test.ts         | 219 ++++++++++++++-
+ 4 files changed, 605 insertions(+), 57 deletions(-)

@@ -2,13 +2,20 @@ import { describe, test, expect } from "bun:test"
 import { z } from "zod"
 
 import type {
+  AnthropicStreamEventData,
+  AnthropicStreamState,
+} from "~/routes/messages/anthropic-types"
+import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
 } from "~/services/copilot/create-chat-completions"
 
-import { type AnthropicStreamState } from "~/routes/messages/anthropic-types"
 import { translateToAnthropic } from "~/routes/messages/non-stream-translation"
 import { translateChunkToAnthropicEvents } from "~/routes/messages/stream-translation"
+import {
+  createResponsesStreamState,
+  translateResponsesStreamEvent,
+} from "~/services/copilot/create-responses"
 
 const anthropicUsageSchema = z.object({
   input_tokens: z.number().int(),
@@ -65,6 +72,74 @@ const anthropicStreamEventSchema = z.looseObject({
 
 function isValidAnthropicStreamEvent(payload: unknown): boolean {
   return anthropicStreamEventSchema.safeParse(payload).success
+}
+
+type AnthropicToolStartEvent = Extract<
+  AnthropicStreamEventData,
+  { type: "content_block_start" }
+> & {
+  content_block: { type: "tool_use"; id: string; name: string }
+}
+
+type AnthropicInputJsonDeltaEvent = Extract<
+  AnthropicStreamEventData,
+  { type: "content_block_delta" }
+> & {
+  delta: { type: "input_json_delta"; partial_json: string }
+}
+
+type AnthropicMessageDeltaEvent = Extract<
+  AnthropicStreamEventData,
+  { type: "message_delta" }
+>
+
+type AnthropicMessageStartEvent = Extract<
+  AnthropicStreamEventData,
+  { type: "message_start" }
+>
+
+function collectToolStreamDetails(events: Array<AnthropicStreamEventData>) {
+  const messageStarts: Array<AnthropicMessageStartEvent> = []
+  const toolStarts: Array<AnthropicToolStartEvent> = []
+  const inputJsonDeltas: Array<AnthropicInputJsonDeltaEvent> = []
+  const messageDeltas: Array<AnthropicMessageDeltaEvent> = []
+  let messageStops = 0
+
+  for (const event of events) {
+    if (event.type === "message_start") {
+      messageStarts.push(event)
+    }
+
+    if (
+      event.type === "content_block_start"
+      && event.content_block.type === "tool_use"
+    ) {
+      toolStarts.push(event)
+    }
+
+    if (
+      event.type === "content_block_delta"
+      && event.delta.type === "input_json_delta"
+    ) {
+      inputJsonDeltas.push(event)
+    }
+
+    if (event.type === "message_delta") {
+      messageDeltas.push(event)
+    }
+
+    if (event.type === "message_stop") {
+      messageStops++
+    }
+  }
+
+  return {
+    messageStarts,
+    toolStarts,
+    inputJsonDeltas,
+    messageDeltas,
+    messageStops,
+  }
 }
 
 describe("OpenAI to Anthropic Non-Streaming Response Translation", () => {
@@ -357,9 +432,149 @@ describe("OpenAI to Anthropic Streaming Response Translation", () => {
       translateChunkToAnthropicEvents(chunk, streamState),
     )
 
-    // These tests will fail until the stub is implemented
     for (const event of translatedStream) {
       expect(isValidAnthropicStreamEvent(event)).toBe(true)
     }
+
+    const { toolStarts, inputJsonDeltas, messageDeltas, messageStops } =
+      collectToolStreamDetails(translatedStream)
+
+    expect(toolStarts).toHaveLength(1)
+    expect(toolStarts[0]?.content_block.id).toBe("call_xyz")
+    expect(toolStarts[0]?.content_block.name).toBe("get_weather")
+
+    expect(inputJsonDeltas).toHaveLength(2)
+    expect(inputJsonDeltas.map((event) => event.index)).toEqual([0, 0])
+    expect(
+      inputJsonDeltas.map((event) => event.delta.partial_json).join(""),
+    ).toBe('{"location": "Paris"}')
+
+    expect(messageDeltas.at(-1)?.delta.stop_reason).toBe("tool_use")
+    expect(messageStops).toBe(1)
+  })
+})
+
+describe("Responses API to Anthropic Streaming Response Translation", () => {
+  test("translates tool calls from the live /responses SSE schema", () => {
+    const responsesState = createResponsesStreamState()
+    const anthropicState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+    }
+
+    const responsesEvents = [
+      {
+        event: "response.created",
+        data: {
+          response: {
+            id: "resp-1",
+            model: "gpt-5.5-2026-04-23",
+          },
+        },
+      },
+      {
+        event: "response.in_progress",
+        data: {
+          response: {
+            id: "resp-1",
+            model: "gpt-5.5-2026-04-23",
+          },
+        },
+      },
+      {
+        event: "response.output_item.added",
+        data: {
+          item: {
+            arguments: "",
+            call_id: "call_read",
+            id: "tool-item-1",
+            name: "Read",
+            type: "function_call",
+          },
+          output_index: 0,
+        },
+      },
+      {
+        event: "response.function_call_arguments.delta",
+        data: {
+          delta: '{"file_path":"/tmp/pa',
+          item_id: "delta-fragment-1",
+          output_index: 0,
+        },
+      },
+      {
+        event: "response.function_call_arguments.delta",
+        data: {
+          delta: 'ckage.json"}',
+          item_id: "delta-fragment-2",
+          output_index: 0,
+        },
+      },
+      {
+        event: "response.function_call_arguments.done",
+        data: {
+          arguments: '{"file_path":"/tmp/package.json"}',
+          item_id: "delta-finish",
+          output_index: 0,
+        },
+      },
+      {
+        event: "response.output_item.done",
+        data: {
+          item: {
+            arguments: '{"file_path":"/tmp/package.json"}',
+            call_id: "call_read",
+            id: "tool-item-1",
+            name: "Read",
+            status: "completed",
+            type: "function_call",
+          },
+          output_index: 0,
+        },
+      },
+      {
+        event: "response.completed",
+        data: {
+          response: {
+            id: "resp-1",
+            model: "gpt-5.5-2026-04-23",
+          },
+        },
+      },
+    ]
+
+    const openAIStream = responsesEvents.flatMap((event) =>
+      Array.from(translateResponsesStreamEvent(event, responsesState)),
+    )
+    const translatedStream = openAIStream.flatMap((chunk) =>
+      translateChunkToAnthropicEvents(chunk, anthropicState),
+    )
+
+    const {
+      messageStarts,
+      toolStarts,
+      inputJsonDeltas,
+      messageDeltas,
+      messageStops,
+    } = collectToolStreamDetails(translatedStream)
+
+    expect(messageStarts).toHaveLength(1)
+    expect(messageStarts[0]?.message.id).toBe("resp-1")
+    expect(messageStarts[0]?.message.model).toBe("gpt-5.5-2026-04-23")
+
+    expect(toolStarts).toHaveLength(1)
+    expect(toolStarts[0]?.content_block.id).toBe("call_read")
+    expect(toolStarts[0]?.content_block.name).toBe("Read")
+
+    expect(inputJsonDeltas).toHaveLength(2)
+    expect(inputJsonDeltas.map((event) => event.index)).toEqual([0, 0])
+    expect(
+      inputJsonDeltas.map((event) => event.delta.partial_json).join(""),
+    ).toBe('{"file_path":"/tmp/package.json"}')
+
+    expect(messageDeltas.at(-1)?.delta.stop_reason).toBe("tool_use")
+    expect(messageStops).toBe(1)
   })
 })

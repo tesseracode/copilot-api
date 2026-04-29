@@ -17,3 +17,4 @@
 | `startup-model-count` | Add a model count to the startup banner, e.g. 'Available models: 37 models loaded' | applied | unknown |
 | `three-tier-routing` | Three-tier endpoint routing: native /v1/messages passthrough for Claude, /responses API for GPT-5.x, /chat/completions fallback for legacy models | applied | unknown |
 | `three-tier-routing-tests` | Unit and e2e test suite for three-tier endpoint routing: endpoint resolution, /v1/messages payload sanitization, Responses API translation, model mapping, plus live API e2e matrix across all three tiers | applied | unknown |
+| `tool-streaming-id-preservation` | Preserve stable tool-call indices across /responses streaming argument deltas so Anthropic tool calls stay parseable | applied | unknown |

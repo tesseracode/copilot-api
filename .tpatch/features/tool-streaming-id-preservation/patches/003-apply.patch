@@ -1,0 +1,214 @@
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index f7b33cb..a224332 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -293,7 +293,7 @@ export interface ResponsesStreamState {
+   responseId: string
+   model: string
+   toolCallIndex: number
+-  activeToolCalls: Record<string, boolean>
++  toolCallIndices: Partial<Record<string, number>>
+ }
+ 
+ export function createResponsesStreamState(): ResponsesStreamState {
+@@ -301,7 +301,7 @@ export function createResponsesStreamState(): ResponsesStreamState {
+     responseId: "",
+     model: "",
+     toolCallIndex: 0,
+-    activeToolCalls: {},
++    toolCallIndices: {},
+   }
+ }
+ 
+@@ -358,11 +358,12 @@ export function* translateResponsesStreamEvent(
+     }
+ 
+     case "response.function_call_arguments.delta": {
+-      const toolIndex = streamState.toolCallIndex
+       const callId = data.call_id ?? ""
++      const existingToolIndex = streamState.toolCallIndices[callId]
++      const toolIndex = existingToolIndex ?? streamState.toolCallIndex
+ 
+-      if (!streamState.activeToolCalls[callId]) {
+-        streamState.activeToolCalls[callId] = true
++      if (existingToolIndex === undefined) {
++        streamState.toolCallIndices[callId] = toolIndex
+         yield makeChunk(
+           streamState,
+           {
+@@ -396,7 +397,7 @@ export function* translateResponsesStreamEvent(
+     }
+ 
+     case "response.completed": {
+-      const hasToolCalls = Object.keys(streamState.activeToolCalls).length > 0
++      const hasToolCalls = Object.keys(streamState.toolCallIndices).length > 0
+       yield makeChunk(streamState, {}, hasToolCalls ? "tool_calls" : "stop")
+       break
+     }
+diff --git a/tests/anthropic-response.test.ts b/tests/anthropic-response.test.ts
+index ecd71aa..8f53d26 100644
+--- a/tests/anthropic-response.test.ts
++++ b/tests/anthropic-response.test.ts
+@@ -1,14 +1,21 @@
+ import { describe, test, expect } from "bun:test"
+ import { z } from "zod"
+ 
++import type {
++  AnthropicStreamEventData,
++  AnthropicStreamState,
++} from "~/routes/messages/anthropic-types"
+ import type {
+   ChatCompletionChunk,
+   ChatCompletionResponse,
+ } from "~/services/copilot/create-chat-completions"
+ 
+-import { type AnthropicStreamState } from "~/routes/messages/anthropic-types"
+ import { translateToAnthropic } from "~/routes/messages/non-stream-translation"
+ import { translateChunkToAnthropicEvents } from "~/routes/messages/stream-translation"
++import {
++  createResponsesStreamState,
++  translateResponsesStreamEvent,
++} from "~/services/copilot/create-responses"
+ 
+ const anthropicUsageSchema = z.object({
+   input_tokens: z.number().int(),
+@@ -67,6 +74,58 @@ function isValidAnthropicStreamEvent(payload: unknown): boolean {
+   return anthropicStreamEventSchema.safeParse(payload).success
+ }
+ 
++type AnthropicToolStartEvent = Extract<
++  AnthropicStreamEventData,
++  { type: "content_block_start" }
++> & {
++  content_block: { type: "tool_use"; id: string; name: string }
++}
++
++type AnthropicInputJsonDeltaEvent = Extract<
++  AnthropicStreamEventData,
++  { type: "content_block_delta" }
++> & {
++  delta: { type: "input_json_delta"; partial_json: string }
++}
++
++type AnthropicMessageDeltaEvent = Extract<
++  AnthropicStreamEventData,
++  { type: "message_delta" }
++>
++
++function collectToolStreamDetails(events: Array<AnthropicStreamEventData>) {
++  const toolStarts: Array<AnthropicToolStartEvent> = []
++  const inputJsonDeltas: Array<AnthropicInputJsonDeltaEvent> = []
++  const messageDeltas: Array<AnthropicMessageDeltaEvent> = []
++  let messageStops = 0
++
++  for (const event of events) {
++    if (
++      event.type === "content_block_start"
++      && event.content_block.type === "tool_use"
++    ) {
++      toolStarts.push(event)
++    }
++
++    if (
++      event.type === "content_block_delta"
++      && event.delta.type === "input_json_delta"
++    ) {
++      inputJsonDeltas.push(event)
++    }
++
++    if (event.type === "message_delta") {
++      messageDeltas.push(event)
++    }
++
++    if (event.type === "message_stop") {
++      messageStops++
++    }
++  }
++
++  return { toolStarts, inputJsonDeltas, messageDeltas, messageStops }
++}
++
+ describe("OpenAI to Anthropic Non-Streaming Response Translation", () => {
+   test("should translate a simple text response correctly", () => {
+     const openAIResponse: ChatCompletionResponse = {
+@@ -357,9 +416,79 @@ describe("OpenAI to Anthropic Streaming Response Translation", () => {
+       translateChunkToAnthropicEvents(chunk, streamState),
+     )
+ 
+-    // These tests will fail until the stub is implemented
+     for (const event of translatedStream) {
+       expect(isValidAnthropicStreamEvent(event)).toBe(true)
+     }
++
++    const { toolStarts, inputJsonDeltas, messageDeltas, messageStops } =
++      collectToolStreamDetails(translatedStream)
++
++    expect(toolStarts).toHaveLength(1)
++    expect(toolStarts[0]?.content_block.id).toBe("call_xyz")
++    expect(toolStarts[0]?.content_block.name).toBe("get_weather")
++
++    expect(inputJsonDeltas).toHaveLength(2)
++    expect(inputJsonDeltas.map((event) => event.index)).toEqual([0, 0])
++    expect(
++      inputJsonDeltas.map((event) => event.delta.partial_json).join(""),
++    ).toBe('{"location": "Paris"}')
++
++    expect(messageDeltas.at(-1)?.delta.stop_reason).toBe("tool_use")
++    expect(messageStops).toBe(1)
++  })
++})
++
++describe("Responses API to Anthropic Streaming Response Translation", () => {
++  test("preserves tool-call indices across /responses argument deltas", () => {
++    const responsesState = createResponsesStreamState()
++    const anthropicState: AnthropicStreamState = {
++      messageStartSent: false,
++      contentBlockIndex: 0,
++      contentBlockOpen: false,
++      toolCalls: {},
++    }
++
++    const responsesEvents = [
++      { event: "response.created", data: { id: "resp-1", model: "gpt-5.5" } },
++      {
++        event: "response.function_call_arguments.delta",
++        data: {
++          call_id: "call_read",
++          name: "Read",
++          delta: '{"file_path":"/tmp/pa',
++        },
++      },
++      {
++        event: "response.function_call_arguments.delta",
++        data: {
++          call_id: "call_read",
++          delta: 'ckage.json"}',
++        },
++      },
++      { event: "response.completed", data: {} },
++    ]
++
++    const openAIStream = responsesEvents.flatMap((event) =>
++      Array.from(translateResponsesStreamEvent(event, responsesState)),
++    )
++    const translatedStream = openAIStream.flatMap((chunk) =>
++      translateChunkToAnthropicEvents(chunk, anthropicState),
++    )
++
++    const { toolStarts, inputJsonDeltas, messageDeltas, messageStops } =
++      collectToolStreamDetails(translatedStream)
++
++    expect(toolStarts).toHaveLength(1)
++    expect(toolStarts[0]?.content_block.id).toBe("call_read")
++    expect(toolStarts[0]?.content_block.name).toBe("Read")
++
++    expect(inputJsonDeltas).toHaveLength(2)
++    expect(inputJsonDeltas.map((event) => event.index)).toEqual([0, 0])
++    expect(
++      inputJsonDeltas.map((event) => event.delta.partial_json).join(""),
++    ).toBe('{"file_path":"/tmp/package.json"}')
++
++    expect(messageDeltas.at(-1)?.delta.stop_reason).toBe("tool_use")
++    expect(messageStops).toBe(1)
+   })
+ })

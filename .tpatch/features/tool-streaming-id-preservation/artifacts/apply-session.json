@@ -1,0 +1,8 @@
+{
+  "slug": "tool-streaming-id-preservation",
+  "completed_at": "2026-04-29T17:54:01Z",
+  "base_commit": "a2f03167b5e6fa313140b52b6eee0c6455b2a8c0",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "bun test tests/anthropic-response.test.ts \u0026\u0026 bun run lint \u0026\u0026 bun run build \u0026\u0026 bun test"
+}
