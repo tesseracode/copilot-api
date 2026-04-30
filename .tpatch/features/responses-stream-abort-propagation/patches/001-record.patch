@@ -1,0 +1,637 @@
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index 34063ec..2ec8ac2 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -54,15 +54,16 @@ export async function handleCompletion(c: Context) {
+   }
+ 
+   const endpoint = resolveEndpoint(payload.model, state.models)
++  const signal = c.req.raw.signal
+ 
+   // Route to /responses for GPT-5.x and models that only support it
+   if (endpoint === "/responses") {
+     consola.debug(`Using /responses endpoint for model: ${payload.model}`)
+-    return handleResponsesEndpoint(c, payload)
++    return handleResponsesEndpoint(c, payload, signal)
+   }
+ 
+   // Existing /chat/completions path
+-  const response = await createChatCompletions(payload)
++  const response = await createChatCompletions(payload, signal)
+ 
+   if (isNonStreaming(response)) {
+     consola.debug("Non-streaming response:", JSON.stringify(response))
+@@ -71,9 +72,20 @@ export async function handleCompletion(c: Context) {
+ 
+   consola.debug("Streaming response")
+   return streamSSE(c, async (stream) => {
+-    for await (const chunk of response) {
+-      consola.debug("Streaming chunk:", JSON.stringify(chunk))
+-      await stream.writeSSE(chunk as SSEMessage)
++    try {
++      for await (const chunk of response) {
++        consola.debug("Streaming chunk:", JSON.stringify(chunk))
++        await stream.writeSSE(chunk as SSEMessage)
++      }
++    } catch (err) {
++      if (
++        signal.aborted
++        || (err instanceof Error && err.name === "AbortError")
++      ) {
++        consola.debug("chat-completions stream aborted by client")
++        return
++      }
++      throw err
+     }
+   })
+ }
+@@ -81,8 +93,9 @@ export async function handleCompletion(c: Context) {
+ async function handleResponsesEndpoint(
+   c: Context,
+   payload: ChatCompletionsPayload,
++  signal?: AbortSignal,
+ ) {
+-  const response = await createResponses(payload)
++  const response = await createResponses(payload, signal)
+ 
+   if (isNonStreaming(response)) {
+     consola.debug("Non-streaming /responses result:", JSON.stringify(response))
+@@ -93,24 +106,35 @@ async function handleResponsesEndpoint(
+   return streamSSE(c, async (stream) => {
+     const streamState = createResponsesStreamState()
+ 
+-    for await (const rawEvent of response) {
+-      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+-
+-      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
+-      const eventType =
+-        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
+-
+-      const chunks = translateResponsesStreamEvent(
+-        { event: eventType, data: parsed },
+-        streamState,
+-      )
+-
+-      for (const chunk of chunks) {
+-        consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
+-        await stream.writeSSE({
+-          data: JSON.stringify(chunk),
+-        })
++    try {
++      for await (const rawEvent of response) {
++        if (!rawEvent.data || rawEvent.data === "[DONE]") continue
++
++        const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
++        const eventType =
++          rawEvent.event ?? (parsed.type as string | undefined) ?? ""
++
++        const chunks = translateResponsesStreamEvent(
++          { event: eventType, data: parsed },
++          streamState,
++        )
++
++        for (const chunk of chunks) {
++          consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
++          await stream.writeSSE({
++            data: JSON.stringify(chunk),
++          })
++        }
++      }
++    } catch (err) {
++      if (
++        signal?.aborted
++        || (err instanceof Error && err.name === "AbortError")
++      ) {
++        consola.debug("/responses stream aborted by client")
++        return
+       }
++      throw err
+     }
+   })
+ }
+diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
+index c3a4418..41338d2 100644
+--- a/src/routes/messages/handler.ts
++++ b/src/routes/messages/handler.ts
+@@ -63,11 +63,12 @@ export async function handleCompletion(c: Context) {
+     wants1M,
+   )
+   const endpoint = resolveEndpoint(copilotModelId, state.models)
++  const signal = c.req.raw.signal
+ 
+   // Native Anthropic passthrough for Claude models
+   if (endpoint === "/v1/messages") {
+     consola.debug(`Using native /v1/messages passthrough for ${copilotModelId}`)
+-    return handleNativePassthrough(c, anthropicPayload, wants1M)
++    return handleNativePassthrough(c, anthropicPayload, wants1M, signal)
+   }
+ 
+   // Translate Anthropic → OpenAI format for non-Claude models
+@@ -80,11 +81,11 @@ export async function handleCompletion(c: Context) {
+   // /responses for GPT-5.x models (responses-only or preferred)
+   if (endpoint === "/responses") {
+     consola.debug(`Using /responses endpoint for ${copilotModelId}`)
+-    return handleResponsesViaAnthropic(c, openAIPayload)
++    return handleResponsesViaAnthropic(c, openAIPayload, signal)
+   }
+ 
+   // /chat/completions for legacy models
+-  const response = await createChatCompletions(openAIPayload)
++  const response = await createChatCompletions(openAIPayload, signal)
+ 
+   if (isNonStreaming(response)) {
+     consola.debug(
+@@ -108,46 +109,80 @@ export async function handleCompletion(c: Context) {
+       toolCalls: {},
+     }
+ 
+-    for await (const rawEvent of response) {
+-      consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
+-      if (rawEvent.data === "[DONE]") {
+-        break
+-      }
++    try {
++      for await (const rawEvent of response) {
++        consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
++        if (rawEvent.data === "[DONE]") {
++          break
++        }
+ 
+-      if (!rawEvent.data) {
+-        continue
+-      }
++        if (!rawEvent.data) {
++          continue
++        }
+ 
+-      const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+-      const events = translateChunkToAnthropicEvents(chunk, streamState)
++        const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
++        const events = translateChunkToAnthropicEvents(chunk, streamState)
+ 
+-      for (const event of events) {
+-        consola.debug("Translated Anthropic event:", JSON.stringify(event))
+-        await stream.writeSSE({
+-          event: event.type,
+-          data: JSON.stringify(event),
+-        })
++        for (const event of events) {
++          consola.debug("Translated Anthropic event:", JSON.stringify(event))
++          await stream.writeSSE({
++            event: event.type,
++            data: JSON.stringify(event),
++          })
++        }
++      }
++    } catch (err) {
++      if (
++        signal.aborted
++        || (err instanceof Error && err.name === "AbortError")
++      ) {
++        consola.debug("/v1/messages chat-completions stream aborted by client")
++        return
+       }
++      throw err
+     }
+   })
+ }
+ 
++// eslint-disable-next-line max-params
+ async function handleNativePassthrough(
+   c: Context,
+   payload: AnthropicMessagesPayload,
+   is1M: boolean,
++  signal?: AbortSignal,
+ ) {
+   if (!payload.stream) {
+-    const response = await forwardNativeMessagesNonStreaming(payload, is1M)
++    const response = await forwardNativeMessagesNonStreaming(
++      payload,
++      is1M,
++      signal,
++    )
+     return c.json(response)
+   }
+ 
+   return streamSSE(c, async (stream) => {
+-    for await (const event of forwardNativeMessagesStreaming(payload, is1M)) {
+-      await stream.writeSSE({
+-        event: event.type,
+-        data: JSON.stringify(event.data),
+-      })
++    try {
++      for await (const event of forwardNativeMessagesStreaming(
++        payload,
++        is1M,
++        signal,
++      )) {
++        await stream.writeSSE({
++          event: event.type,
++          data: JSON.stringify(event.data),
++        })
++      }
++    } catch (err) {
++      if (
++        signal?.aborted
++        || (err instanceof Error && err.name === "AbortError")
++      ) {
++        consola.debug(
++          "/v1/messages native passthrough stream aborted by client",
++        )
++        return
++      }
++      throw err
+     }
+   })
+ }
+@@ -163,8 +198,9 @@ const isNonStreaming = (
+ async function handleResponsesViaAnthropic(
+   c: Context,
+   openAIPayload: Parameters<typeof createResponses>[0],
++  signal?: AbortSignal,
+ ) {
+-  const response = await createResponses(openAIPayload)
++  const response = await createResponses(openAIPayload, signal)
+ 
+   if (isNonStreaming(response)) {
+     const anthropicResponse = translateToAnthropic(response)
+@@ -180,27 +216,38 @@ async function handleResponsesViaAnthropic(
+       toolCalls: {},
+     }
+ 
+-    for await (const rawEvent of response) {
+-      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+-
+-      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
+-      const eventType =
+-        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
+-
+-      const chunks = translateResponsesStreamEvent(
+-        { event: eventType, data: parsed },
+-        responsesState,
+-      )
+-
+-      for (const chunk of chunks) {
+-        const events = translateChunkToAnthropicEvents(chunk, anthropicState)
+-        for (const event of events) {
+-          await stream.writeSSE({
+-            event: event.type,
+-            data: JSON.stringify(event),
+-          })
++    try {
++      for await (const rawEvent of response) {
++        if (!rawEvent.data || rawEvent.data === "[DONE]") continue
++
++        const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
++        const eventType =
++          rawEvent.event ?? (parsed.type as string | undefined) ?? ""
++
++        const chunks = translateResponsesStreamEvent(
++          { event: eventType, data: parsed },
++          responsesState,
++        )
++
++        for (const chunk of chunks) {
++          const events = translateChunkToAnthropicEvents(chunk, anthropicState)
++          for (const event of events) {
++            await stream.writeSSE({
++              event: event.type,
++              data: JSON.stringify(event),
++            })
++          }
+         }
+       }
++    } catch (err) {
++      if (
++        signal?.aborted
++        || (err instanceof Error && err.name === "AbortError")
++      ) {
++        consola.debug("/v1/messages /responses stream aborted by client")
++        return
++      }
++      throw err
+     }
+   })
+ }
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 17ad69c..b570aa2 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -7,6 +7,7 @@ import { state } from "~/lib/state"
+ 
+ export const createChatCompletions = async (
+   payload: ChatCompletionsPayload,
++  signal?: AbortSignal,
+ ) => {
+   if (!state.copilotToken) throw new Error("Copilot token not found")
+ 
+@@ -32,6 +33,7 @@ export const createChatCompletions = async (
+     method: "POST",
+     headers,
+     body: JSON.stringify(payload),
++    signal,
+   })
+ 
+   if (!response.ok) {
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 2d6b2fe..cb88777 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -854,7 +854,10 @@ export function* translateResponsesStreamEvent(
+ 
+ // ── Service function: call the upstream /responses endpoint ──
+ 
+-export async function createResponses(payload: ChatCompletionsPayload) {
++export async function createResponses(
++  payload: ChatCompletionsPayload,
++  signal?: AbortSignal,
++) {
+   if (!state.copilotToken) throw new Error("Copilot token not found")
+ 
+   const responsesPayload = translateRequestToResponses(payload)
+@@ -866,6 +869,7 @@ export async function createResponses(payload: ChatCompletionsPayload) {
+     method: "POST",
+     headers: copilotHeaders(state),
+     body: JSON.stringify(responsesPayload),
++    signal,
+   })
+ 
+   if (!response.ok) {
+diff --git a/src/services/copilot/forward-native-messages.ts b/src/services/copilot/forward-native-messages.ts
+index 0f0eab2..97943c9 100644
+--- a/src/services/copilot/forward-native-messages.ts
++++ b/src/services/copilot/forward-native-messages.ts
+@@ -278,10 +278,12 @@ export function buildNativeBody(
+  * Forward a /v1/messages request directly to the upstream Copilot API's
+  * native Anthropic /v1/messages endpoint, with only supported fields.
+  */
++// eslint-disable-next-line max-params
+ export async function forwardNativeMessages(
+   payload: AnthropicMessagesPayload,
+   streamOverride?: boolean,
+   is1M?: boolean,
++  signal?: AbortSignal,
+ ): Promise<Response> {
+   const overrides: Record<string, unknown> = {}
+   if (streamOverride !== undefined) overrides.stream = streamOverride
+@@ -298,6 +300,7 @@ export async function forwardNativeMessages(
+     method: "POST",
+     headers: copilotHeaders(state),
+     body: JSON.stringify(body),
++    signal,
+   })
+ 
+   if (!response.ok) {
+@@ -316,8 +319,9 @@ export async function forwardNativeMessages(
+ export async function forwardNativeMessagesNonStreaming(
+   payload: AnthropicMessagesPayload,
+   is1M?: boolean,
++  signal?: AbortSignal,
+ ) {
+-  const response = await forwardNativeMessages(payload, false, is1M)
++  const response = await forwardNativeMessages(payload, false, is1M, signal)
+   return await response.json()
+ }
+ 
+@@ -327,8 +331,9 @@ export async function forwardNativeMessagesNonStreaming(
+ export async function* forwardNativeMessagesStreaming(
+   payload: AnthropicMessagesPayload,
+   is1M?: boolean,
++  signal?: AbortSignal,
+ ) {
+-  const response = await forwardNativeMessages(payload, true, is1M)
++  const response = await forwardNativeMessages(payload, true, is1M, signal)
+ 
+   const stream = events(response)
+   for await (const event of stream) {
+diff --git a/tests/responses-stream-abort-propagation.test.ts b/tests/responses-stream-abort-propagation.test.ts
+new file mode 100644
+index 0000000..b8f2401
+--- /dev/null
++++ b/tests/responses-stream-abort-propagation.test.ts
+@@ -0,0 +1,225 @@
++import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
++
++import { state } from "~/lib/state"
++import { createChatCompletions } from "~/services/copilot/create-chat-completions"
++import { createResponses } from "~/services/copilot/create-responses"
++import {
++  forwardNativeMessages,
++  forwardNativeMessagesNonStreaming,
++  forwardNativeMessagesStreaming,
++} from "~/services/copilot/forward-native-messages"
++
++function emptyJsonResponse() {
++  return new Response(
++    JSON.stringify({
++      id: "x",
++      object: "chat.completion",
++      created: 0,
++      model: "gpt-test",
++      choices: [
++        {
++          index: 0,
++          message: { role: "assistant", content: "" },
++          logprobs: null,
++          finish_reason: "stop",
++        },
++      ],
++    }),
++    { headers: { "content-type": "application/json" } },
++  )
++}
++
++function emptyStreamResponse() {
++  const stream = new ReadableStream<Uint8Array>({
++    start(controller) {
++      controller.close()
++    },
++  })
++  return new Response(stream, {
++    headers: { "content-type": "text/event-stream" },
++  })
++}
++
++function lastFetchInit(
++  spy: ReturnType<typeof spyOn<typeof globalThis, "fetch">>,
++): RequestInit | undefined {
++  const calls = spy.mock.calls as Array<[unknown, RequestInit | undefined]>
++  return calls.at(-1)?.[1]
++}
++
++let originalToken: string | undefined
++
++beforeEach(() => {
++  originalToken = state.copilotToken
++  state.copilotToken = "test-token"
++})
++
++afterEach(() => {
++  state.copilotToken = originalToken
++})
++
++describe("AbortSignal propagation to upstream fetch", () => {
++  test("createChatCompletions forwards signal", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      emptyJsonResponse(),
++    )
++    try {
++      const controller = new AbortController()
++      await createChatCompletions(
++        {
++          model: "gpt-test",
++          messages: [{ role: "user", content: "hi" }],
++        },
++        controller.signal,
++      )
++      expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++
++  test("createResponses forwards signal on non-streaming path", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      new Response(
++        JSON.stringify({
++          id: "x",
++          object: "response",
++          model: "gpt-test",
++          output: [],
++        }),
++        { headers: { "content-type": "application/json" } },
++      ),
++    )
++    try {
++      const controller = new AbortController()
++      await createResponses(
++        {
++          model: "gpt-test",
++          messages: [{ role: "user", content: "hi" }],
++        },
++        controller.signal,
++      )
++      expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++
++  test("createResponses forwards signal on streaming path", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      emptyStreamResponse(),
++    )
++    try {
++      const controller = new AbortController()
++      const result = await createResponses(
++        {
++          model: "gpt-test",
++          messages: [{ role: "user", content: "hi" }],
++          stream: true,
++        },
++        controller.signal,
++      )
++      // Drain to ensure the iterator runs.
++      if (Symbol.asyncIterator in (result as object)) {
++        for await (const _ of result as AsyncIterable<unknown>) {
++          void _
++        }
++      }
++      expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++
++  test("forwardNativeMessages forwards signal", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      emptyJsonResponse(),
++    )
++    try {
++      const controller = new AbortController()
++      await forwardNativeMessages(
++        {
++          model: "claude-test",
++          messages: [{ role: "user", content: "hi" }],
++          max_tokens: 16,
++        },
++        false,
++        false,
++        controller.signal,
++      )
++      expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++
++  test("forwardNativeMessagesNonStreaming forwards signal", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      emptyJsonResponse(),
++    )
++    try {
++      const controller = new AbortController()
++      await forwardNativeMessagesNonStreaming(
++        {
++          model: "claude-test",
++          messages: [{ role: "user", content: "hi" }],
++          max_tokens: 16,
++        },
++        false,
++        controller.signal,
++      )
++      expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++
++  test("forwardNativeMessagesStreaming forwards signal", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      emptyStreamResponse(),
++    )
++    try {
++      const controller = new AbortController()
++      const iter = forwardNativeMessagesStreaming(
++        {
++          model: "claude-test",
++          messages: [{ role: "user", content: "hi" }],
++          max_tokens: 16,
++        },
++        false,
++        controller.signal,
++      )
++      for await (const _ of iter) {
++        void _
++      }
++      expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++
++  test("pre-aborted signal: fetch sees aborted=true", async () => {
++    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
++      emptyJsonResponse(),
++    )
++    try {
++      const controller = new AbortController()
++      controller.abort()
++      try {
++        await createChatCompletions(
++          {
++            model: "gpt-test",
++            messages: [{ role: "user", content: "hi" }],
++          },
++          controller.signal,
++        )
++      } catch {
++        // fetch may throw on aborted signal; that's OK.
++      }
++      const init = lastFetchInit(fetchSpy)
++      expect(init?.signal?.aborted).toBe(true)
++    } finally {
++      fetchSpy.mockRestore()
++    }
++  })
++})
