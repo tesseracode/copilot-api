@@ -185,7 +185,7 @@ export interface ToolCall {
   }
 }
 
-export type ContentPart = TextPart | ImagePart
+export type ContentPart = TextPart | ImagePart | AudioPart
 
 export interface TextPart {
   type: "text"
@@ -197,5 +197,13 @@ export interface ImagePart {
   image_url: {
     url: string
     detail?: "low" | "high" | "auto"
+  }
+}
+
+export interface AudioPart {
+  type: "input_audio"
+  input_audio: {
+    data: string
+    format: "wav" | "mp3"
   }
 }
