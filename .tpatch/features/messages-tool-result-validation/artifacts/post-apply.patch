@@ -1,0 +1,405 @@
+diff --git a/src/lib/error.ts b/src/lib/error.ts
+index c39c225..2bcbfac 100644
+--- a/src/lib/error.ts
++++ b/src/lib/error.ts
+@@ -12,6 +12,31 @@ export class HTTPError extends Error {
+   }
+ }
+ 
++export function badRequest(message: string): HTTPError {
++  return new HTTPError(
++    message,
++    new Response(
++      JSON.stringify({
++        error: { type: "invalid_request_error", message },
++      }),
++      {
++        status: 400,
++        headers: { "content-type": "application/json" },
++      },
++    ),
++  )
++}
++
++function isUpstreamErrorEnvelope(
++  value: unknown,
++): value is { error: { message: string; type?: string; code?: string } } {
++  if (!value || typeof value !== "object") return false
++  const inner = (value as { error?: unknown }).error
++  if (!inner || typeof inner !== "object") return false
++  const message = (inner as { message?: unknown }).message
++  return typeof message === "string"
++}
++
+ export async function forwardError(c: Context, error: unknown) {
+   consola.error("Error occurred:", error)
+ 
+@@ -24,14 +49,21 @@ export async function forwardError(c: Context, error: unknown) {
+       errorJson = errorText
+     }
+     consola.error("HTTP error:", errorJson)
++
++    const status = error.response.status as ContentfulStatusCode
++
++    if (isUpstreamErrorEnvelope(errorJson)) {
++      return c.json(errorJson, status)
++    }
++
+     return c.json(
+       {
+         error: {
+-          message: errorText,
++          message: typeof errorJson === "string" ? errorJson : errorText,
+           type: "error",
+         },
+       },
+-      error.response.status as ContentfulStatusCode,
++      status,
+     )
+   }
+ 
+diff --git a/src/routes/messages/non-stream-translation.ts b/src/routes/messages/non-stream-translation.ts
+index fbaccda..0f9b31a 100644
+--- a/src/routes/messages/non-stream-translation.ts
++++ b/src/routes/messages/non-stream-translation.ts
+@@ -1,3 +1,4 @@
++import { badRequest } from "~/lib/error"
+ import {
+   anthropicToCopilotModelId,
+   copilotToAnthropicModelId,
+@@ -99,6 +100,9 @@ function handleUserMessage(message: AnthropicUserMessage): Array<Message> {
+ 
+     // Tool results must come first to maintain protocol: tool_use -> tool_result -> user
+     for (const block of toolResultBlocks) {
++      if (!block.tool_use_id || !block.tool_use_id.trim()) {
++        throw badRequest("tool_result block is missing tool_use_id")
++      }
+       newMessages.push({
+         role: "tool",
+         tool_call_id: block.tool_use_id,
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index b570aa2..353f825 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -185,7 +185,7 @@ export interface ToolCall {
+   }
+ }
+ 
+-export type ContentPart = TextPart | ImagePart
++export type ContentPart = TextPart | ImagePart | AudioPart
+ 
+ export interface TextPart {
+   type: "text"
+@@ -199,3 +199,11 @@ export interface ImagePart {
+     detail?: "low" | "high" | "auto"
+   }
+ }
++
++export interface AudioPart {
++  type: "input_audio"
++  input_audio: {
++    data: string
++    format: "wav" | "mp3"
++  }
++}
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index cb88777..c1f7503 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -35,10 +35,11 @@ type ResponsesInput =
+   | { type: "function_call_output"; call_id: string; output: string }
+ 
+ interface ResponsesContentPart {
+-  type: "input_text" | "input_image"
++  type: "input_text" | "input_image" | "input_audio"
+   text?: string
+   image_url?: string
+   detail?: string
++  input_audio?: { data: string; format: string }
+ }
+ 
+ interface ResponsesTool {
+@@ -48,27 +49,62 @@ interface ResponsesTool {
+   parameters: Record<string, unknown>
+ }
+ 
+-function translateMessageContent(
+-  content:
+-    | string
+-    | Array<{
+-        type: string
+-        text?: string
+-        image_url?: { url: string; detail?: string }
+-      }>
+-    | undefined,
++interface RawContentPart {
++  type: string
++  text?: string
++  image_url?: { url?: string; detail?: string }
++  input_audio?: { data?: string; format?: string }
++}
++
++export function translateMessageContent(
++  content: string | Array<RawContentPart> | undefined,
+ ): string | Array<ResponsesContentPart> {
+   if (typeof content === "string") return content
+   if (!content) return ""
+-  return content.map((p) => {
+-    if (p.type === "text")
+-      return { type: "input_text" as const, text: p.text ?? "" }
+-    return {
+-      type: "input_image" as const,
+-      image_url: p.image_url?.url,
+-      detail: p.image_url?.detail,
++
++  const parts: Array<ResponsesContentPart> = []
++  for (const p of content) {
++    if (p.type === "text") {
++      parts.push({ type: "input_text", text: p.text ?? "" })
++      continue
+     }
+-  })
++
++    if (p.type === "image_url") {
++      const url = p.image_url?.url
++      if (!url) {
++        consola.warn("Dropping image_url part with no url", {
++          reason: "missing image_url.url",
++        })
++        continue
++      }
++      parts.push({
++        type: "input_image",
++        image_url: url,
++        detail: p.image_url?.detail,
++      })
++      continue
++    }
++
++    if (p.type === "input_audio") {
++      const data = p.input_audio?.data
++      const format = p.input_audio?.format
++      if (!data || !format) {
++        consola.warn("Dropping input_audio part missing data or format", {
++          hasData: Boolean(data),
++          hasFormat: Boolean(format),
++        })
++        continue
++      }
++      parts.push({
++        type: "input_audio",
++        input_audio: { data, format },
++      } as ResponsesContentPart)
++      continue
++    }
++
++    consola.warn("Dropping unknown content part type", { unknownType: p.type })
++  }
++  return parts
+ }
+ 
+ function translateMessages(
+diff --git a/tests/messages-tool-result-validation.test.ts b/tests/messages-tool-result-validation.test.ts
+new file mode 100644
+index 0000000..c73f1bb
+--- /dev/null
++++ b/tests/messages-tool-result-validation.test.ts
+@@ -0,0 +1,198 @@
++import { describe, expect, spyOn, test } from "bun:test"
++import consola from "consola"
++
++import { badRequest, forwardError, HTTPError } from "~/lib/error"
++import { translateToOpenAI } from "~/routes/messages/non-stream-translation"
++import { translateMessageContent } from "~/services/copilot/create-responses"
++
++describe("translateMessageContent multimodal handling", () => {
++  test("text part maps to input_text", () => {
++    const out = translateMessageContent([{ type: "text", text: "hi" }])
++    expect(out).toEqual([{ type: "input_text", text: "hi" }])
++  })
++
++  test("image_url part with url maps to input_image", () => {
++    const out = translateMessageContent([
++      {
++        type: "image_url",
++        image_url: { url: "https://example.com/x.png", detail: "low" },
++      },
++    ])
++    expect(out).toEqual([
++      {
++        type: "input_image",
++        image_url: "https://example.com/x.png",
++        detail: "low",
++      },
++    ])
++  })
++
++  test("image_url part with empty url is dropped with warn", () => {
++    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    try {
++      const out = translateMessageContent([
++        { type: "image_url", image_url: { url: "" } },
++      ])
++      expect(out).toEqual([])
++      expect(warnSpy).toHaveBeenCalledTimes(1)
++    } finally {
++      warnSpy.mockRestore()
++    }
++  })
++
++  test("input_audio part maps to input_audio with data and format", () => {
++    const out = translateMessageContent([
++      {
++        type: "input_audio",
++        input_audio: { data: "AAAA", format: "wav" },
++      },
++    ])
++    expect(out).toEqual([
++      {
++        type: "input_audio",
++        input_audio: { data: "AAAA", format: "wav" },
++      },
++    ])
++  })
++
++  test("unknown type is dropped with warn carrying the type label", () => {
++    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    try {
++      const out = translateMessageContent([{ type: "mystery_box", text: "" }])
++      expect(out).toEqual([])
++      expect(warnSpy).toHaveBeenCalledTimes(1)
++      const call = warnSpy.mock.calls[0] as
++        | [string, Record<string, unknown>]
++        | undefined
++      expect(call?.[1]).toMatchObject({ unknownType: "mystery_box" })
++    } finally {
++      warnSpy.mockRestore()
++    }
++  })
++})
++
++describe("empty tool_use_id rejected before upstream call", () => {
++  test("throws badRequest with 400 and clean envelope", async () => {
++    let thrown: unknown
++    try {
++      translateToOpenAI({
++        model: "claude-test",
++        max_tokens: 16,
++        messages: [
++          {
++            role: "user",
++            content: [
++              {
++                type: "tool_result",
++                tool_use_id: "",
++                content: "hi",
++              },
++            ],
++          },
++        ],
++      })
++    } catch (err) {
++      thrown = err
++    }
++
++    expect(thrown).toBeInstanceOf(HTTPError)
++    const httpErr = thrown as HTTPError
++    expect(httpErr.response.status).toBe(400)
++    const body = (await httpErr.response.json()) as Record<string, unknown>
++    expect(body).toEqual({
++      error: {
++        type: "invalid_request_error",
++        message: "tool_result block is missing tool_use_id",
++      },
++    })
++  })
++
++  test("valid tool_use_id translates without throwing", () => {
++    expect(() =>
++      translateToOpenAI({
++        model: "claude-test",
++        max_tokens: 16,
++        messages: [
++          {
++            role: "user",
++            content: [
++              {
++                type: "tool_result",
++                tool_use_id: "toolu_abc",
++                content: "hi",
++              },
++            ],
++          },
++        ],
++      }),
++    ).not.toThrow()
++  })
++})
++
++describe("forwardError envelope handling", () => {
++  type CapturedJson = { body: unknown; status: number }
++  function makeMockContext() {
++    const captured: { calls: Array<CapturedJson> } = { calls: [] }
++    const c = {
++      json(body: unknown, status: number) {
++        captured.calls.push({ body, status })
++        return new Response(JSON.stringify(body), { status })
++      },
++    } as unknown as Parameters<typeof forwardError>[0]
++    return { c, captured }
++  }
++
++  test("upstream {error:{message}} envelope is passed through unchanged", async () => {
++    const upstreamBody = {
++      error: {
++        type: "rate_limit_exceeded",
++        message: "too many requests",
++        code: "rate_limit",
++      },
++    }
++    const httpErr = new HTTPError(
++      "upstream",
++      new Response(JSON.stringify(upstreamBody), {
++        status: 429,
++        headers: { "content-type": "application/json" },
++      }),
++    )
++    const { c, captured } = makeMockContext()
++    await forwardError(c, httpErr)
++    expect(captured.calls).toHaveLength(1)
++    expect(captured.calls[0]).toEqual({ body: upstreamBody, status: 429 })
++  })
++
++  test("upstream plain text body is wrapped in our envelope", async () => {
++    const httpErr = new HTTPError(
++      "upstream",
++      new Response("not json", { status: 502 }),
++    )
++    const { c, captured } = makeMockContext()
++    await forwardError(c, httpErr)
++    expect(captured.calls).toHaveLength(1)
++    expect(captured.calls[0]).toEqual({
++      body: { error: { message: "not json", type: "error" } },
++      status: 502,
++    })
++  })
++
++  test("non-HTTPError errors are wrapped in 500 envelope", async () => {
++    const { c, captured } = makeMockContext()
++    await forwardError(c, new Error("boom"))
++    expect(captured.calls).toHaveLength(1)
++    expect(captured.calls[0]).toEqual({
++      body: { error: { message: "boom", type: "error" } },
++      status: 500,
++    })
++  })
++
++  test("badRequest synthesises a clean 400 HTTPError", async () => {
++    const err = badRequest("missing field")
++    expect(err.response.status).toBe(400)
++    const body = (await err.response.json()) as Record<string, unknown>
++    expect(body).toEqual({
++      error: { type: "invalid_request_error", message: "missing field" },
++    })
++  })
++})

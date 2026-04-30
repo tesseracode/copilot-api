@@ -2,11 +2,15 @@
   "id": "messages-tool-result-validation",
   "slug": "messages-tool-result-validation",
   "title": "Tighten Anthropic -\u003e OpenAI -\u003e /responses translation so input is well-formed and multimodal content survives the trip. (1) In src/services/copilot/create-responses.ts translateMessageContent, stop unconditionally coercing non-text parts into input_image with possibly-undefined image_url; correctly map image and audio content (input_image with proper image_url+detail; pass audio through using the appropriate /responses content part type) and drop or warn on truly unknown types instead of silently producing malformed parts. (2) Validate tool message inputs early: reject empty tool_call_id / tool_use_id with a 400 carrying a clean error before forwarding upstream. (3) Fix HTTPError so upstream error bodies are not double-encoded as JSON-in-JSON-string in the response. Add tests covering image passthrough, audio passthrough (if supported by the responses content schema), empty tool_use_id rejection, and a non-stringified upstream error body.",
-  "state": "requested",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-04-29T22:10:06Z",
-  "updated_at": "2026-04-29T22:10:06Z",
-  "last_command": "add",
-  "apply": {},
+  "updated_at": "2026-04-30T01:29:31Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "2104afcbe55f50e45af75efde0f205ffc4f8e20e",
+    "has_patch": true
+  },
   "reconcile": {}
 }
