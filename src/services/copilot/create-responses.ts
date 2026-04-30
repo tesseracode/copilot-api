@@ -35,10 +35,11 @@ type ResponsesInput =
   | { type: "function_call_output"; call_id: string; output: string }
 
 interface ResponsesContentPart {
-  type: "input_text" | "input_image"
+  type: "input_text" | "input_image" | "input_audio"
   text?: string
   image_url?: string
   detail?: string
+  input_audio?: { data: string; format: string }
 }
 
 interface ResponsesTool {
@@ -48,27 +49,62 @@ interface ResponsesTool {
   parameters: Record<string, unknown>
 }
 
-function translateMessageContent(
-  content:
-    | string
-    | Array<{
-        type: string
-        text?: string
-        image_url?: { url: string; detail?: string }
-      }>
-    | undefined,
+interface RawContentPart {
+  type: string
+  text?: string
+  image_url?: { url?: string; detail?: string }
+  input_audio?: { data?: string; format?: string }
+}
+
+export function translateMessageContent(
+  content: string | Array<RawContentPart> | undefined,
 ): string | Array<ResponsesContentPart> {
   if (typeof content === "string") return content
   if (!content) return ""
-  return content.map((p) => {
-    if (p.type === "text")
-      return { type: "input_text" as const, text: p.text ?? "" }
-    return {
-      type: "input_image" as const,
-      image_url: p.image_url?.url,
-      detail: p.image_url?.detail,
+
+  const parts: Array<ResponsesContentPart> = []
+  for (const p of content) {
+    if (p.type === "text") {
+      parts.push({ type: "input_text", text: p.text ?? "" })
+      continue
     }
-  })
+
+    if (p.type === "image_url") {
+      const url = p.image_url?.url
+      if (!url) {
+        consola.warn("Dropping image_url part with no url", {
+          reason: "missing image_url.url",
+        })
+        continue
+      }
+      parts.push({
+        type: "input_image",
+        image_url: url,
+        detail: p.image_url?.detail,
+      })
+      continue
+    }
+
+    if (p.type === "input_audio") {
+      const data = p.input_audio?.data
+      const format = p.input_audio?.format
+      if (!data || !format) {
+        consola.warn("Dropping input_audio part missing data or format", {
+          hasData: Boolean(data),
+          hasFormat: Boolean(format),
+        })
+        continue
+      }
+      parts.push({
+        type: "input_audio",
+        input_audio: { data, format },
+      } as ResponsesContentPart)
+      continue
+    }
+
+    consola.warn("Dropping unknown content part type", { unknownType: p.type })
+  }
+  return parts
 }
 
 function translateMessages(

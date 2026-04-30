@@ -1,3 +1,4 @@
+import { badRequest } from "~/lib/error"
 import {
   anthropicToCopilotModelId,
   copilotToAnthropicModelId,
@@ -99,6 +100,9 @@ function handleUserMessage(message: AnthropicUserMessage): Array<Message> {
 
     // Tool results must come first to maintain protocol: tool_use -> tool_result -> user
     for (const block of toolResultBlocks) {
+      if (!block.tool_use_id || !block.tool_use_id.trim()) {
+        throw badRequest("tool_result block is missing tool_use_id")
+      }
       newMessages.push({
         role: "tool",
         tool_call_id: block.tool_use_id,
