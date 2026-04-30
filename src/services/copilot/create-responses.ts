@@ -854,7 +854,10 @@ export function* translateResponsesStreamEvent(
 
 // ── Service function: call the upstream /responses endpoint ──
 
-export async function createResponses(payload: ChatCompletionsPayload) {
+export async function createResponses(
+  payload: ChatCompletionsPayload,
+  signal?: AbortSignal,
+) {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
   const responsesPayload = translateRequestToResponses(payload)
@@ -866,6 +869,7 @@ export async function createResponses(payload: ChatCompletionsPayload) {
     method: "POST",
     headers: copilotHeaders(state),
     body: JSON.stringify(responsesPayload),
+    signal,
   })
 
   if (!response.ok) {

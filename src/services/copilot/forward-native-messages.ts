@@ -278,10 +278,12 @@ export function buildNativeBody(
  * Forward a /v1/messages request directly to the upstream Copilot API's
  * native Anthropic /v1/messages endpoint, with only supported fields.
  */
+// eslint-disable-next-line max-params
 export async function forwardNativeMessages(
   payload: AnthropicMessagesPayload,
   streamOverride?: boolean,
   is1M?: boolean,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const overrides: Record<string, unknown> = {}
   if (streamOverride !== undefined) overrides.stream = streamOverride
@@ -298,6 +300,7 @@ export async function forwardNativeMessages(
     method: "POST",
     headers: copilotHeaders(state),
     body: JSON.stringify(body),
+    signal,
   })
 
   if (!response.ok) {
@@ -316,8 +319,9 @@ export async function forwardNativeMessages(
 export async function forwardNativeMessagesNonStreaming(
   payload: AnthropicMessagesPayload,
   is1M?: boolean,
+  signal?: AbortSignal,
 ) {
-  const response = await forwardNativeMessages(payload, false, is1M)
+  const response = await forwardNativeMessages(payload, false, is1M, signal)
   return await response.json()
 }
 
@@ -327,8 +331,9 @@ export async function forwardNativeMessagesNonStreaming(
 export async function* forwardNativeMessagesStreaming(
   payload: AnthropicMessagesPayload,
   is1M?: boolean,
+  signal?: AbortSignal,
 ) {
-  const response = await forwardNativeMessages(payload, true, is1M)
+  const response = await forwardNativeMessages(payload, true, is1M, signal)
 
   const stream = events(response)
   for await (const event of stream) {

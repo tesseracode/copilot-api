@@ -63,11 +63,12 @@ export async function handleCompletion(c: Context) {
     wants1M,
   )
   const endpoint = resolveEndpoint(copilotModelId, state.models)
+  const signal = c.req.raw.signal
 
   // Native Anthropic passthrough for Claude models
   if (endpoint === "/v1/messages") {
     consola.debug(`Using native /v1/messages passthrough for ${copilotModelId}`)
-    return handleNativePassthrough(c, anthropicPayload, wants1M)
+    return handleNativePassthrough(c, anthropicPayload, wants1M, signal)
   }
 
   // Translate Anthropic → OpenAI format for non-Claude models
@@ -80,11 +81,11 @@ export async function handleCompletion(c: Context) {
   // /responses for GPT-5.x models (responses-only or preferred)
   if (endpoint === "/responses") {
     consola.debug(`Using /responses endpoint for ${copilotModelId}`)
-    return handleResponsesViaAnthropic(c, openAIPayload)
+    return handleResponsesViaAnthropic(c, openAIPayload, signal)
   }
 
   // /chat/completions for legacy models
-  const response = await createChatCompletions(openAIPayload)
+  const response = await createChatCompletions(openAIPayload, signal)
 
   if (isNonStreaming(response)) {
     consola.debug(
@@ -108,46 +109,80 @@ export async function handleCompletion(c: Context) {
       toolCalls: {},
     }
 
-    for await (const rawEvent of response) {
-      consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
-      if (rawEvent.data === "[DONE]") {
-        break
-      }
+    try {
+      for await (const rawEvent of response) {
+        consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
+        if (rawEvent.data === "[DONE]") {
+          break
+        }
 
-      if (!rawEvent.data) {
-        continue
-      }
+        if (!rawEvent.data) {
+          continue
+        }
 
-      const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
-      const events = translateChunkToAnthropicEvents(chunk, streamState)
+        const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+        const events = translateChunkToAnthropicEvents(chunk, streamState)
 
-      for (const event of events) {
-        consola.debug("Translated Anthropic event:", JSON.stringify(event))
-        await stream.writeSSE({
-          event: event.type,
-          data: JSON.stringify(event),
-        })
+        for (const event of events) {
+          consola.debug("Translated Anthropic event:", JSON.stringify(event))
+          await stream.writeSSE({
+            event: event.type,
+            data: JSON.stringify(event),
+          })
+        }
       }
+    } catch (err) {
+      if (
+        signal.aborted
+        || (err instanceof Error && err.name === "AbortError")
+      ) {
+        consola.debug("/v1/messages chat-completions stream aborted by client")
+        return
+      }
+      throw err
     }
   })
 }
 
+// eslint-disable-next-line max-params
 async function handleNativePassthrough(
   c: Context,
   payload: AnthropicMessagesPayload,
   is1M: boolean,
+  signal?: AbortSignal,
 ) {
   if (!payload.stream) {
-    const response = await forwardNativeMessagesNonStreaming(payload, is1M)
+    const response = await forwardNativeMessagesNonStreaming(
+      payload,
+      is1M,
+      signal,
+    )
     return c.json(response)
   }
 
   return streamSSE(c, async (stream) => {
-    for await (const event of forwardNativeMessagesStreaming(payload, is1M)) {
-      await stream.writeSSE({
-        event: event.type,
-        data: JSON.stringify(event.data),
-      })
+    try {
+      for await (const event of forwardNativeMessagesStreaming(
+        payload,
+        is1M,
+        signal,
+      )) {
+        await stream.writeSSE({
+          event: event.type,
+          data: JSON.stringify(event.data),
+        })
+      }
+    } catch (err) {
+      if (
+        signal?.aborted
+        || (err instanceof Error && err.name === "AbortError")
+      ) {
+        consola.debug(
+          "/v1/messages native passthrough stream aborted by client",
+        )
+        return
+      }
+      throw err
     }
   })
 }
@@ -163,8 +198,9 @@ const isNonStreaming = (
 async function handleResponsesViaAnthropic(
   c: Context,
   openAIPayload: Parameters<typeof createResponses>[0],
+  signal?: AbortSignal,
 ) {
-  const response = await createResponses(openAIPayload)
+  const response = await createResponses(openAIPayload, signal)
 
   if (isNonStreaming(response)) {
     const anthropicResponse = translateToAnthropic(response)
@@ -180,27 +216,38 @@ async function handleResponsesViaAnthropic(
       toolCalls: {},
     }
 
-    for await (const rawEvent of response) {
-      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+    try {
+      for await (const rawEvent of response) {
+        if (!rawEvent.data || rawEvent.data === "[DONE]") continue
 
-      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
-      const eventType =
-        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
+        const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
+        const eventType =
+          rawEvent.event ?? (parsed.type as string | undefined) ?? ""
 
-      const chunks = translateResponsesStreamEvent(
-        { event: eventType, data: parsed },
-        responsesState,
-      )
+        const chunks = translateResponsesStreamEvent(
+          { event: eventType, data: parsed },
+          responsesState,
+        )
 
-      for (const chunk of chunks) {
-        const events = translateChunkToAnthropicEvents(chunk, anthropicState)
-        for (const event of events) {
-          await stream.writeSSE({
-            event: event.type,
-            data: JSON.stringify(event),
-          })
+        for (const chunk of chunks) {
+          const events = translateChunkToAnthropicEvents(chunk, anthropicState)
+          for (const event of events) {
+            await stream.writeSSE({
+              event: event.type,
+              data: JSON.stringify(event),
+            })
+          }
         }
       }
+    } catch (err) {
+      if (
+        signal?.aborted
+        || (err instanceof Error && err.name === "AbortError")
+      ) {
+        consola.debug("/v1/messages /responses stream aborted by client")
+        return
+      }
+      throw err
     }
   })
 }

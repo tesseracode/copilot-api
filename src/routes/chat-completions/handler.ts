@@ -54,15 +54,16 @@ export async function handleCompletion(c: Context) {
   }
 
   const endpoint = resolveEndpoint(payload.model, state.models)
+  const signal = c.req.raw.signal
 
   // Route to /responses for GPT-5.x and models that only support it
   if (endpoint === "/responses") {
     consola.debug(`Using /responses endpoint for model: ${payload.model}`)
-    return handleResponsesEndpoint(c, payload)
+    return handleResponsesEndpoint(c, payload, signal)
   }
 
   // Existing /chat/completions path
-  const response = await createChatCompletions(payload)
+  const response = await createChatCompletions(payload, signal)
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming response:", JSON.stringify(response))
@@ -71,9 +72,20 @@ export async function handleCompletion(c: Context) {
 
   consola.debug("Streaming response")
   return streamSSE(c, async (stream) => {
-    for await (const chunk of response) {
-      consola.debug("Streaming chunk:", JSON.stringify(chunk))
-      await stream.writeSSE(chunk as SSEMessage)
+    try {
+      for await (const chunk of response) {
+        consola.debug("Streaming chunk:", JSON.stringify(chunk))
+        await stream.writeSSE(chunk as SSEMessage)
+      }
+    } catch (err) {
+      if (
+        signal.aborted
+        || (err instanceof Error && err.name === "AbortError")
+      ) {
+        consola.debug("chat-completions stream aborted by client")
+        return
+      }
+      throw err
     }
   })
 }
@@ -81,8 +93,9 @@ export async function handleCompletion(c: Context) {
 async function handleResponsesEndpoint(
   c: Context,
   payload: ChatCompletionsPayload,
+  signal?: AbortSignal,
 ) {
-  const response = await createResponses(payload)
+  const response = await createResponses(payload, signal)
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming /responses result:", JSON.stringify(response))
@@ -93,24 +106,35 @@ async function handleResponsesEndpoint(
   return streamSSE(c, async (stream) => {
     const streamState = createResponsesStreamState()
 
-    for await (const rawEvent of response) {
-      if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+    try {
+      for await (const rawEvent of response) {
+        if (!rawEvent.data || rawEvent.data === "[DONE]") continue
 
-      const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
-      const eventType =
-        rawEvent.event ?? (parsed.type as string | undefined) ?? ""
+        const parsed = JSON.parse(rawEvent.data) as Record<string, unknown>
+        const eventType =
+          rawEvent.event ?? (parsed.type as string | undefined) ?? ""
 
-      const chunks = translateResponsesStreamEvent(
-        { event: eventType, data: parsed },
-        streamState,
-      )
+        const chunks = translateResponsesStreamEvent(
+          { event: eventType, data: parsed },
+          streamState,
+        )
 
-      for (const chunk of chunks) {
-        consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
-        await stream.writeSSE({
-          data: JSON.stringify(chunk),
-        })
+        for (const chunk of chunks) {
+          consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
+          await stream.writeSSE({
+            data: JSON.stringify(chunk),
+          })
+        }
       }
+    } catch (err) {
+      if (
+        signal?.aborted
+        || (err instanceof Error && err.name === "AbortError")
+      ) {
+        consola.debug("/responses stream aborted by client")
+        return
+      }
+      throw err
     }
   })
 }
