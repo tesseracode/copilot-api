@@ -1,0 +1,16 @@
+{
+  "id": "srvx-signal-fix",
+  "slug": "srvx-signal-fix",
+  "title": "Upgrade srvx 0.8.9 → 0.11.15 to fix Node.js premature signal abort. The old srvx Node adapter fired AbortController on every HTTP req.close event, causing fetch() with request signal to abort immediately. The new version only aborts when response wasn't finished or request errored. Root cause of all 'This operation was aborted' errors on the built binary (node dist/main.js).",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-05-01T09:15:16Z",
+  "updated_at": "2026-05-01T09:17:46Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "601559f317a24b853919b72d8c7f5f5c99eaf8c1",
+    "has_patch": true
+  },
+  "reconcile": {}
+}
