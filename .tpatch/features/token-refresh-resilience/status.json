@@ -1,0 +1,12 @@
+{
+  "id": "token-refresh-resilience",
+  "slug": "token-refresh-resilience",
+  "title": "Token refresh resilience: if the setInterval copilot token refresh throws, the interval dies silently and the token stays stale forever. Should retry with backoff, or at minimum log a prominent warning that all future requests will fail until restart.",
+  "state": "requested",
+  "compatibility": "unknown",
+  "requested_at": "2026-05-01T07:43:54Z",
+  "updated_at": "2026-05-01T07:43:54Z",
+  "last_command": "add",
+  "apply": {},
+  "reconcile": {}
+}

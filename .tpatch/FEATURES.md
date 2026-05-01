@@ -3,7 +3,9 @@
 | Slug | Title | State | Compatibility |
 |------|-------|-------|---------------|
 | `anthropic-beta-1m-detection` | Detect anthropic-beta: context-1m-2025-08-07 header per-request to activate 1M context window. The Claude Agent SDK sends this header instead of [1m] in the model name. Upgrades model to -1m variant when header is present. | applied | unknown |
+| `chat-completions-native-reroute` | Add /v1/messages native routing to the /chat/completions handler: when resolveEndpoint returns /v1/messages for a Claude model sent to /chat/completions, reroute to native passthrough instead of forwarding through the lossy /chat/completions translation. Not a bug fix (upstream /chat/completions works for Claude) but an optimization for preserving thinking blocks and prompt caching. | requested | unknown |
 | `effort-model-suffix` | Effort-to-model-suffix upgrade: map output_config.effort to -high/-xhigh model variants for models that reject effort as a parameter (e.g. opus-4.7 base). Strip suffixes in model ID mapping. Normalize effort max→xhigh. | applied | unknown |
+| `error-differentiation` | Improve error differentiation: AbortError from client disconnect vs HTTPError from upstream rejection both surface as the generic 'This operation was aborted' message. Add context to distinguish token expiry (401/403), upstream rejection (!response.ok), and client disconnect (signal.aborted) in forwardError. | requested | unknown |
 | `health-endpoint` | Add a GET /health endpoint that returns JSON with uptime in seconds, model count, and server version from package.json | applied | unknown |
 | `hide-internal-models` | Add a --hide-internal CLI flag that filters out models whose ID contains 'internal' or starts with 'accounts/' from the /models response | applied | unknown |
 | `internal-suffix-resolution` | Resolve -internal model suffix: when a client requests a -1m variant that doesn't exist but a -1m-internal variant does in the catalog, resolve to the internal variant. Safe no-op when suffix is dropped. | applied | unknown |
@@ -22,4 +24,5 @@
 | `startup-model-count` | Add a model count to the startup banner, e.g. 'Available models: 37 models loaded' | applied | unknown |
 | `three-tier-routing` | Three-tier endpoint routing: native /v1/messages passthrough for Claude, /responses API for GPT-5.x, /chat/completions fallback for legacy models | applied | unknown |
 | `three-tier-routing-tests` | Unit and e2e test suite for three-tier endpoint routing: endpoint resolution, /v1/messages payload sanitization, Responses API translation, model mapping, plus live API e2e matrix across all three tiers | applied | unknown |
+| `token-refresh-resilience` | Token refresh resilience: if the setInterval copilot token refresh throws, the interval dies silently and the token stays stale forever. Should retry with backoff, or at minimum log a prominent warning that all future requests will fail until restart. | requested | unknown |
 | `tool-streaming-id-preservation` | Preserve stable tool-call indices across /responses streaming argument deltas so Anthropic tool calls stay parseable | applied | unknown |
