@@ -367,3 +367,142 @@ function getAnthropicToolUseBlocks(
     input: JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
   }))
 }
+
+/**
+ * Convert an OpenAI assistant message to Anthropic content blocks.
+ */
+function convertAssistantMessage(
+  msg: ChatCompletionsPayload["messages"][0],
+): AnthropicMessage {
+  const blocks: Array<AnthropicAssistantContentBlock> = []
+  if (msg.content) {
+    const text = typeof msg.content === "string" ? msg.content : ""
+    if (text) blocks.push({ type: "text", text })
+  }
+  if (msg.tool_calls) {
+    for (const tc of msg.tool_calls) {
+      blocks.push({
+        type: "tool_use",
+        id: tc.id,
+        name: tc.function.name,
+        input: JSON.parse(tc.function.arguments) as Record<string, unknown>,
+      })
+    }
+  }
+  if (blocks.length > 0) {
+    return { role: "assistant", content: blocks } as AnthropicMessage
+  }
+  const fallbackContent = typeof msg.content === "string" ? msg.content : ""
+  return { role: "assistant", content: fallbackContent } as AnthropicMessage
+}
+
+/**
+ * Convert OpenAI messages to Anthropic messages, extracting system prompt.
+ */
+function convertOpenAIMessages(messages: ChatCompletionsPayload["messages"]): {
+  anthropicMessages: Array<AnthropicMessage>
+  systemPrompt?: string
+} {
+  const anthropicMessages: Array<AnthropicMessage> = []
+  let systemPrompt: string | undefined
+
+  for (const msg of messages) {
+    switch (msg.role) {
+      case "system":
+      case "developer": {
+        systemPrompt = typeof msg.content === "string" ? msg.content : ""
+
+        break
+      }
+      case "user": {
+        anthropicMessages.push({
+          role: "user",
+          content: typeof msg.content === "string" ? msg.content : "",
+        })
+
+        break
+      }
+      case "assistant": {
+        anthropicMessages.push(convertAssistantMessage(msg))
+
+        break
+      }
+      case "tool": {
+        anthropicMessages.push({
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: msg.tool_call_id ?? "",
+              content: typeof msg.content === "string" ? msg.content : "",
+            },
+          ],
+        } as unknown as AnthropicMessage)
+
+        break
+      }
+      // No default
+    }
+  }
+
+  return { anthropicMessages, systemPrompt }
+}
+
+/**
+ * Convert OpenAI tool definitions to Anthropic format.
+ */
+function convertOpenAITools(
+  tools: ChatCompletionsPayload["tools"],
+): AnthropicMessagesPayload["tools"] {
+  if (!tools) return undefined
+  return tools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: t.function.parameters,
+  })) as AnthropicMessagesPayload["tools"]
+}
+
+/**
+ * Convert OpenAI tool_choice to Anthropic format.
+ */
+function convertOpenAIToolChoice(
+  choice: ChatCompletionsPayload["tool_choice"],
+): AnthropicMessagesPayload["tool_choice"] {
+  if (!choice) return undefined
+  if (choice === "required") return { type: "any" }
+  if (choice === "auto") return { type: "auto" }
+  if (choice === "none") return { type: "none" }
+  if (typeof choice === "object") {
+    return { type: "tool", name: choice.function.name }
+  }
+  return undefined
+}
+
+/**
+ * Convert an OpenAI Chat Completions payload to Anthropic Messages format.
+ * Used when rerouting Claude models from /chat/completions to native /v1/messages.
+ */
+export function openaiToAnthropicPayload(
+  payload: ChatCompletionsPayload,
+): AnthropicMessagesPayload {
+  const { anthropicMessages, systemPrompt } = convertOpenAIMessages(
+    payload.messages,
+  )
+
+  const result: AnthropicMessagesPayload = {
+    model: payload.model,
+    messages: anthropicMessages,
+    max_tokens: payload.max_tokens ?? 4096,
+    stream: payload.stream ?? undefined,
+  }
+
+  if (systemPrompt) result.system = systemPrompt
+  if (payload.temperature !== null && payload.temperature !== undefined)
+    result.temperature = payload.temperature
+  if (payload.top_p !== null && payload.top_p !== undefined)
+    result.top_p = payload.top_p
+  result.tools = convertOpenAITools(payload.tools)
+  result.tool_choice = convertOpenAIToolChoice(payload.tool_choice)
+
+  return result
+}
