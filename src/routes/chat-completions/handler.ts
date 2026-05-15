@@ -9,6 +9,7 @@ import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
 import { getTokenCount } from "~/lib/tokenizer"
 import { isNullish } from "~/lib/utils"
+import { openaiToAnthropicPayload } from "~/routes/messages/non-stream-translation"
 import {
   createChatCompletions,
   type ChatCompletionResponse,
@@ -19,6 +20,10 @@ import {
   createResponsesStreamState,
   translateResponsesStreamEvent,
 } from "~/services/copilot/create-responses"
+import {
+  forwardNativeMessagesNonStreaming,
+  forwardNativeMessagesStreaming,
+} from "~/services/copilot/forward-native-messages"
 
 export async function handleCompletion(c: Context) {
   await checkRateLimit(state)
@@ -55,6 +60,15 @@ export async function handleCompletion(c: Context) {
 
   const endpoint = resolveEndpoint(payload.model, state.models)
   const signal = c.req.raw.signal
+
+  // Reroute Claude models to native /v1/messages passthrough
+  // Claude on /chat/completions loses tool calling and other native features
+  if (endpoint === "/v1/messages") {
+    consola.debug(
+      `Rerouting Claude model ${payload.model} to native /v1/messages`,
+    )
+    return handleNativeReroute(c, payload)
+  }
 
   // Route to /responses for GPT-5.x and models that only support it
   if (endpoint === "/responses") {
@@ -142,3 +156,185 @@ async function handleResponsesEndpoint(
 const isNonStreaming = (
   response: Awaited<ReturnType<typeof createChatCompletions>>,
 ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+
+/**
+ * Reroute a /chat/completions request for a Claude model through
+ * native /v1/messages passthrough. Translates OpenAI→Anthropic,
+ * forwards natively, translates Anthropic→OpenAI back.
+ */
+async function handleNativeReroute(
+  c: Context,
+  payload: ChatCompletionsPayload,
+) {
+  const anthropicPayload = openaiToAnthropicPayload(payload)
+
+  if (!payload.stream) {
+    const response = await forwardNativeMessagesNonStreaming(anthropicPayload)
+    return c.json(
+      anthropicResponseToOpenAI(response as Record<string, unknown>),
+    )
+  }
+
+  return streamSSE(c, async (stream) => {
+    for await (const event of forwardNativeMessagesStreaming(
+      anthropicPayload,
+    )) {
+      // Translate Anthropic SSE events to OpenAI chunks
+      const chunk = anthropicEventToOpenAIChunk(event)
+      if (chunk) {
+        await stream.writeSSE({
+          data: JSON.stringify(chunk),
+        })
+      }
+    }
+  })
+}
+
+/**
+ * Convert Anthropic stop_reason to OpenAI finish_reason.
+ */
+function mapAnthropicFinishReason(
+  stopReason: string | null | undefined,
+): "stop" | "length" | "tool_calls" | "content_filter" {
+  if (stopReason === "tool_use") return "tool_calls"
+  if (stopReason === "max_tokens") return "length"
+  return "stop"
+}
+
+/**
+ * Extract text and tool calls from Anthropic content blocks.
+ */
+function extractAnthropicContent(
+  content: Array<{
+    type: string
+    text?: string
+    id?: string
+    name?: string
+    input?: unknown
+  }>,
+): {
+  text: string
+  toolCalls: Array<{
+    id: string
+    type: "function"
+    function: { name: string; arguments: string }
+  }>
+} {
+  let text = ""
+  const toolCalls: Array<{
+    id: string
+    type: "function"
+    function: { name: string; arguments: string }
+  }> = []
+
+  for (const block of content) {
+    if (block.type === "text" && block.text) {
+      text += block.text
+    } else if (block.type === "tool_use" && block.name && block.id) {
+      toolCalls.push({
+        id: block.id,
+        type: "function",
+        function: {
+          name: block.name,
+          arguments: JSON.stringify(block.input ?? {}),
+        },
+      })
+    }
+  }
+
+  return { text, toolCalls }
+}
+
+/**
+ * Convert a raw Anthropic Messages response to OpenAI Chat Completion format.
+ */
+function anthropicResponseToOpenAI(
+  resp: Record<string, unknown>,
+): ChatCompletionResponse {
+  const rawContent = resp.content as
+    | Array<{
+        type: string
+        text?: string
+        id?: string
+        name?: string
+        input?: unknown
+      }>
+    | undefined
+  const content = rawContent ?? []
+  const { text, toolCalls } = extractAnthropicContent(content)
+  const finishReason = mapAnthropicFinishReason(
+    resp.stop_reason as string | null,
+  )
+  const rawUsage = resp.usage as
+    | { input_tokens: number; output_tokens: number }
+    | undefined
+  const usage =
+    rawUsage ?
+      {
+        prompt_tokens: rawUsage.input_tokens,
+        completion_tokens: rawUsage.output_tokens,
+        total_tokens: rawUsage.input_tokens + rawUsage.output_tokens,
+      }
+    : undefined
+
+  return {
+    id: typeof resp.id === "string" ? resp.id : "",
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: typeof resp.model === "string" ? resp.model : "",
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: text || null,
+          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+        },
+        logprobs: null,
+        finish_reason: finishReason,
+      },
+    ],
+    usage,
+  }
+}
+
+/**
+ * Convert an Anthropic SSE event to an OpenAI streaming chunk.
+ */
+function anthropicEventToOpenAIChunk(event: {
+  type: string
+  data: Record<string, unknown>
+}): Record<string, unknown> | null {
+  const { type, data } = event
+
+  if (type === "content_block_delta") {
+    const delta = data.delta as { type: string; text?: string } | undefined
+    if (delta?.type === "text_delta" && delta.text) {
+      return {
+        object: "chat.completion.chunk",
+        choices: [
+          { index: 0, delta: { content: delta.text }, finish_reason: null },
+        ],
+      }
+    }
+  }
+
+  if (type === "message_delta") {
+    const delta = data.delta as Record<string, unknown> | undefined
+    const stopReason = delta?.stop_reason as string | undefined
+    if (stopReason) {
+      return {
+        object: "chat.completion.chunk",
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: mapAnthropicFinishReason(stopReason),
+          },
+        ],
+      }
+    }
+  }
+
+  return null
+}
