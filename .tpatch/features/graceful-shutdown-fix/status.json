@@ -1,0 +1,16 @@
+{
+  "id": "graceful-shutdown-fix",
+  "slug": "graceful-shutdown-fix",
+  "title": "Fix process hanging after Ctrl+C: srvx graceful shutdown closes the server but the copilot token refresh setInterval keeps the event loop alive under Bun. Clear the interval on SIGINT/SIGTERM, or call process.exit() after server close.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-05-15T23:25:00Z",
+  "updated_at": "2026-05-15T23:29:41Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "base_commit": "9eb1df9b022a3919f5054d2621add65709b670e0",
+    "has_patch": true
+  },
+  "reconcile": {}
+}
