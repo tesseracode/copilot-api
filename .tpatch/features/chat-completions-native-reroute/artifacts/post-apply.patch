@@ -1,0 +1,372 @@
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index 2ec8ac2..33e3304 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -9,6 +9,7 @@ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
+ import { getTokenCount } from "~/lib/tokenizer"
+ import { isNullish } from "~/lib/utils"
++import { openaiToAnthropicPayload } from "~/routes/messages/non-stream-translation"
+ import {
+   createChatCompletions,
+   type ChatCompletionResponse,
+@@ -19,6 +20,10 @@ import {
+   createResponsesStreamState,
+   translateResponsesStreamEvent,
+ } from "~/services/copilot/create-responses"
++import {
++  forwardNativeMessagesNonStreaming,
++  forwardNativeMessagesStreaming,
++} from "~/services/copilot/forward-native-messages"
+ 
+ export async function handleCompletion(c: Context) {
+   await checkRateLimit(state)
+@@ -56,6 +61,15 @@ export async function handleCompletion(c: Context) {
+   const endpoint = resolveEndpoint(payload.model, state.models)
+   const signal = c.req.raw.signal
+ 
++  // Reroute Claude models to native /v1/messages passthrough
++  // Claude on /chat/completions loses tool calling and other native features
++  if (endpoint === "/v1/messages") {
++    consola.debug(
++      `Rerouting Claude model ${payload.model} to native /v1/messages`,
++    )
++    return handleNativeReroute(c, payload)
++  }
++
+   // Route to /responses for GPT-5.x and models that only support it
+   if (endpoint === "/responses") {
+     consola.debug(`Using /responses endpoint for model: ${payload.model}`)
+@@ -142,3 +156,185 @@ async function handleResponsesEndpoint(
+ const isNonStreaming = (
+   response: Awaited<ReturnType<typeof createChatCompletions>>,
+ ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
++
++/**
++ * Reroute a /chat/completions request for a Claude model through
++ * native /v1/messages passthrough. Translates OpenAI→Anthropic,
++ * forwards natively, translates Anthropic→OpenAI back.
++ */
++async function handleNativeReroute(
++  c: Context,
++  payload: ChatCompletionsPayload,
++) {
++  const anthropicPayload = openaiToAnthropicPayload(payload)
++
++  if (!payload.stream) {
++    const response = await forwardNativeMessagesNonStreaming(anthropicPayload)
++    return c.json(
++      anthropicResponseToOpenAI(response as Record<string, unknown>),
++    )
++  }
++
++  return streamSSE(c, async (stream) => {
++    for await (const event of forwardNativeMessagesStreaming(
++      anthropicPayload,
++    )) {
++      // Translate Anthropic SSE events to OpenAI chunks
++      const chunk = anthropicEventToOpenAIChunk(event)
++      if (chunk) {
++        await stream.writeSSE({
++          data: JSON.stringify(chunk),
++        })
++      }
++    }
++  })
++}
++
++/**
++ * Convert Anthropic stop_reason to OpenAI finish_reason.
++ */
++function mapAnthropicFinishReason(
++  stopReason: string | null | undefined,
++): "stop" | "length" | "tool_calls" | "content_filter" {
++  if (stopReason === "tool_use") return "tool_calls"
++  if (stopReason === "max_tokens") return "length"
++  return "stop"
++}
++
++/**
++ * Extract text and tool calls from Anthropic content blocks.
++ */
++function extractAnthropicContent(
++  content: Array<{
++    type: string
++    text?: string
++    id?: string
++    name?: string
++    input?: unknown
++  }>,
++): {
++  text: string
++  toolCalls: Array<{
++    id: string
++    type: "function"
++    function: { name: string; arguments: string }
++  }>
++} {
++  let text = ""
++  const toolCalls: Array<{
++    id: string
++    type: "function"
++    function: { name: string; arguments: string }
++  }> = []
++
++  for (const block of content) {
++    if (block.type === "text" && block.text) {
++      text += block.text
++    } else if (block.type === "tool_use" && block.name && block.id) {
++      toolCalls.push({
++        id: block.id,
++        type: "function",
++        function: {
++          name: block.name,
++          arguments: JSON.stringify(block.input ?? {}),
++        },
++      })
++    }
++  }
++
++  return { text, toolCalls }
++}
++
++/**
++ * Convert a raw Anthropic Messages response to OpenAI Chat Completion format.
++ */
++function anthropicResponseToOpenAI(
++  resp: Record<string, unknown>,
++): ChatCompletionResponse {
++  const rawContent = resp.content as
++    | Array<{
++        type: string
++        text?: string
++        id?: string
++        name?: string
++        input?: unknown
++      }>
++    | undefined
++  const content = rawContent ?? []
++  const { text, toolCalls } = extractAnthropicContent(content)
++  const finishReason = mapAnthropicFinishReason(
++    resp.stop_reason as string | null,
++  )
++  const rawUsage = resp.usage as
++    | { input_tokens: number; output_tokens: number }
++    | undefined
++  const usage =
++    rawUsage ?
++      {
++        prompt_tokens: rawUsage.input_tokens,
++        completion_tokens: rawUsage.output_tokens,
++        total_tokens: rawUsage.input_tokens + rawUsage.output_tokens,
++      }
++    : undefined
++
++  return {
++    id: typeof resp.id === "string" ? resp.id : "",
++    object: "chat.completion",
++    created: Math.floor(Date.now() / 1000),
++    model: typeof resp.model === "string" ? resp.model : "",
++    choices: [
++      {
++        index: 0,
++        message: {
++          role: "assistant",
++          content: text || null,
++          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
++        },
++        logprobs: null,
++        finish_reason: finishReason,
++      },
++    ],
++    usage,
++  }
++}
++
++/**
++ * Convert an Anthropic SSE event to an OpenAI streaming chunk.
++ */
++function anthropicEventToOpenAIChunk(event: {
++  type: string
++  data: Record<string, unknown>
++}): Record<string, unknown> | null {
++  const { type, data } = event
++
++  if (type === "content_block_delta") {
++    const delta = data.delta as { type: string; text?: string } | undefined
++    if (delta?.type === "text_delta" && delta.text) {
++      return {
++        object: "chat.completion.chunk",
++        choices: [
++          { index: 0, delta: { content: delta.text }, finish_reason: null },
++        ],
++      }
++    }
++  }
++
++  if (type === "message_delta") {
++    const delta = data.delta as Record<string, unknown> | undefined
++    const stopReason = delta?.stop_reason as string | undefined
++    if (stopReason) {
++      return {
++        object: "chat.completion.chunk",
++        choices: [
++          {
++            index: 0,
++            delta: {},
++            finish_reason: mapAnthropicFinishReason(stopReason),
++          },
++        ],
++      }
++    }
++  }
++
++  return null
++}
+diff --git a/src/routes/messages/non-stream-translation.ts b/src/routes/messages/non-stream-translation.ts
+index 0f9b31a..dbcc566 100644
+--- a/src/routes/messages/non-stream-translation.ts
++++ b/src/routes/messages/non-stream-translation.ts
+@@ -367,3 +367,142 @@ function getAnthropicToolUseBlocks(
+     input: JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
+   }))
+ }
++
++/**
++ * Convert an OpenAI assistant message to Anthropic content blocks.
++ */
++function convertAssistantMessage(
++  msg: ChatCompletionsPayload["messages"][0],
++): AnthropicMessage {
++  const blocks: Array<AnthropicAssistantContentBlock> = []
++  if (msg.content) {
++    const text = typeof msg.content === "string" ? msg.content : ""
++    if (text) blocks.push({ type: "text", text })
++  }
++  if (msg.tool_calls) {
++    for (const tc of msg.tool_calls) {
++      blocks.push({
++        type: "tool_use",
++        id: tc.id,
++        name: tc.function.name,
++        input: JSON.parse(tc.function.arguments) as Record<string, unknown>,
++      })
++    }
++  }
++  if (blocks.length > 0) {
++    return { role: "assistant", content: blocks } as AnthropicMessage
++  }
++  const fallbackContent = typeof msg.content === "string" ? msg.content : ""
++  return { role: "assistant", content: fallbackContent } as AnthropicMessage
++}
++
++/**
++ * Convert OpenAI messages to Anthropic messages, extracting system prompt.
++ */
++function convertOpenAIMessages(messages: ChatCompletionsPayload["messages"]): {
++  anthropicMessages: Array<AnthropicMessage>
++  systemPrompt?: string
++} {
++  const anthropicMessages: Array<AnthropicMessage> = []
++  let systemPrompt: string | undefined
++
++  for (const msg of messages) {
++    switch (msg.role) {
++      case "system":
++      case "developer": {
++        systemPrompt = typeof msg.content === "string" ? msg.content : ""
++
++        break
++      }
++      case "user": {
++        anthropicMessages.push({
++          role: "user",
++          content: typeof msg.content === "string" ? msg.content : "",
++        })
++
++        break
++      }
++      case "assistant": {
++        anthropicMessages.push(convertAssistantMessage(msg))
++
++        break
++      }
++      case "tool": {
++        anthropicMessages.push({
++          role: "user",
++          content: [
++            {
++              type: "tool_result",
++              tool_use_id: msg.tool_call_id ?? "",
++              content: typeof msg.content === "string" ? msg.content : "",
++            },
++          ],
++        } as unknown as AnthropicMessage)
++
++        break
++      }
++      // No default
++    }
++  }
++
++  return { anthropicMessages, systemPrompt }
++}
++
++/**
++ * Convert OpenAI tool definitions to Anthropic format.
++ */
++function convertOpenAITools(
++  tools: ChatCompletionsPayload["tools"],
++): AnthropicMessagesPayload["tools"] {
++  if (!tools) return undefined
++  return tools.map((t) => ({
++    name: t.function.name,
++    description: t.function.description,
++    input_schema: t.function.parameters,
++  })) as AnthropicMessagesPayload["tools"]
++}
++
++/**
++ * Convert OpenAI tool_choice to Anthropic format.
++ */
++function convertOpenAIToolChoice(
++  choice: ChatCompletionsPayload["tool_choice"],
++): AnthropicMessagesPayload["tool_choice"] {
++  if (!choice) return undefined
++  if (choice === "required") return { type: "any" }
++  if (choice === "auto") return { type: "auto" }
++  if (choice === "none") return { type: "none" }
++  if (typeof choice === "object") {
++    return { type: "tool", name: choice.function.name }
++  }
++  return undefined
++}
++
++/**
++ * Convert an OpenAI Chat Completions payload to Anthropic Messages format.
++ * Used when rerouting Claude models from /chat/completions to native /v1/messages.
++ */
++export function openaiToAnthropicPayload(
++  payload: ChatCompletionsPayload,
++): AnthropicMessagesPayload {
++  const { anthropicMessages, systemPrompt } = convertOpenAIMessages(
++    payload.messages,
++  )
++
++  const result: AnthropicMessagesPayload = {
++    model: payload.model,
++    messages: anthropicMessages,
++    max_tokens: payload.max_tokens ?? 4096,
++    stream: payload.stream ?? undefined,
++  }
++
++  if (systemPrompt) result.system = systemPrompt
++  if (payload.temperature !== null && payload.temperature !== undefined)
++    result.temperature = payload.temperature
++  if (payload.top_p !== null && payload.top_p !== undefined)
++    result.top_p = payload.top_p
++  result.tools = convertOpenAITools(payload.tools)
++  result.tool_choice = convertOpenAIToolChoice(payload.tool_choice)
++
++  return result
++}
