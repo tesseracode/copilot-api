@@ -26,7 +26,7 @@ export const setupCopilotToken = async () => {
   }
 
   const refreshInterval = (refresh_in - 60) * 1000
-  setInterval(async () => {
+  const intervalId = setInterval(async () => {
     consola.debug("Refreshing Copilot token")
     try {
       const { token } = await getCopilotToken()
@@ -40,6 +40,13 @@ export const setupCopilotToken = async () => {
       throw error
     }
   }, refreshInterval)
+
+  // Clean up on shutdown so the process can exit
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.once(sig, () => {
+      clearInterval(intervalId)
+    })
+  }
 }
 
 interface SetupGitHubTokenOptions {
