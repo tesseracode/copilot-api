@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "feature": "api-migration-test-coverage",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_9a93d90d3cee",
+      "kind": "record",
+      "patch_sha256": "11832e998f0f08a638d403798306bea3e0f238ec6cb3b0f303e9b43f7d2983f9",
+      "git_patch_id": "2be00b8d806c9631400c34f6148e0d632b18105d",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "f54e4382b93929a6623ddbb5f249bbce4ed073affe9f377653c37063a89f8b6e",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "71a56f7ac32a1144f30147497eee9b89ee0a4849",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/model-mapping.test.ts",
+          "src/services/copilot/forward-native-messages.test.ts",
+          "tests/responses-effort-forwarding.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/model-mapping.test.ts",
+        "src/services/copilot/forward-native-messages.test.ts",
+        "tests/responses-effort-forwarding.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

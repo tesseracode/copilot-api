@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach } from "bun:test"
 import {
   anthropicToCopilotModelId,
   copilotToAnthropicModelId,
+  extractEffortFromModelName,
 } from "./model-mapping"
 import { state } from "./state"
 
@@ -213,5 +214,73 @@ describe("copilotToAnthropicModelId", () => {
 
   it("Gemini models pass through unchanged", () => {
     expect(copilotToAnthropicModelId("gemini-2.5-pro")).toBe("gemini-2.5-pro")
+  })
+})
+
+// ── -1m dash suffix stripping (backward compat) ──
+
+describe("anthropicToCopilotModelId -1m dash suffix", () => {
+  beforeEach(() => {
+    setCatalog(["claude-opus-4.6", "claude-opus-4.7"])
+  })
+
+  it("strips -1m suffix and resolves to base model (no -1m variant in catalog)", () => {
+    expect(anthropicToCopilotModelId("claude-opus-4.6-1m", false)).toBe(
+      "claude-opus-4.6",
+    )
+  })
+
+  it("strips -1m suffix from dash-format model names", () => {
+    expect(anthropicToCopilotModelId("claude-opus-4-7-1m", false)).toBe(
+      "claude-opus-4.7",
+    )
+  })
+
+  it("resolves to -1m variant when it exists in catalog", () => {
+    setCatalog(["claude-opus-4.6", "claude-opus-4.6-1m"])
+    expect(anthropicToCopilotModelId("claude-opus-4.6-1m", false)).toBe(
+      "claude-opus-4.6-1m",
+    )
+  })
+
+  it("treats -1m suffix the same as [1m] suffix", () => {
+    setCatalog(["claude-opus-4.6"])
+    const dash = anthropicToCopilotModelId("claude-opus-4-6-1m", false)
+    const bracket = anthropicToCopilotModelId("claude-opus-4-6[1m]", false)
+    expect(dash).toBe(bracket)
+  })
+})
+
+// ── extractEffortFromModelName ──
+
+describe("extractEffortFromModelName", () => {
+  it("extracts -xhigh suffix", () => {
+    const result = extractEffortFromModelName("claude-opus-4-7-xhigh")
+    expect(result).toEqual({ base: "claude-opus-4-7", effort: "xhigh" })
+  })
+
+  it("extracts -high suffix", () => {
+    const result = extractEffortFromModelName("claude-opus-4-7-high")
+    expect(result).toEqual({ base: "claude-opus-4-7", effort: "high" })
+  })
+
+  it("extracts -max suffix", () => {
+    const result = extractEffortFromModelName("claude-opus-4-6-max")
+    expect(result).toEqual({ base: "claude-opus-4-6", effort: "max" })
+  })
+
+  it("extracts -low suffix", () => {
+    const result = extractEffortFromModelName("claude-opus-4-6-low")
+    expect(result).toEqual({ base: "claude-opus-4-6", effort: "low" })
+  })
+
+  it("returns undefined effort for model names without effort suffix", () => {
+    const result = extractEffortFromModelName("claude-opus-4.7")
+    expect(result).toEqual({ base: "claude-opus-4.7", effort: undefined })
+  })
+
+  it("does not confuse -1m with an effort suffix", () => {
+    const result = extractEffortFromModelName("claude-opus-4.6-1m")
+    expect(result).toEqual({ base: "claude-opus-4.6-1m", effort: undefined })
   })
 })

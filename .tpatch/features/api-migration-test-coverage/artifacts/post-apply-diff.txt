@@ -1,0 +1,4 @@
+ .tpatch/FEATURES.md                                | 11 ++++
+ src/lib/model-mapping.test.ts                      | 69 ++++++++++++++++++++++
+ .../copilot/forward-native-messages.test.ts        | 30 ++++++++++
+ 3 files changed, 110 insertions(+)
