@@ -17,7 +17,10 @@ function basePayload(
   }
 }
 
-function setCatalog(ids: Array<string>) {
+function setCatalog(
+  ids: Array<string>,
+  capabilities?: Record<string, { reasoning_effort?: Array<string> }>,
+) {
   state.models = {
     object: "list",
     data: ids.map((id) => ({
@@ -25,6 +28,15 @@ function setCatalog(ids: Array<string>) {
       object: "model",
       created: 0,
       owned_by: "anthropic",
+      ...(capabilities?.[id] ?
+        {
+          capabilities: {
+            supports: {
+              reasoning_effort: capabilities[id].reasoning_effort,
+            },
+          },
+        }
+      : {}),
     })),
   } as unknown as typeof state.models
 }
@@ -32,11 +44,14 @@ function setCatalog(ids: Array<string>) {
 describe("buildNativeBody", () => {
   beforeEach(() => {
     state.is1MContext = false
-    setCatalog([
-      "claude-sonnet-4.6",
-      "claude-opus-4.7",
-      "claude-opus-4.7-1m-internal",
-    ])
+    setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"], {
+      "claude-sonnet-4.6": {
+        reasoning_effort: ["low", "medium", "high", "max"],
+      },
+      "claude-opus-4.7": {
+        reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
+      },
+    })
   })
 
   describe("stop_sequences sanitization", () => {
@@ -122,7 +137,36 @@ describe("buildNativeBody", () => {
   })
 
   describe("effort mapping", () => {
-    it("maps low effort to disabled thinking", () => {
+    it("forwards effort via output_config for models with reasoning_effort capability", () => {
+      const body = buildNativeBody(
+        basePayload({ output_config: { effort: "max" } }),
+        {},
+      )
+      expect(body.output_config).toEqual({ effort: "max" })
+    })
+
+    it("forwards effort=xhigh for models that support it", () => {
+      const body = buildNativeBody(
+        basePayload({
+          model: "claude-opus-4-7",
+          output_config: { effort: "xhigh" },
+        }),
+        {},
+      )
+      expect(body.output_config).toEqual({ effort: "xhigh" })
+    })
+
+    it("forwards effort=high via output_config", () => {
+      const body = buildNativeBody(
+        basePayload({ output_config: { effort: "high" } }),
+        {},
+      )
+      expect(body.output_config).toEqual({ effort: "high" })
+    })
+
+    it("maps low effort to disabled thinking when effort is not handled by output_config", () => {
+      // Model without reasoning_effort capability
+      setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
       const body = buildNativeBody(
         basePayload({ output_config: { effort: "low" } }),
         {},
@@ -130,7 +174,9 @@ describe("buildNativeBody", () => {
       expect(body.thinking).toEqual({ type: "disabled" })
     })
 
-    it("maps medium effort to ~50% budget", () => {
+    it("maps effort to thinking budget for models without reasoning_effort capability", () => {
+      // Model without reasoning_effort capability (older model)
+      setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
       const body = buildNativeBody(
         basePayload({ output_config: { effort: "medium" } }),
         {},
@@ -140,27 +186,7 @@ describe("buildNativeBody", () => {
       expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.5))
     })
 
-    it("maps high effort to ~80% budget", () => {
-      const body = buildNativeBody(
-        basePayload({ output_config: { effort: "high" } }),
-        {},
-      )
-      const thinking = body.thinking as { type: string; budget_tokens: number }
-      expect(thinking.type).toBe("enabled")
-      expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.8))
-    })
-
-    it("maps max effort to max budget", () => {
-      const body = buildNativeBody(
-        basePayload({ output_config: { effort: "max" } }),
-        {},
-      )
-      const thinking = body.thinking as { type: string; budget_tokens: number }
-      expect(thinking.type).toBe("enabled")
-      expect(thinking.budget_tokens).toBe(8192 - 1)
-    })
-
-    it("max effort overrides explicit budget", () => {
+    it("does not override explicit thinking when effort is handled via output_config", () => {
       const body = buildNativeBody(
         basePayload({
           thinking: { type: "enabled", budget_tokens: 2048 },
@@ -168,13 +194,25 @@ describe("buildNativeBody", () => {
         }),
         {},
       )
+      // Effort is handled by output_config, thinking is normalized independently
+      expect(body.output_config).toEqual({ effort: "max" })
       const thinking = body.thinking as { type: string; budget_tokens: number }
-      expect(thinking.budget_tokens).toBe(8192 - 1)
+      expect(thinking.type).toBe("enabled")
+      expect(thinking.budget_tokens).toBe(2048)
     })
   })
 
   describe("field allowlist", () => {
-    it("does not forward output_config", () => {
+    it("forwards output_config.effort for models with reasoning_effort capability", () => {
+      const body = buildNativeBody(
+        basePayload({ output_config: { effort: "high" } }),
+        {},
+      )
+      expect(body.output_config).toEqual({ effort: "high" })
+    })
+
+    it("does not forward output_config for models without reasoning_effort capability", () => {
+      setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
       const body = buildNativeBody(
         basePayload({ output_config: { effort: "high" } }),
         {},
@@ -225,22 +263,22 @@ describe("buildNativeBody", () => {
       expect(body.model).toBe("claude-opus-4.7")
     })
 
-    it("upgrades to the 1M variant when 1M context is requested", () => {
+    it("falls back to base model when no -1m variant exists (1M is now default)", () => {
       const body = buildNativeBody(
         basePayload({ model: "claude-opus-4.7" }),
         {},
         true,
       )
-      expect(body.model).toBe("claude-opus-4.7-1m-internal")
+      expect(body.model).toBe("claude-opus-4.7")
     })
 
-    it("accepts mixed dot-format models with a [1m] suffix", () => {
+    it("strips [1m] suffix and resolves to base model (1M is now default)", () => {
       const body = buildNativeBody(
         basePayload({ model: "claude-opus-4.7[1m]" }),
         {},
         false,
       )
-      expect(body.model).toBe("claude-opus-4.7-1m-internal")
+      expect(body.model).toBe("claude-opus-4.7")
     })
   })
 })

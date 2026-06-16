@@ -12,8 +12,8 @@ const MODEL_ID_MAP: Record<string, string> = {
   "claude-haiku-4-5": "claude-haiku-4.5",
 }
 
-/** Suffixes that encode effort level — stripped before mapping, re-appended after */
-const EFFORT_SUFFIXES = ["-xhigh", "-high"] as const
+/** Legacy effort suffixes that may appear in model names from old configs */
+const EFFORT_SUFFIXES = ["-xhigh", "-high", "-max", "-medium", "-low"] as const
 
 // Reverse map: Copilot dot format → Anthropic dash format
 const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
@@ -21,9 +21,28 @@ const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
 )
 
 /**
+ * Strip a legacy effort suffix from a model name.
+ * Returns the base name and the effort value (without the dash prefix).
+ */
+export function extractEffortFromModelName(model: string): {
+  base: string
+  effort: string | undefined
+} {
+  for (const suffix of EFFORT_SUFFIXES) {
+    if (model.endsWith(suffix)) {
+      return {
+        base: model.slice(0, -suffix.length),
+        effort: suffix.slice(1), // strip leading dash
+      }
+    }
+  }
+  return { base: model, effort: undefined }
+}
+
+/**
  * Convert an Anthropic-style model ID to a Copilot-style model ID.
- * Strips date suffixes, converts dashes to dots, and appends -1m if needed.
- * Only appends -1m if the model actually has a 1M variant in the cached models.
+ * Strips date suffixes, effort suffixes, converts dashes to dots,
+ * and appends -1m if needed.
  */
 export function anthropicToCopilotModelId(
   model: string,
@@ -32,20 +51,20 @@ export function anthropicToCopilotModelId(
   let base = model
 
   // Strip [1m] suffix if present (Claude Code sends this)
-  const has1MSuffix = base.endsWith("[1m]")
-  if (has1MSuffix) {
+  const has1MBracket = base.endsWith("[1m]")
+  if (has1MBracket) {
     base = base.slice(0, -4)
   }
 
-  // Strip effort suffixes (-high, -xhigh) — re-appended after mapping
-  let effortSuffix = ""
-  for (const suffix of EFFORT_SUFFIXES) {
-    if (base.endsWith(suffix)) {
-      effortSuffix = suffix
-      base = base.slice(0, -suffix.length)
-      break
-    }
+  // Strip -1m suffix if present (legacy config format)
+  const has1MDash = !has1MBracket && base.endsWith("-1m")
+  if (has1MDash) {
+    base = base.slice(0, -3)
   }
+
+  // Strip legacy effort suffixes (e.g. claude-opus-4-7-xhigh → claude-opus-4-7)
+  const { base: withoutEffort } = extractEffortFromModelName(base)
+  base = withoutEffort
 
   // Strip date suffixes (e.g. claude-sonnet-4-20250514 → claude-sonnet-4)
   if (/^claude-sonnet-4-\d{8}/.test(base)) {
@@ -56,28 +75,13 @@ export function anthropicToCopilotModelId(
 
   const mapped = MODEL_ID_MAP[base] ?? base
 
-  // Re-append effort suffix — check catalog first
-  if (effortSuffix) {
-    const candidate = `${mapped}${effortSuffix}`
-    if (state.models?.data.some((m) => m.id === candidate)) {
-      return candidate
-    }
-  }
-
-  const use1M = is1M || has1MSuffix
+  const use1M = is1M || has1MBracket || has1MDash
 
   // Only append -1m if the 1M variant actually exists in the model catalog
   if (use1M) {
     const candidate = `${mapped}-1m`
     const exists = state.models?.data.some((m) => m.id === candidate)
     if (exists) return candidate
-
-    // Try -1m-internal (transient preview suffix, will be dropped when model graduates)
-    const internalCandidate = `${mapped}-1m-internal`
-    const internalExists = state.models?.data.some(
-      (m) => m.id === internalCandidate,
-    )
-    if (internalExists) return internalCandidate
   }
 
   return mapped
@@ -86,29 +90,16 @@ export function anthropicToCopilotModelId(
 /**
  * Convert a Copilot-style model ID back to Anthropic-style.
  * Converts dots to dashes and maps -1m back to [1m].
- * Strips -internal and -high/-xhigh suffixes — callers like Claude Code's
- * getCanonicalName() don't recognize effort variants and would break on
- * model display, effort checks, and capability lookups. The effort level
- * is a request-time concern; the response uses the base model identity.
+ * Strips -internal suffix (transient preview artifact).
+ * Effort is handled via output_config in the request body, not in the model ID.
  */
 export function copilotToAnthropicModelId(copilotModel: string): string {
   let base = copilotModel
 
-  // Strip suffixes in the correct order: -internal first, then effort, then -1m
-  // Model IDs are structured as: base[-1m[-internal]][-high|-xhigh]
-
-  // 1. Strip -internal (transient preview suffix)
+  // Strip -internal (transient preview suffix)
   if (base.endsWith("-internal")) base = base.slice(0, -9)
 
-  // 2. Strip effort suffixes (-high, -xhigh) — these are request-time concerns
-  for (const suffix of EFFORT_SUFFIXES) {
-    if (base.endsWith(suffix)) {
-      base = base.slice(0, -suffix.length)
-      break
-    }
-  }
-
-  // 3. Strip -1m
+  // Strip -1m
   const is1M = base.endsWith("-1m")
   if (is1M) base = base.slice(0, -3)
 

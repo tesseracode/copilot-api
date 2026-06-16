@@ -1,0 +1,78 @@
+# Relevant Files
+
+## Core Model & Capability Handling
+- **src/lib/model-mapping.ts** - Contains model ID normalization logic, suffix handling (-1m, -high, -xhigh), and `anthropicToCopilotModelId()` function that needs refactoring to remove dead suffix logic
+- **src/lib/model-mapping.test.ts** - Tests for model mapping; needs updates to reflect removal of suffix variants and new capability-based effort detection
+- **src/lib/api-config.ts** - Likely contains `supportsEffort()` function that currently checks for -1m suffix; needs refactoring to check `reasoning_effort` capabilities array
+- **src/lib/filter-models.ts** - Filters and potentially creates synthetic -1m/-high/-xhigh variants; needs cleanup to reflect actual API response structure
+- **src/lib/filter-models.test.ts** - Tests for model filtering; needs updates for new model variant structure
+
+## Request Transformation & Effort Handling
+- **src/routes/messages/handler.ts** - Transforms Anthropic message requests to Copilot API format; needs to extract effort parameter and populate `output_config.effort`
+- **src/routes/messages/utils.ts** - Utility functions for message handling; likely contains effort extraction/parsing logic
+- **src/routes/chat-completions/handler.ts** - Transforms chat completion requests; needs effort parameter extraction and validation
+- **src/services/copilot/create-responses.ts** - Builds Copilot API responses; needs to populate `reasoning: {effort: "..."}` for GPT-5.x models
+
+## Model Listing & Capabilities
+- **src/services/copilot/get-models.ts** - Returns model list to clients; must reflect new model structure (no -1m/-high/-xhigh variants, includes `reasoning_effort` in capabilities for 4.6+)
+
+## Tests
+- **tests/anthropic-request.test.ts** - Tests Anthropic request handling; needs updates for effort forwarding via `output_config.effort` instead of model name suffix
+- **tests/anthropic-response.test.ts** - Tests response handling; needs updates for new effort structure and GPT-5.x `reasoning` field population
+- **tests/create-chat-completions.test.ts** - Tests chat completions; needs updates for effort validation and `output_config.effort` forwarding
+
+---
+
+# Minimal Changeset
+
+## 1. **src/lib/model-mapping.ts**
+- Remove suffix normalization logic that converts `max` → `xhigh` or creates `-1m` variants for Claude 4.6+
+- Keep [1m] suffix stripping as no-op (don't resolve to variant)
+- Update `anthropicToCopilotModelId()` to fall back to base model when variant not in catalog (already works per analysis)
+- Add helper: `getModelCapabilities(modelId)` → returns model metadata including `reasoning_effort` array
+- Add helper: `getValidEffortValues(modelId)` → returns supported effort values from capabilities
+
+## 2. **src/lib/api-config.ts**
+- Refactor `supportsEffort(modelId)` to check `capabilities.supports.reasoning_effort` array instead of `-1m` suffix in ID
+- Add `isValidEffort(modelId, effortValue)` → validates effort against model's supported array
+- Add `extractEffortFromRequest(request)` → parses effort from request body/headers/model name (with fallback chain)
+
+## 3. **src/routes/messages/handler.ts** & **src/routes/messages/utils.ts**
+- Extract effort parameter from incoming request (check request body, headers, or model name as fallback)
+- Validate effort against model's `reasoning_effort` capabilities using `isValidEffort()`
+- For Claude 4.6+: populate `output_config: { effort: "..." }` in Copilot API request body
+- For Claude 4.5 and earlier: continue using `thinking: {type: "enabled", budget_tokens: N}` approach
+- Return HTTP 400 with supported values if effort is unsupported: `"output_config.effort \"xhigh\" is not supported by model claude-opus-4.6; supported values: [low medium high max]"`
+
+## 4. **src/routes/chat-completions/handler.ts**
+- Apply same effort extraction, validation, and `output_config.effort` population as messages handler
+- Ensure unsupported effort values produce HTTP 400 with supported values listed
+
+## 5. **src/services/copilot/create-responses.ts**
+- For GPT-5.x models: populate `reasoning: {effort: "..."}` in responses payload (if effort was provided in request)
+
+## 6. **src/lib/filter-models.ts**
+- Remove logic that creates or filters -1m/-high/-xhigh synthetic variants
+- Ensure model list reflects actual API response structure
+- Keep all other filtering logic intact
+
+## 7. **src/services/copilot/get-models.ts**
+- Ensure returned model list includes `reasoning_effort` array in capabilities for Claude 4.6+
+- Ensure Claude 4.5 and earlier do NOT include `reasoning_effort` in capabilities
+- Verify all Claude 4.6+ models report `max_context_window_tokens: 1000000`
+
+## 8. **Test Files** (src/lib/model-mapping.test.ts, src/lib/filter-models.test.ts, tests/anthropic-request.test.ts, tests/anthropic-response.test.ts, tests/create-chat-completions.test.ts)
+- Update mock model responses to remove -1m/-high/-xhigh variants
+- Add `reasoning_effort: ["low", "medium", "high", "max"]` to Claude 4.6 mock capabilities
+- Add `reasoning_effort: ["low", "medium", "high", "xhigh", "max"]` to Claude 4.7/4.8 mock capabilities
+- Remove `reasoning_effort` from Claude 4.5 and earlier mock capabilities
+- Update `supportsEffort()` tests to check capabilities array instead of ID pattern
+- Add tests for effort validation: valid values forwarded, invalid values return HTTP 400
+- Add tests for backward compat: [1m] suffix stripped without error
+- Add tests for effort forwarding via `output_config.effort` in request body
+- Add tests for GPT-5.x effort forwarding via `reasoning: {effort: "..."}` in responses
+
+## 9. **Remove/Cleanup**
+- Delete any constants or enums for -1m/-high/-xhigh suffix variants
+- Remove conditional logic that checked for suffix presence in model ID
+- Delete dead normalization functions no longer used

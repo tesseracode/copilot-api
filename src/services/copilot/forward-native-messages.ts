@@ -5,7 +5,10 @@ import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types
 
 import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
 import { HTTPError } from "~/lib/error"
-import { anthropicToCopilotModelId } from "~/lib/model-mapping"
+import {
+  anthropicToCopilotModelId,
+  extractEffortFromModelName,
+} from "~/lib/model-mapping"
 import { state } from "~/lib/state"
 
 /**
@@ -140,72 +143,36 @@ const OPTIONAL_FIELDS = [
 ] as const
 
 /**
- * Map effort level to a model ID suffix for models that encode effort in the ID.
- * Returns null for effort levels that don't need a suffix upgrade.
+ * Check whether a model supports output_config.effort by looking at
+ * the advertised reasoning_effort capabilities from the model catalog.
  */
-function resolveEffortSuffix(effort: string): string | null {
-  switch (effort) {
-    case "high": {
-      return "-high"
-    }
-    case "max":
-    case "xhigh": {
-      return "-xhigh"
-    }
-    default: {
-      return null
-    } // low/medium don't have dedicated variants
-  }
-}
-
-/**
- * Check whether a model supports output_config.effort.
- * Only 4.6 and 4.7-1m models support it; older and 4.7 base do not.
- */
-function supportsEffort(
-  generation: ModelGeneration,
-  copilotModelId: string,
-): boolean {
-  if (generation === "4.6") return true
-  // 4.7-1m-internal supports effort, but 4.7 base does not
-  if (generation === "4.7+" && copilotModelId.includes("-1m")) return true
-  return false
+function supportsEffort(copilotModelId: string): boolean {
+  const model = state.models?.data.find((m) => m.id === copilotModelId)
+  const supports = (model?.capabilities as Record<string, unknown> | undefined)
+    ?.supports as Record<string, unknown> | undefined
+  const efforts = supports?.reasoning_effort
+  return Array.isArray(efforts) && efforts.length > 0
 }
 
 interface ResolveEffortOpts {
   copilotModelId: string
-  generation: ModelGeneration
   effort: string | undefined
   body: Record<string, unknown>
   outputConfig: Record<string, unknown> | undefined
 }
 
 /**
- * Resolve effort by upgrading the model ID or forwarding output_config.
+ * Resolve effort by forwarding output_config.effort directly.
+ * The upstream API validates supported values per model.
  * Returns whether effort was handled.
  */
 function resolveEffort(opts: ResolveEffortOpts): boolean {
-  const { copilotModelId, generation, effort, body, outputConfig } = opts
+  const { copilotModelId, effort, body, outputConfig } = opts
   if (!effort) return false
 
-  // Models that accept output_config.effort natively
-  if (supportsEffort(generation, copilotModelId)) {
-    const normalizedEffort = effort === "max" ? "xhigh" : effort
-    body.output_config = { ...outputConfig, effort: normalizedEffort }
+  if (supportsEffort(copilotModelId)) {
+    body.output_config = { ...outputConfig, effort }
     return true
-  }
-
-  // Try upgrading to -high/-xhigh variant
-  const suffix = resolveEffortSuffix(effort)
-  if (suffix) {
-    const candidate = `${copilotModelId}${suffix}`
-    if (state.models?.data.some((m) => m.id === candidate)) {
-      consola.debug(
-        `Effort upgrade: ${copilotModelId} → ${candidate} (effort=${effort})`,
-      )
-      body.model = candidate
-      return true
-    }
   }
 
   return false
@@ -250,12 +217,13 @@ export function buildNativeBody(
     }
   }
 
-  const effort = payload.output_config?.effort
+  // Extract effort: prefer output_config.effort, fall back to legacy model-name suffix
+  const { effort: modelNameEffort } = extractEffortFromModelName(payload.model)
+  const effort = payload.output_config?.effort ?? modelNameEffort
   const generation = detectGeneration(copilotModelId)
 
   const effortHandled = resolveEffort({
     copilotModelId,
-    generation,
     effort,
     body,
     outputConfig: payload.output_config,

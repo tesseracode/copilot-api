@@ -81,7 +81,12 @@ export async function handleCompletion(c: Context) {
   // /responses for GPT-5.x models (responses-only or preferred)
   if (endpoint === "/responses") {
     consola.debug(`Using /responses endpoint for ${copilotModelId}`)
-    return handleResponsesViaAnthropic(c, openAIPayload, signal)
+    return handleResponsesViaAnthropic(
+      c,
+      openAIPayload,
+      anthropicPayload.output_config?.effort,
+      signal,
+    )
   }
 
   // /chat/completions for legacy models
@@ -198,9 +203,10 @@ const isNonStreaming = (
 async function handleResponsesViaAnthropic(
   c: Context,
   openAIPayload: Parameters<typeof createResponses>[0],
+  effort?: string,
   signal?: AbortSignal,
 ) {
-  const response = await createResponses(openAIPayload, signal)
+  const response = await createResponses(openAIPayload, effort, signal)
 
   if (isNonStreaming(response)) {
     const anthropicResponse = translateToAnthropic(response)

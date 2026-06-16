@@ -1,0 +1,8 @@
+{
+  "slug": "api-context-effort-migration",
+  "completed_at": "2026-06-16T19:36:20Z",
+  "base_commit": "caf072b2ce828eb5187d550ddaefb81e615fd9b2",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "Live-tested 17 scenarios: effort forwarding (4), legacy effort suffixes (3), 1M context suffixes (5), combined (2), other models (3). All pass."
+}
