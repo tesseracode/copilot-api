@@ -1,0 +1,17 @@
+{
+  "id": "api-migration-test-coverage",
+  "slug": "api-migration-test-coverage",
+  "title": "Add unit tests for the api-context-effort-migration feature gaps: (1) buildNativeBody extracts effort from legacy model-name suffixes like claude-opus-4-7-xhigh, (2) translateRequestToResponses populates reasoning.effort for GPT-5.x, (3) anthropicToCopilotModelId strips -1m dash suffix (not just [1m] bracket suffix).",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-06-16T19:58:55Z",
+  "updated_at": "2026-06-16T20:00:49Z",
+  "last_command": "apply --mode done",
+  "notes": "Changes applied and recorded",
+  "apply": {
+    "completed_at": "2026-06-16T20:00:49Z",
+    "base_commit": "71a56f7ac32a1144f30147497eee9b89ee0a4849",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

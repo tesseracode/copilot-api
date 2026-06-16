@@ -1,0 +1,8 @@
+{
+  "slug": "api-migration-test-coverage",
+  "completed_at": "2026-06-16T20:00:49Z",
+  "base_commit": "71a56f7ac32a1144f30147497eee9b89ee0a4849",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "17 new tests: extractEffortFromModelName (6), -1m dash suffix (4), model-name effort extraction (3), translateRequestToResponses effort (4). All pass."
+}

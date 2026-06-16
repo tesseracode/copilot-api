@@ -1,0 +1,161 @@
+diff --git a/src/lib/model-mapping.test.ts b/src/lib/model-mapping.test.ts
+index 4c45c42..26399c8 100644
+--- a/src/lib/model-mapping.test.ts
++++ b/src/lib/model-mapping.test.ts
+@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach } from "bun:test"
+ import {
+   anthropicToCopilotModelId,
+   copilotToAnthropicModelId,
++  extractEffortFromModelName,
+ } from "./model-mapping"
+ import { state } from "./state"
+ 
+@@ -215,3 +216,71 @@ describe("copilotToAnthropicModelId", () => {
+     expect(copilotToAnthropicModelId("gemini-2.5-pro")).toBe("gemini-2.5-pro")
+   })
+ })
++
++// ── -1m dash suffix stripping (backward compat) ──
++
++describe("anthropicToCopilotModelId -1m dash suffix", () => {
++  beforeEach(() => {
++    setCatalog(["claude-opus-4.6", "claude-opus-4.7"])
++  })
++
++  it("strips -1m suffix and resolves to base model (no -1m variant in catalog)", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4.6-1m", false)).toBe(
++      "claude-opus-4.6",
++    )
++  })
++
++  it("strips -1m suffix from dash-format model names", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-7-1m", false)).toBe(
++      "claude-opus-4.7",
++    )
++  })
++
++  it("resolves to -1m variant when it exists in catalog", () => {
++    setCatalog(["claude-opus-4.6", "claude-opus-4.6-1m"])
++    expect(anthropicToCopilotModelId("claude-opus-4.6-1m", false)).toBe(
++      "claude-opus-4.6-1m",
++    )
++  })
++
++  it("treats -1m suffix the same as [1m] suffix", () => {
++    setCatalog(["claude-opus-4.6"])
++    const dash = anthropicToCopilotModelId("claude-opus-4-6-1m", false)
++    const bracket = anthropicToCopilotModelId("claude-opus-4-6[1m]", false)
++    expect(dash).toBe(bracket)
++  })
++})
++
++// ── extractEffortFromModelName ──
++
++describe("extractEffortFromModelName", () => {
++  it("extracts -xhigh suffix", () => {
++    const result = extractEffortFromModelName("claude-opus-4-7-xhigh")
++    expect(result).toEqual({ base: "claude-opus-4-7", effort: "xhigh" })
++  })
++
++  it("extracts -high suffix", () => {
++    const result = extractEffortFromModelName("claude-opus-4-7-high")
++    expect(result).toEqual({ base: "claude-opus-4-7", effort: "high" })
++  })
++
++  it("extracts -max suffix", () => {
++    const result = extractEffortFromModelName("claude-opus-4-6-max")
++    expect(result).toEqual({ base: "claude-opus-4-6", effort: "max" })
++  })
++
++  it("extracts -low suffix", () => {
++    const result = extractEffortFromModelName("claude-opus-4-6-low")
++    expect(result).toEqual({ base: "claude-opus-4-6", effort: "low" })
++  })
++
++  it("returns undefined effort for model names without effort suffix", () => {
++    const result = extractEffortFromModelName("claude-opus-4.7")
++    expect(result).toEqual({ base: "claude-opus-4.7", effort: undefined })
++  })
++
++  it("does not confuse -1m with an effort suffix", () => {
++    const result = extractEffortFromModelName("claude-opus-4.6-1m")
++    expect(result).toEqual({ base: "claude-opus-4.6-1m", effort: undefined })
++  })
++})
+diff --git a/src/services/copilot/forward-native-messages.test.ts b/src/services/copilot/forward-native-messages.test.ts
+index 0c13a6a..e974e3f 100644
+--- a/src/services/copilot/forward-native-messages.test.ts
++++ b/src/services/copilot/forward-native-messages.test.ts
+@@ -200,6 +200,36 @@ describe("buildNativeBody", () => {
+       expect(thinking.type).toBe("enabled")
+       expect(thinking.budget_tokens).toBe(2048)
+     })
++
++    it("extracts effort from legacy model-name suffix (backward compat)", () => {
++      const body = buildNativeBody(
++        basePayload({ model: "claude-opus-4-7-xhigh" }),
++        {},
++      )
++      expect(body.model).toBe("claude-opus-4.7")
++      expect(body.output_config).toEqual({ effort: "xhigh" })
++    })
++
++    it("extracts -high effort from model name", () => {
++      const body = buildNativeBody(
++        basePayload({ model: "claude-sonnet-4-6-high" }),
++        {},
++      )
++      expect(body.model).toBe("claude-sonnet-4.6")
++      expect(body.output_config).toEqual({ effort: "high" })
++    })
++
++    it("output_config.effort takes priority over model-name suffix", () => {
++      const body = buildNativeBody(
++        basePayload({
++          model: "claude-opus-4-7-high",
++          output_config: { effort: "max" },
++        }),
++        {},
++      )
++      expect(body.model).toBe("claude-opus-4.7")
++      expect(body.output_config).toEqual({ effort: "max" })
++    })
+   })
+ 
+   describe("field allowlist", () => {
+diff --git a/tests/responses-effort-forwarding.test.ts b/tests/responses-effort-forwarding.test.ts
+new file mode 100644
+index 0000000..29fdf71
+--- /dev/null
++++ b/tests/responses-effort-forwarding.test.ts
+@@ -0,0 +1,30 @@
++import { describe, expect, it } from "bun:test"
++
++import { translateRequestToResponses } from "~/services/copilot/create-responses"
++
++describe("translateRequestToResponses effort forwarding", () => {
++  const basePayload = {
++    model: "gpt-5.5",
++    messages: [{ role: "user" as const, content: "hello" }],
++  }
++
++  it("populates reasoning.effort when effort is provided", () => {
++    const result = translateRequestToResponses(basePayload, "xhigh")
++    expect(result.reasoning).toEqual({ effort: "xhigh" })
++  })
++
++  it("populates reasoning.effort=high", () => {
++    const result = translateRequestToResponses(basePayload, "high")
++    expect(result.reasoning).toEqual({ effort: "high" })
++  })
++
++  it("omits reasoning when no effort is provided", () => {
++    const result = translateRequestToResponses(basePayload)
++    expect(result.reasoning).toBeUndefined()
++  })
++
++  it("omits reasoning when effort is undefined", () => {
++    const result = translateRequestToResponses(basePayload, undefined)
++    expect(result.reasoning).toBeUndefined()
++  })
++})

@@ -200,6 +200,36 @@ describe("buildNativeBody", () => {
       expect(thinking.type).toBe("enabled")
       expect(thinking.budget_tokens).toBe(2048)
     })
+
+    it("extracts effort from legacy model-name suffix (backward compat)", () => {
+      const body = buildNativeBody(
+        basePayload({ model: "claude-opus-4-7-xhigh" }),
+        {},
+      )
+      expect(body.model).toBe("claude-opus-4.7")
+      expect(body.output_config).toEqual({ effort: "xhigh" })
+    })
+
+    it("extracts -high effort from model name", () => {
+      const body = buildNativeBody(
+        basePayload({ model: "claude-sonnet-4-6-high" }),
+        {},
+      )
+      expect(body.model).toBe("claude-sonnet-4.6")
+      expect(body.output_config).toEqual({ effort: "high" })
+    })
+
+    it("output_config.effort takes priority over model-name suffix", () => {
+      const body = buildNativeBody(
+        basePayload({
+          model: "claude-opus-4-7-high",
+          output_config: { effort: "max" },
+        }),
+        {},
+      )
+      expect(body.model).toBe("claude-opus-4.7")
+      expect(body.output_config).toEqual({ effort: "max" })
+    })
   })
 
   describe("field allowlist", () => {
