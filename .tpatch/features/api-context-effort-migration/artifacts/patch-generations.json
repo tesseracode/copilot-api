@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "feature": "api-context-effort-migration",
+  "current_generation": 3,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_667593ddfb0e",
+      "kind": "record",
+      "patch_sha256": "dc45d5d09fbd128b394541c0480aceee7e2a867ea2b3f982c5d9da92cbd3c09b",
+      "git_patch_id": "a98d6a7c59a8bba762a62040dc9b144a5575ffc1",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "998af21f1b8ec2ce94e45284be28abbcfbb505353c7e5f58d1445c82a706ab3e",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "caf072b2ce828eb5187d550ddaefb81e615fd9b2",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/model-mapping.test.ts",
+          "src/lib/model-mapping.ts",
+          "src/routes/messages/handler.ts",
+          "src/services/copilot/create-responses.ts",
+          "src/services/copilot/forward-native-messages.test.ts",
+          "src/services/copilot/forward-native-messages.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/model-mapping.test.ts",
+        "src/lib/model-mapping.ts",
+        "src/routes/messages/handler.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.test.ts",
+        "src/services/copilot/forward-native-messages.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_04b93bfcb733",
+      "kind": "amend-refresh",
+      "patch_sha256": "a0e83ef07a4e0c4ab230d3c850092142454233497c6dcc5f485e2992ad4f916d",
+      "git_patch_id": "50f5e8ff75b5661458f6f15aff26137135c33462",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "998af21f1b8ec2ce94e45284be28abbcfbb505353c7e5f58d1445c82a706ab3e",
+      "canonical_patch": "",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "caf072b2ce828eb5187d550ddaefb81e615fd9b2",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/model-mapping.test.ts",
+          "src/lib/model-mapping.ts",
+          "src/routes/messages/handler.ts",
+          "src/services/copilot/create-responses.ts",
+          "src/services/copilot/forward-native-messages.test.ts",
+          "src/services/copilot/forward-native-messages.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/model-mapping.test.ts",
+        "src/lib/model-mapping.ts",
+        "src/routes/messages/handler.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.test.ts",
+        "src/services/copilot/forward-native-messages.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 3,
+      "generation_id": "pg_252c15f4fd02",
+      "kind": "amend-refresh",
+      "patch_sha256": "670080c3a1a0a4ab272f3bed61f5e6295671dd7df94031fe9c873b46ea7a4f30",
+      "git_patch_id": "8a64147f0b6369dd1f68e9db9f82504ac3e8d60c",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "998af21f1b8ec2ce94e45284be28abbcfbb505353c7e5f58d1445c82a706ab3e",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/003-record.patch",
+      "base_commit": "caf072b2ce828eb5187d550ddaefb81e615fd9b2",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/model-mapping.test.ts",
+          "src/lib/model-mapping.ts",
+          "src/routes/messages/handler.ts",
+          "src/services/copilot/create-responses.ts",
+          "src/services/copilot/forward-native-messages.test.ts",
+          "src/services/copilot/forward-native-messages.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/model-mapping.test.ts",
+        "src/lib/model-mapping.ts",
+        "src/routes/messages/handler.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.test.ts",
+        "src/services/copilot/forward-native-messages.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

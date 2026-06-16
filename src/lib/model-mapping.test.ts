@@ -61,15 +61,25 @@ describe("anthropicToCopilotModelId", () => {
     )
   })
 
-  // ── -internal suffix resolution ──
+  // ── -internal suffix resolution (backward compat) ──
 
-  it("resolves to -1m-internal when only that variant exists", () => {
-    setCatalog(["claude-opus-4.7", "claude-opus-4.7-1m-internal"])
+  it("resolves to -1m when variant exists in catalog", () => {
+    setCatalog(["claude-opus-4.7", "claude-opus-4.7-1m"])
     expect(anthropicToCopilotModelId("claude-opus-4.7", true)).toBe(
-      "claude-opus-4.7-1m-internal",
+      "claude-opus-4.7-1m",
     )
     expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
-      "claude-opus-4.7-1m-internal",
+      "claude-opus-4.7-1m",
+    )
+  })
+
+  it("falls back to base model when no -1m variant exists (1M is default)", () => {
+    setCatalog(["claude-opus-4.7"])
+    expect(anthropicToCopilotModelId("claude-opus-4.7", true)).toBe(
+      "claude-opus-4.7",
+    )
+    expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
+      "claude-opus-4.7",
     )
   })
 
@@ -84,31 +94,15 @@ describe("anthropicToCopilotModelId", () => {
     )
   })
 
-  it("accepts dot-format Claude IDs with a [1m] suffix", () => {
-    setCatalog(["claude-opus-4.7", "claude-opus-4.7-1m-internal"])
-    expect(anthropicToCopilotModelId("claude-opus-4.7[1m]", false)).toBe(
-      "claude-opus-4.7-1m-internal",
-    )
-  })
+  // ── Effort suffixes are stripped from model name (backward compat) ──
+  // Effort is sent via output_config.effort in the request body
 
-  // ── Effort suffix handling ──
-
-  it("maps -high suffix through dash→dot conversion", () => {
-    setCatalog(["claude-opus-4.7", "claude-opus-4.7-high"])
-    expect(anthropicToCopilotModelId("claude-opus-4-7-high", false)).toBe(
-      "claude-opus-4.7-high",
-    )
-  })
-
-  it("maps -xhigh suffix through dash→dot conversion", () => {
-    setCatalog(["claude-opus-4.7", "claude-opus-4.7-xhigh"])
-    expect(anthropicToCopilotModelId("claude-opus-4-7-xhigh", false)).toBe(
-      "claude-opus-4.7-xhigh",
-    )
-  })
-
-  it("falls back to base when effort variant not in catalog", () => {
+  it("strips effort suffix from model name for backward compat", () => {
     setCatalog(["claude-opus-4.7"])
+    // Legacy configs like "claude-opus-4-7-xhigh" get the suffix stripped
+    expect(anthropicToCopilotModelId("claude-opus-4-7-xhigh", false)).toBe(
+      "claude-opus-4.7",
+    )
     expect(anthropicToCopilotModelId("claude-opus-4-7-high", false)).toBe(
       "claude-opus-4.7",
     )
@@ -145,19 +139,20 @@ describe("copilotToAnthropicModelId", () => {
     )
   })
 
-  // ── Effort suffix stripping ──
-  // Callers like Claude Code's getCanonicalName() don't recognize -high/-xhigh.
-  // Effort is a request-time concern; response uses base model identity.
+  // ── Effort suffix handling removed ──
+  // These model IDs no longer exist. The upstream always returns base model
+  // in response.model anyway (verified in upstream-model-id-report.md).
+  // If they somehow appear, they pass through without special handling.
 
-  it("strips -high suffix for clean response model", () => {
+  it("passes through -high suffix unchanged (variant models no longer exist)", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
-      "claude-opus-4-7",
+      "claude-opus-4.7-high",
     )
   })
 
-  it("strips -xhigh suffix for clean response model", () => {
+  it("passes through -xhigh suffix unchanged (variant models no longer exist)", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
-      "claude-opus-4-7",
+      "claude-opus-4.7-xhigh",
     )
   })
 
@@ -180,15 +175,14 @@ describe("copilotToAnthropicModelId", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
   })
 
-  it("response model table: effort=high variant stripped to base", () => {
+  it("response model table: effort variants pass through (upstream strips them anyway)", () => {
+    // The upstream API returns base model in response.model regardless.
+    // These IDs should never appear in practice, but if they do, they pass through.
     expect(copilotToAnthropicModelId("claude-opus-4.7-high")).toBe(
-      "claude-opus-4-7",
+      "claude-opus-4.7-high",
     )
-  })
-
-  it("response model table: effort=xhigh variant stripped to base", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.7-xhigh")).toBe(
-      "claude-opus-4-7",
+      "claude-opus-4.7-xhigh",
     )
   })
 

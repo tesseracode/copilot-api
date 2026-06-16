@@ -1,0 +1,141 @@
+# Acceptance Criteria
+
+1. Model mapping no longer normalizes max/high/xhigh suffixes to -1m variants for Claude 4.6+
+2. Effort parameter is extracted from request body and forwarded via `output_config.effort` instead of model name suffix
+3. `supportsEffort()` function checks advertised `reasoning_effort` capabilities array instead of -1m suffix presence in model ID
+4. All Claude 4.6+ models correctly report `max_context_window_tokens: 1000000` without suffix variants in model list
+5. Claude 4.5 and earlier models continue to use `thinking: {type: "enabled", budget_tokens: N}` approach (no reasoning_effort capability)
+6. Effort values are validated against model's supported `reasoning_effort` array before forwarding; unsupported values are rejected with clear error
+7. [1m] suffix in incoming requests is stripped as no-op (backward compat for Claude Code) but does not trigger variant resolution
+8. GPT-5.x effort is forwarded via `reasoning: {effort: "..."}` in responses payload
+9. All existing tests pass; new tests added for effort forwarding via `output_config.effort` and validation against capabilities
+10. No silent dropping of effort values for opus-4.7+ models; invalid effort values produce HTTP 400 with supported values listed
+
+# Implementation Plan
+
+## Phase 1: Analysis & Preparation
+
+### 1.1 Audit Current Suffix Logic
+- [ ] Search codebase for all occurrences of `-1m`, `-high`, `-xhigh` suffix handling
+- [ ] Identify normalization functions (e.g., `max→xhigh` conversion in model-mapping.ts)
+- [ ] Locate `supportsEffort()` function and review its current implementation
+- [ ] Document all test cases that depend on suffix-based model variants
+- [ ] Map where effort is currently extracted from model name vs. request body
+
+### 1.2 Review API Response Structure
+- [ ] Confirm `reasoning_effort` is an array in `capabilities.supports.reasoning_effort`
+- [ ] Verify Claude 4.6+ models have `reasoning_effort` capability; 4.5 and earlier do not
+- [ ] Confirm valid effort values per model version (4.6: `[low, medium, high, max]`; 4.7/4.8: `[low, medium, high, xhigh, max]`)
+- [ ] Verify `max_context_window_tokens: 1000000` for all 4.6+ models
+- [ ] Document structure of `output_config.effort` in Copilot API request schema
+
+### 1.3 Identify Request/Response Transformation Points
+- [ ] Find where Anthropic requests are transformed to Copilot API requests
+- [ ] Locate where effort is currently parsed from incoming requests
+- [ ] Identify where `output_config` object is built in request transformation
+- [ ] Find where GPT-5.x responses need `reasoning: {effort: "..."}` populated
+
+## Phase 2: Core Refactoring
+
+### 2.1 Update Model Mapping (src/lib/model-mapping.ts)
+- [ ] Remove suffix normalization logic for Claude 4.6+ models
+- [ ] Keep [1m] suffix stripping as no-op (don't resolve to variant)
+- [ ] Ensure `anthropicToCopilotModelId()` falls back to base model when variant not in catalog
+- [ ] Update model list to reflect no -1m/-high/-xhigh variants for 4.6+
+- [ ] Add helper function `getModelCapabilities(modelId)` to retrieve reasoning_effort array from model metadata
+
+### 2.2 Refactor Effort Detection (src/lib/api-config.ts or similar)
+- [ ] Rename/refactor `supportsEffort()` to check `capabilities.supports.reasoning_effort` array instead of -1m suffix
+- [ ] Create new function `getValidEffortValues(modelId)` that returns the model's supported effort array
+- [ ] Create validation function `isValidEffort(modelId, effortValue)` that checks if effort is in supported array
+- [ ] Add function to extract effort from incoming request (check request body, headers, or model name as fallback)
+
+### 2.3 Update Request Transformation (src/routes/messages/ and src/routes/chat-completions/)
+- [ ] Extract effort parameter from incoming request
+- [ ] Validate effort against model's `reasoning_effort` capabilities
+- [ ] Build `output_config: { effort: "..." }` in Copilot API request body for Claude 4.6+
+- [ ] For Claude 4.5 and earlier: continue using `thinking: {type: "enabled", budget_tokens: N}` approach
+- [ ] For GPT-5.x: populate `reasoning: {effort: "..."}` in responses payload
+- [ ] Return HTTP 400 with supported values if effort is unsupported by model
+
+### 2.4 Update Filter Models (src/lib/filter-models.ts)
+- [ ] Remove logic that filters or creates -1m/-high/-xhigh variants
+- [ ] Ensure model list reflects actual API response (no synthetic variants)
+- [ ] Update any model display/description logic that references suffix variants
+
+## Phase 3: Testing & Validation
+
+### 3.1 Update Existing Tests
+- [ ] Update mock model responses in test fixtures to remove -1m/-high/-xhigh variants
+- [ ] Update mock responses to include `reasoning_effort` array in capabilities for 4.6+
+- [ ] Update mock responses to exclude `reasoning_effort` for 4.5 and earlier
+- [ ] Fix all tests that depend on suffix-based model names
+- [ ] Update tests for `supportsEffort()` to check capabilities array instead of ID pattern
+
+### 3.2 Add New Tests
+- [ ] Test effort validation: valid effort values are forwarded via `output_config.effort`
+- [ ] Test effort validation: invalid effort values produce HTTP 400 with supported values listed
+- [ ] Test backward compat: [1m] suffix in request is stripped without error
+- [ ] Test model capabilities: Claude 4.6+ report correct `reasoning_effort` array
+- [ ] Test model capabilities: Claude 4.5 and earlier do not have `reasoning_effort`
+- [ ] Test context window: all Claude 4.6+ report `max_context_window_tokens: 1000000`
+- [ ] Test GPT-5.x: effort is forwarded via `reasoning: {effort: "..."}` in responses
+- [ ] Test fallback: non-existent variant requests fall back to base model gracefully
+
+### 3.3 Integration Testing
+- [ ] Test end-to-end request with effort parameter for Claude 4.6 (valid: low, medium, high, max)
+- [ ] Test end-to-end request with effort parameter for Claude 4.7 (valid: low, medium, high, xhigh, max)
+- [ ] Test end-to-end request with unsupported effort value (should return HTTP 400)
+- [ ] Test backward compat: old-style requests with [1m] suffix still work
+- [ ] Test model list endpoint returns correct capabilities for all models
+
+## Phase 4: Cleanup & Documentation
+
+### 4.1 Remove Dead Code
+- [ ] Delete suffix normalization functions no longer used
+- [ ] Remove any constants or enums for -1m/-high/-xhigh variants
+- [ ] Clean up conditional logic that checked for suffix presence
+
+### 4.2 Update Documentation
+- [ ] Update API documentation to reflect effort forwarding via `output_config.effort`
+- [ ] Document supported effort values per model version
+- [ ] Update model capability documentation to remove references to suffix variants
+- [ ] Add migration guide for clients using old-style model names with suffixes
+
+### 4.3 Code Review & Merge
+- [ ] Peer review all changes against acceptance criteria
+- [ ] Verify all tests pass (existing and new)
+- [ ] Run integration tests against staging Copilot API
+- [ ] Merge to main branch with clear commit messages documenting breaking changes
+
+## Phase 5: Deployment & Monitoring
+
+### 5.1 Pre-Deployment
+- [ ] Create feature flag to enable new effort handling (optional, for gradual rollout)
+- [ ] Prepare rollback plan in case of issues
+- [ ] Notify downstream clients of API changes
+
+### 5.2 Deployment
+- [ ] Deploy to staging environment first
+- [ ] Run smoke tests against staging
+- [ ] Deploy to production with monitoring enabled
+- [ ] Monitor error rates and effort-related failures
+
+### 5.3 Post-Deployment
+- [ ] Verify no increase in HTTP 400 errors related to effort validation
+- [ ] Confirm effort values are being forwarded correctly in Copilot API requests
+- [ ] Monitor for any silent failures or dropped effort values
+- [ ] Collect metrics on effort usage by model version
+
+---
+
+## Implementation Order (Recommended)
+
+1. **Phase 1.1-1.3**: Complete analysis and documentation (1-2 days)
+2. **Phase 2.1-2.2**: Refactor model mapping and effort detection (2-3 days)
+3. **Phase 2.3-2.4**: Update request transformation and filtering (2-3 days)
+4. **Phase 3.1-3.3**: Update and add tests (2-3 days)
+5. **Phase 4.1-4.3**: Cleanup and documentation (1 day)
+6. **Phase 5**: Deployment and monitoring (ongoing)
+
+**Estimated Total**: 8-12 days of development + testing

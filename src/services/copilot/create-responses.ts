@@ -205,6 +205,7 @@ function translateTools(
 
 export function translateRequestToResponses(
   payload: ChatCompletionsPayload,
+  effort?: string,
 ): ResponsesPayload {
   const result: ResponsesPayload = {
     model: payload.model,
@@ -217,6 +218,8 @@ export function translateRequestToResponses(
     result.max_output_tokens = payload.max_tokens
   // Note: temperature and top_p are intentionally omitted — the /responses
   // API rejects them for GPT-5.x models ("Unsupported parameter").
+
+  if (effort) result.reasoning = { effort }
 
   return result
 }
@@ -892,11 +895,12 @@ export function* translateResponsesStreamEvent(
 
 export async function createResponses(
   payload: ChatCompletionsPayload,
+  effort?: string,
   signal?: AbortSignal,
 ) {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
-  const responsesPayload = translateRequestToResponses(payload)
+  const responsesPayload = translateRequestToResponses(payload, effort)
 
   const url = `${copilotBaseUrl(state)}/responses`
   consola.debug(`Sending /responses request for model: ${payload.model}`)
