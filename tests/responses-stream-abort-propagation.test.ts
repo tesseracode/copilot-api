@@ -97,6 +97,7 @@ describe("AbortSignal propagation to upstream fetch", () => {
           model: "gpt-test",
           messages: [{ role: "user", content: "hi" }],
         },
+        undefined,
         controller.signal,
       )
       expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
@@ -117,6 +118,7 @@ describe("AbortSignal propagation to upstream fetch", () => {
           messages: [{ role: "user", content: "hi" }],
           stream: true,
         },
+        undefined,
         controller.signal,
       )
       // Drain to ensure the iterator runs.
