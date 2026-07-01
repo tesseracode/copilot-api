@@ -109,7 +109,11 @@ async function handleResponsesEndpoint(
   payload: ChatCompletionsPayload,
   signal?: AbortSignal,
 ) {
-  const response = await createResponses(payload, signal)
+  // Extract effort from reasoning_effort or output_config for GPT-5.x models
+  // Default to "medium" if the model requires reasoning but no effort was specified
+  const effort = (payload as unknown as Record<string, unknown>)
+    .reasoning_effort as string | undefined
+  const response = await createResponses(payload, effort ?? "medium", signal)
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming /responses result:", JSON.stringify(response))
