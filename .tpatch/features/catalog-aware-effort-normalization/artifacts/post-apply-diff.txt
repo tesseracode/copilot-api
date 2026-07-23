@@ -1,0 +1,9 @@
+ src/lib/model-mapping.ts                        | 14 ++++++--
+ src/routes/chat-completions/handler.ts          | 24 +++++++++++---
+ src/routes/messages/anthropic-types.ts          |  4 ++-
+ src/routes/messages/handler.ts                  | 43 ++++++++++++++++++-------
+ src/routes/messages/non-stream-translation.ts   |  4 +++
+ src/services/copilot/create-chat-completions.ts |  3 ++
+ src/services/copilot/forward-native-messages.ts | 25 ++++++++------
+ src/services/copilot/get-models.ts              |  3 ++
+ 8 files changed, 90 insertions(+), 30 deletions(-)

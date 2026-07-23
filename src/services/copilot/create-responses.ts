@@ -1,9 +1,15 @@
+/* eslint-disable max-lines */
 import consola from "consola"
 import { events } from "fetch-event-stream"
 import { randomUUID } from "node:crypto"
 
-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
-import { HTTPError } from "~/lib/error"
+import { copilotBaseUrl } from "~/lib/api-config"
+import { copilotFetch } from "~/lib/copilot-fetch"
+import {
+  normalizeCopilotUsage,
+  type RawCopilotUsage,
+} from "~/lib/copilot-usage"
+import { badRequest, HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
 import type {
@@ -12,9 +18,6 @@ import type {
   ChatCompletionsPayload,
   ToolCall,
 } from "./create-chat-completions"
-
-// ── Request translation: OpenAI Chat Completions → Responses API ──
-
 interface ResponsesPayload {
   model: string
   input: Array<ResponsesInput>
@@ -24,7 +27,6 @@ interface ResponsesPayload {
   stream?: boolean
   reasoning?: { effort: string }
 }
-
 type ResponsesInput =
   | {
       type: "message"
@@ -33,7 +35,6 @@ type ResponsesInput =
     }
   | { type: "function_call"; name: string; arguments: string; call_id: string }
   | { type: "function_call_output"; call_id: string; output: string }
-
 interface ResponsesContentPart {
   type: "input_text" | "input_image" | "input_audio"
   text?: string
@@ -41,34 +42,29 @@ interface ResponsesContentPart {
   detail?: string
   input_audio?: { data: string; format: string }
 }
-
 interface ResponsesTool {
   type: "function"
   name: string
   description?: string
   parameters: Record<string, unknown>
 }
-
 interface RawContentPart {
   type: string
   text?: string
   image_url?: { url?: string; detail?: string }
   input_audio?: { data?: string; format?: string }
 }
-
 export function translateMessageContent(
   content: string | Array<RawContentPart> | undefined,
 ): string | Array<ResponsesContentPart> {
   if (typeof content === "string") return content
   if (!content) return ""
-
   const parts: Array<ResponsesContentPart> = []
   for (const p of content) {
     if (p.type === "text") {
       parts.push({ type: "input_text", text: p.text ?? "" })
       continue
     }
-
     if (p.type === "image_url") {
       const url = p.image_url?.url
       if (!url) {
@@ -84,7 +80,6 @@ export function translateMessageContent(
       })
       continue
     }
-
     if (p.type === "input_audio") {
       const data = p.input_audio?.data
       const format = p.input_audio?.format
@@ -101,17 +96,18 @@ export function translateMessageContent(
       } as ResponsesContentPart)
       continue
     }
-
     consola.warn("Dropping unknown content part type", { unknownType: p.type })
   }
   return parts
 }
-
+function requireToolCallId(id: string | undefined, field: string): string {
+  if (!id) throw badRequest(`${field} is missing`)
+  return id
+}
 function translateMessages(
   messages: ChatCompletionsPayload["messages"],
 ): Array<ResponsesInput> {
   const input: Array<ResponsesInput> = []
-
   for (const msg of messages) {
     switch (msg.role) {
       case "system":
@@ -121,7 +117,6 @@ function translateMessages(
           role: "developer",
           content: translateMessageContent(msg.content ?? ""),
         })
-
         break
       }
       case "user": {
@@ -130,7 +125,6 @@ function translateMessages(
           role: "user",
           content: translateMessageContent(msg.content ?? ""),
         })
-
         break
       }
       case "assistant": {
@@ -153,37 +147,35 @@ function translateMessages(
               type: "function_call",
               name: tc.function.name,
               arguments: tc.function.arguments,
-              call_id: tc.id,
+              call_id: requireToolCallId(tc.id, "assistant tool call id"),
             })
           }
         }
-
         break
       }
       case "tool": {
         input.push({
           type: "function_call_output",
-          call_id: msg.tool_call_id ?? "",
+          call_id: requireToolCallId(
+            msg.tool_call_id,
+            "tool message tool_call_id",
+          ),
           output:
             typeof msg.content === "string" ?
               msg.content
             : JSON.stringify(msg.content),
         })
-
         break
       }
       // No default
     }
   }
-
   return input
 }
-
 function translateTools(
   payload: ChatCompletionsPayload,
 ): Partial<ResponsesPayload> {
   const result: Partial<ResponsesPayload> = {}
-
   if (payload.tools) {
     result.tools = payload.tools.map((t) => ({
       type: "function" as const,
@@ -192,17 +184,14 @@ function translateTools(
       parameters: t.function.parameters,
     }))
   }
-
   if (payload.tool_choice) {
     result.tool_choice =
       typeof payload.tool_choice === "string" ?
         payload.tool_choice
       : { type: "function", name: payload.tool_choice.function.name }
   }
-
   return result
 }
-
 export function translateRequestToResponses(
   payload: ChatCompletionsPayload,
   effort?: string,
@@ -213,20 +202,12 @@ export function translateRequestToResponses(
     stream: payload.stream ?? undefined,
     ...translateTools(payload),
   }
-
   if (payload.max_tokens !== null && payload.max_tokens !== undefined)
     result.max_output_tokens = payload.max_tokens
-  // Note: temperature and top_p are intentionally omitted — the /responses
-  // API rejects them for GPT-5.x models ("Unsupported parameter").
-
   if (effort) result.reasoning = { effort }
-
   return result
 }
-
-// ── Response translation: Responses API → OpenAI Chat Completions ──
-
-interface ResponsesResponse {
+export interface ResponsesResponse {
   id: string
   object: string
   created_at?: number
@@ -237,10 +218,10 @@ interface ResponsesResponse {
     output_tokens: number
     total_tokens: number
   }
+  copilot_usage?: RawCopilotUsage
   status?: string
 }
-
-type ResponsesOutputItem =
+export type ResponsesOutputItem =
   | {
       type: "message"
       role: "assistant"
@@ -253,24 +234,20 @@ type ResponsesOutputItem =
       summary?: Array<{ type: "summary_text"; text: string }>
       encrypted_content?: string | null
     }
-
-interface ResponsesMessageContent {
+export interface ResponsesMessageContent {
   type: "output_text"
   text: string
 }
-
 export function translateResponsesNonStreaming(
   resp: ResponsesResponse,
 ): ChatCompletionResponse {
   let textContent = ""
   let reasoningText = ""
   const toolCalls: Array<ToolCall> = []
-
   for (const item of resp.output) {
     switch (item.type) {
       case "message": {
         textContent += item.content.map((c) => c.text).join("")
-
         break
       }
       case "function_call": {
@@ -279,7 +256,6 @@ export function translateResponsesNonStreaming(
           type: "function",
           function: { name: item.name, arguments: item.arguments },
         })
-
         break
       }
       case "reasoning": {
@@ -287,16 +263,13 @@ export function translateResponsesNonStreaming(
         if (item.summary && item.summary.length > 0) {
           reasoningText += item.summary.map((s) => s.text).join("\n")
         }
-
         break
       }
       // No default
     }
     // Skip other unknown item types
   }
-
   const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
-
   return {
     id: resp.id,
     object: "chat.completion",
@@ -323,11 +296,9 @@ export function translateResponsesNonStreaming(
           total_tokens: resp.usage.total_tokens,
         }
       : undefined,
+    copilot_usage: normalizeCopilotUsage(resp.copilot_usage),
   }
 }
-
-// ── Streaming translation: Responses API SSE → Chat Completions chunks ──
-
 export interface ResponsesStreamState {
   responseId: string
   model: string
@@ -337,7 +308,6 @@ export interface ResponsesStreamState {
   fallbackId: string
   created: number
 }
-
 export function createResponsesStreamState(): ResponsesStreamState {
   return {
     responseId: "",
@@ -349,14 +319,12 @@ export function createResponsesStreamState(): ResponsesStreamState {
     created: Math.floor(Date.now() / 1000),
   }
 }
-
 interface ResponsesStreamToolCall {
   arguments: string
   callId: string
   index: number
   name: string
 }
-
 interface ResponsesStreamUsage {
   input_tokens: number
   output_tokens: number
@@ -365,7 +333,6 @@ interface ResponsesStreamUsage {
     cached_tokens: number
   }
 }
-
 interface ResponsesStreamResponse {
   id?: string
   model?: string
@@ -378,7 +345,6 @@ interface ResponsesStreamResponse {
     reason?: string
   }
 }
-
 interface ResponsesStreamItem {
   arguments?: string
   call_id?: string
@@ -386,7 +352,6 @@ interface ResponsesStreamItem {
   name?: string
   type?: string
 }
-
 interface ResponsesStreamEventData {
   arguments?: string
   call_id?: string
@@ -400,7 +365,6 @@ interface ResponsesStreamEventData {
   output_index?: number
   response?: ResponsesStreamResponse
 }
-
 function makeChunk(
   streamState: ResponsesStreamState,
   {
@@ -430,7 +394,6 @@ function makeChunk(
     ],
   }
 }
-
 function syncResponseMetadata(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -442,14 +405,12 @@ function syncResponseMetadata(
     streamState.model = data.response?.model ?? data.model ?? ""
   }
 }
-
 function translateResponsesUsage(
   usage: ResponsesStreamUsage | undefined,
 ): ChatCompletionChunk["usage"] | undefined {
   if (!usage) {
     return undefined
   }
-
   return {
     prompt_tokens: usage.input_tokens,
     completion_tokens: usage.output_tokens,
@@ -461,7 +422,6 @@ function translateResponsesUsage(
     }),
   }
 }
-
 function getToolCallDelta(
   toolCall: ResponsesStreamToolCall,
   argumentsChunk: string,
@@ -475,7 +435,6 @@ function getToolCallDelta(
     ],
   }
 }
-
 function getNewToolCallDelta(
   toolCall: ResponsesStreamToolCall,
   argumentsChunk: string,
@@ -494,7 +453,6 @@ function getNewToolCallDelta(
     ],
   }
 }
-
 function getExistingToolCall(
   streamState: ResponsesStreamState,
   data: Pick<ResponsesStreamEventData, "call_id" | "output_index">,
@@ -506,10 +464,8 @@ function getExistingToolCall(
       return outputIndexToolCall
     }
   }
-
   return data.call_id ? streamState.toolCallsByCallId[data.call_id] : undefined
 }
-
 function getOrCreateToolCall(
   streamState: ResponsesStreamState,
   {
@@ -527,38 +483,31 @@ function getOrCreateToolCall(
   if (!callId || !name) {
     return undefined
   }
-
   const existingToolCall =
     streamState.toolCallsByCallId[callId]
     ?? (outputIndex !== undefined ?
       streamState.toolCallsByOutputIndex[outputIndex]
     : undefined)
-
   if (existingToolCall) {
     streamState.toolCallsByCallId[callId] = existingToolCall
     if (outputIndex !== undefined) {
       streamState.toolCallsByOutputIndex[outputIndex] = existingToolCall
     }
-
     return { isNew: false, toolCall: existingToolCall }
   }
-
   const toolCall: ResponsesStreamToolCall = {
     arguments: initialArguments,
     callId,
     index: streamState.toolCallIndex,
     name,
   }
-
   streamState.toolCallsByCallId[callId] = toolCall
   if (outputIndex !== undefined) {
     streamState.toolCallsByOutputIndex[outputIndex] = toolCall
   }
   streamState.toolCallIndex++
-
   return { isNew: true, toolCall }
 }
-
 function* syncToolArguments(
   streamState: ResponsesStreamState,
   toolCall: ResponsesStreamToolCall,
@@ -567,7 +516,6 @@ function* syncToolArguments(
   if (!nextArguments || nextArguments === toolCall.arguments) {
     return
   }
-
   if (!nextArguments.startsWith(toolCall.arguments)) {
     consola.warn(
       "Tool call argument stream diverged; preserving streamed prefix",
@@ -582,20 +530,16 @@ function* syncToolArguments(
     )
     return
   }
-
   const missingArguments = nextArguments.slice(toolCall.arguments.length)
   toolCall.arguments = nextArguments
-
   if (!missingArguments) {
     return
   }
-
   yield makeChunk(streamState, {
     delta: getToolCallDelta(toolCall, missingArguments),
     finishReason: null,
   })
 }
-
 function* handleCreatedEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -606,7 +550,6 @@ function* handleCreatedEvent(
     finishReason: null,
   })
 }
-
 function* handleOutputTextDeltaEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -614,13 +557,11 @@ function* handleOutputTextDeltaEvent(
   if (!data.delta) {
     return
   }
-
   yield makeChunk(streamState, {
     delta: { content: data.delta },
     finishReason: null,
   })
 }
-
 function* handleOutputItemAddedEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -628,24 +569,20 @@ function* handleOutputItemAddedEvent(
   if (data.item?.type !== "function_call") {
     return
   }
-
   const toolCall = getOrCreateToolCall(streamState, {
     callId: data.item.call_id,
     initialArguments: data.item.arguments ?? "",
     name: data.item.name,
     outputIndex: data.output_index,
   })
-
   if (!toolCall?.isNew) {
     return
   }
-
   yield makeChunk(streamState, {
     delta: getNewToolCallDelta(toolCall.toolCall, data.item.arguments ?? ""),
     finishReason: null,
   })
 }
-
 function* handleFunctionCallArgumentsDeltaEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -653,7 +590,6 @@ function* handleFunctionCallArgumentsDeltaEvent(
   if (!data.delta) {
     return
   }
-
   const existingToolCall = getExistingToolCall(streamState, data)
   if (existingToolCall) {
     existingToolCall.arguments += data.delta
@@ -663,24 +599,20 @@ function* handleFunctionCallArgumentsDeltaEvent(
     })
     return
   }
-
   const toolCall = getOrCreateToolCall(streamState, {
     callId: data.call_id,
     initialArguments: data.delta,
     name: data.name,
     outputIndex: data.output_index,
   })
-
   if (!toolCall) {
     return
   }
-
   yield makeChunk(streamState, {
     delta: getNewToolCallDelta(toolCall.toolCall, data.delta),
     finishReason: null,
   })
 }
-
 function* handleFunctionCallArgumentsDoneEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -689,10 +621,8 @@ function* handleFunctionCallArgumentsDoneEvent(
   if (!existingToolCall) {
     return
   }
-
   yield* syncToolArguments(streamState, existingToolCall, data.arguments)
 }
-
 function getExistingOrCreateCompletedToolCall(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -701,11 +631,9 @@ function getExistingOrCreateCompletedToolCall(
     call_id: data.item?.call_id,
     output_index: data.output_index,
   })
-
   if (existingToolCall) {
     return { isNew: false, toolCall: existingToolCall }
   }
-
   return getOrCreateToolCall(streamState, {
     callId: data.item?.call_id,
     initialArguments: data.item?.arguments ?? "",
@@ -713,7 +641,6 @@ function getExistingOrCreateCompletedToolCall(
     outputIndex: data.output_index,
   })
 }
-
 function* handleOutputItemDoneEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -721,36 +648,30 @@ function* handleOutputItemDoneEvent(
   if (data.item?.type !== "function_call") {
     return
   }
-
   const toolCall = getExistingOrCreateCompletedToolCall(streamState, data)
   if (!toolCall) {
     return
   }
-
   if (toolCall.isNew) {
     yield makeChunk(streamState, {
       delta: getNewToolCallDelta(toolCall.toolCall, data.item.arguments ?? ""),
       finishReason: null,
     })
   }
-
   yield* syncToolArguments(streamState, toolCall.toolCall, data.item.arguments)
 }
-
 function* handleCompletedEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
 ): Generator<ChatCompletionChunk> {
   syncResponseMetadata(streamState, data)
   const hasToolCalls = Object.keys(streamState.toolCallsByCallId).length > 0
-
   yield makeChunk(streamState, {
     delta: {},
     finishReason: hasToolCalls ? "tool_calls" : "stop",
     usage: translateResponsesUsage(data.response?.usage),
   })
 }
-
 function mapIncompleteReasonToFinishReason(
   reason: string | undefined,
 ): "stop" | "length" | "content_filter" {
@@ -766,7 +687,6 @@ function mapIncompleteReasonToFinishReason(
     }
   }
 }
-
 function* handleFailedEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -775,7 +695,6 @@ function* handleFailedEvent(
   const errorType = data.response?.error?.type ?? "api_error"
   const message = data.response?.error?.message ?? "Upstream response failed"
   consola.warn("Upstream /responses failed", { type: errorType, message })
-
   const chunk = makeChunk(streamState, {
     delta: {},
     finishReason: null,
@@ -784,7 +703,6 @@ function* handleFailedEvent(
   chunk.error = { type: errorType, message }
   yield chunk
 }
-
 function* handleErrorEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -795,7 +713,6 @@ function* handleErrorEvent(
     type: errorType,
     message,
   })
-
   const chunk = makeChunk(streamState, {
     delta: {},
     finishReason: null,
@@ -803,7 +720,6 @@ function* handleErrorEvent(
   chunk.error = { type: errorType, message, code: data.code }
   yield chunk
 }
-
 function* handleIncompleteEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -812,14 +728,12 @@ function* handleIncompleteEvent(
   const finishReason = mapIncompleteReasonToFinishReason(
     data.response?.incomplete_details?.reason,
   )
-
   yield makeChunk(streamState, {
     delta: {},
     finishReason,
     usage: translateResponsesUsage(data.response?.usage),
   })
 }
-
 export function* translateResponsesStreamEvent(
   event: {
     event: string
@@ -828,99 +742,77 @@ export function* translateResponsesStreamEvent(
   streamState: ResponsesStreamState,
 ): Generator<ChatCompletionChunk> {
   const { event: eventType, data } = event
-
   switch (eventType) {
     case "response.created": {
       yield* handleCreatedEvent(streamState, data)
       break
     }
-
     case "response.in_progress": {
       syncResponseMetadata(streamState, data)
       break
     }
-
     case "response.output_text.delta": {
       yield* handleOutputTextDeltaEvent(streamState, data)
       break
     }
-
     case "response.output_item.added": {
       yield* handleOutputItemAddedEvent(streamState, data)
       break
     }
-
     case "response.function_call_arguments.delta": {
       yield* handleFunctionCallArgumentsDeltaEvent(streamState, data)
       break
     }
-
     case "response.function_call_arguments.done": {
       yield* handleFunctionCallArgumentsDoneEvent(streamState, data)
       break
     }
-
     case "response.output_item.done": {
       yield* handleOutputItemDoneEvent(streamState, data)
       break
     }
-
     case "response.completed": {
       yield* handleCompletedEvent(streamState, data)
       break
     }
-
     case "response.failed": {
       yield* handleFailedEvent(streamState, data)
       break
     }
-
     case "response.incomplete": {
       yield* handleIncompleteEvent(streamState, data)
       break
     }
-
     case "error": {
       yield* handleErrorEvent(streamState, data)
       break
     }
-
     default: {
       break
     }
   }
 }
-
-// ── Service function: call the upstream /responses endpoint ──
-
 export async function createResponses(
   payload: ChatCompletionsPayload,
   effort?: string,
   signal?: AbortSignal,
 ) {
   if (!state.copilotToken) throw new Error("Copilot token not found")
-
   const responsesPayload = translateRequestToResponses(payload, effort)
-
   const url = `${copilotBaseUrl(state)}/responses`
   consola.debug(`Sending /responses request for model: ${payload.model}`)
-
-  const response = await fetch(url, {
+  const response = await copilotFetch(url, {
     method: "POST",
-    headers: copilotHeaders(state),
     body: JSON.stringify(responsesPayload),
     signal,
   })
-
   if (!response.ok) {
     consola.error("Failed to create responses", response)
     throw new HTTPError("Failed to create responses", response)
   }
-
   if (payload.stream) {
     return events(response)
   }
-
   const rawResponse = (await response.json()) as ResponsesResponse
   return translateResponsesNonStreaming(rawResponse)
 }

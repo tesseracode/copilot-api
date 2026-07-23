@@ -1,0 +1,8 @@
+ src/lib/token.ts                                | 97 ++++++++++++++++++-------
+ src/services/copilot/create-chat-completions.ts | 27 ++++---
+ src/services/copilot/create-embeddings.ts       |  6 +-
+ src/services/copilot/create-responses.ts        | 20 +++--
+ src/services/copilot/forward-native-messages.ts | 31 +++++---
+ src/services/copilot/get-models.ts              | 10 ++-
+ src/services/github/get-copilot-token.ts        |  5 +-
+ 7 files changed, 130 insertions(+), 66 deletions(-)

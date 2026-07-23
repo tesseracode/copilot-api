@@ -1,0 +1,5 @@
+ src/routes/messages/anthropic-types.ts          |   6 +-
+ src/routes/messages/non-stream-translation.ts   |   5 +
+ src/services/copilot/create-chat-completions.ts |  36 ++++--
+ src/services/copilot/create-responses.ts        | 154 ++++--------------------
+ 4 files changed, 56 insertions(+), 145 deletions(-)

@@ -1,0 +1,25 @@
+# Test run — 2026-07-10T07:54:17Z
+# Command: bun test tests/responses-replay-id-validation.test.ts && bun test
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+
+ 3 pass
+ 0 fail
+ 4 expect() calls
+Ran 3 tests across 1 file. [319.00ms]
+bun test v1.3.11 (af24e281)
+[error] Error occurred: upstream
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:153:25)
+[error] HTTP error: { error:
+   { type: 'rate_limit_exceeded', message: 'too many requests', code: 'rate_limit' } }
+[error] Error occurred: upstream
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:167:25)
+[error] HTTP error: not json
+[error] Error occurred: boom
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:182:31)
+
+ 140 pass
+ 0 fail
+ 270 expect() calls
+Ran 140 tests across 14 files. [780.00ms]

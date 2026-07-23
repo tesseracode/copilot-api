@@ -1,0 +1,10 @@
+# Test run — 2026-07-22T14:07:44Z
+# Command: bun test tests/copilot-usage-preservation.test.ts
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+
+ 3 pass
+ 0 fail
+ 5 expect() calls
+Ran 3 tests across 1 file. [794.00ms]

@@ -1,0 +1,8 @@
+{
+  "slug": "token-refresh-resilience",
+  "completed_at": "2026-07-21T13:54:09Z",
+  "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/copilot-fetch-refresh.test.ts \u0026\u0026 bun test \u0026\u0026 bun run build"
+}

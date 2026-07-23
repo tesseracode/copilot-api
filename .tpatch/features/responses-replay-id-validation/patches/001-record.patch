@@ -1,0 +1,182 @@
+diff --git a/scripts/proxy-model-validation.ts b/scripts/proxy-model-validation.ts
+index 31033db..54223b3 100644
+--- a/scripts/proxy-model-validation.ts
++++ b/scripts/proxy-model-validation.ts
+@@ -350,6 +350,54 @@ async function runTranslationTests(): Promise<TestResult[]> {
+     results.push({ test: "responses-via-chat", model: "gpt-5.5", endpoint: "/chat/completions", status: res.ok && text.length > 0 ? "pass" : "fail", detail: res.ok ? undefined : `${res.status}: ${res.body.slice(0, 60)}`, durationMs: Date.now() - start })
+   }
+ 
++  // 7. Malformed Responses replay IDs must fail locally with a clear 400.
++  for (const malformedCase of [
++    {
++      test: "empty-assistant-tool-call-id",
++      messages: [
++        {
++          role: "assistant",
++          content: null,
++          tool_calls: [
++            {
++              id: "",
++              type: "function",
++              function: { name: "read_file", arguments: "{}" },
++            },
++          ],
++        },
++      ],
++    },
++    {
++      test: "empty-tool-result-id",
++      messages: [{ role: "tool", tool_call_id: "", content: "result" }],
++    },
++  ]) {
++    const start = Date.now()
++    const res = await safeFetch(PROXY_CHAT_URL, {
++      method: "POST",
++      headers: chatHeaders(),
++      body: JSON.stringify({
++        model: "gpt-5.6-sol",
++        messages: malformedCase.messages,
++        stream: false,
++      }),
++    })
++    results.push({
++      test: malformedCase.test,
++      model: "gpt-5.6-sol",
++      endpoint: "/chat/completions",
++      status: res.status === 400 ? "pass" : "fail",
++      detail:
++        res.status === 400
++          ? `HTTP 400: ${res.body.slice(0, 100)}`
++          : res.ok
++            ? "unexpectedly accepted"
++            : `HTTP ${res.status}: ${res.body.slice(0, 100)}`,
++      durationMs: Date.now() - start,
++    })
++  }
++
+   return results
+ }
+ 
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 72e7826..bd78a08 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -3,7 +3,7 @@ import { events } from "fetch-event-stream"
+ import { randomUUID } from "node:crypto"
+ 
+ import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
+-import { HTTPError } from "~/lib/error"
++import { badRequest, HTTPError } from "~/lib/error"
+ import { state } from "~/lib/state"
+ 
+ import type {
+@@ -107,6 +107,11 @@ export function translateMessageContent(
+   return parts
+ }
+ 
++function requireToolCallId(id: string | undefined, field: string): string {
++  if (!id) throw badRequest(`${field} is missing`)
++  return id
++}
++
+ function translateMessages(
+   messages: ChatCompletionsPayload["messages"],
+ ): Array<ResponsesInput> {
+@@ -153,7 +158,7 @@ function translateMessages(
+               type: "function_call",
+               name: tc.function.name,
+               arguments: tc.function.arguments,
+-              call_id: tc.id,
++              call_id: requireToolCallId(tc.id, "assistant tool call id"),
+             })
+           }
+         }
+@@ -163,7 +168,10 @@ function translateMessages(
+       case "tool": {
+         input.push({
+           type: "function_call_output",
+-          call_id: msg.tool_call_id ?? "",
++          call_id: requireToolCallId(
++            msg.tool_call_id,
++            "tool message tool_call_id",
++          ),
+           output:
+             typeof msg.content === "string" ?
+               msg.content
+diff --git a/tests/responses-replay-id-validation.test.ts b/tests/responses-replay-id-validation.test.ts
+new file mode 100644
+index 0000000..70974c9
+--- /dev/null
++++ b/tests/responses-replay-id-validation.test.ts
+@@ -0,0 +1,71 @@
++import { describe, expect, it } from "bun:test"
++
++import { HTTPError } from "~/lib/error"
++import { translateRequestToResponses } from "~/services/copilot/create-responses"
++
++describe("translateRequestToResponses tool call IDs", () => {
++  it("preserves valid tool call IDs without emitting an empty item id", () => {
++    const result = translateRequestToResponses({
++      model: "gpt-5.6-sol",
++      messages: [
++        {
++          role: "assistant",
++          content: null,
++          tool_calls: [
++            {
++              id: "toolu_123",
++              type: "function",
++              function: { name: "read_file", arguments: "{}" },
++            },
++          ],
++        },
++        { role: "tool", tool_call_id: "toolu_123", content: "result" },
++      ],
++    })
++
++    expect(result.input).toEqual([
++      {
++        type: "function_call",
++        name: "read_file",
++        arguments: "{}",
++        call_id: "toolu_123",
++      },
++      {
++        type: "function_call_output",
++        call_id: "toolu_123",
++        output: "result",
++      },
++    ])
++    expect(result.input.every((item) => !("id" in item))).toBe(true)
++  })
++
++  it("rejects an empty assistant tool call ID before forwarding", () => {
++    expect(() =>
++      translateRequestToResponses({
++        model: "gpt-5.6-sol",
++        messages: [
++          {
++            role: "assistant",
++            content: null,
++            tool_calls: [
++              {
++                id: "",
++                type: "function",
++                function: { name: "read_file", arguments: "{}" },
++              },
++            ],
++          },
++        ],
++      }),
++    ).toThrow(HTTPError)
++  })
++
++  it("rejects an empty tool result ID before forwarding", () => {
++    expect(() =>
++      translateRequestToResponses({
++        model: "gpt-5.6-sol",
++        messages: [{ role: "tool", tool_call_id: "", content: "result" }],
++      }),
++    ).toThrow(HTTPError)
++  })
++})

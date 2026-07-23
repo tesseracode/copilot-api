@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "feature": "token-refresh-resilience",
+  "current_generation": 2,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_d8675e7d1563",
+      "kind": "record",
+      "patch_sha256": "849fa3359482a9ec5bb545b79c9d6878723e504001b8f0ed52ead6f7c56225a9",
+      "git_patch_id": "f2db8aa385f00f0f188b4df0553148a9d7b15f91",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "8764413bc005511afedfa7c7a7d14378654022b06e558865df8f9ff9dddaf638",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/copilot-fetch.ts",
+          "src/lib/token.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-embeddings.ts",
+          "src/services/copilot/create-responses.ts",
+          "src/services/copilot/forward-native-messages.ts",
+          "src/services/copilot/get-models.ts",
+          "src/services/github/get-copilot-token.ts",
+          "tests/copilot-fetch-refresh.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-fetch.ts",
+        "src/lib/token.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-embeddings.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.ts",
+        "src/services/copilot/get-models.ts",
+        "src/services/github/get-copilot-token.ts",
+        "tests/copilot-fetch-refresh.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "graceful-shutdown-fix",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_96e779559544",
+      "kind": "amend-refresh",
+      "patch_sha256": "cbca1c91bcad902009c526f0949cece63fa326185938ef8a15d32c3b873f9a37",
+      "git_patch_id": "fecb6a481246b60f141b9cafb4eba571ba885675",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "8764413bc005511afedfa7c7a7d14378654022b06e558865df8f9ff9dddaf638",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/copilot-fetch.ts",
+          "src/lib/token.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-embeddings.ts",
+          "src/services/copilot/create-responses.ts",
+          "src/services/copilot/forward-native-messages.ts",
+          "src/services/copilot/get-models.ts",
+          "src/services/github/get-copilot-token.ts",
+          "tests/copilot-fetch-refresh.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-fetch.ts",
+        "src/lib/token.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-embeddings.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.ts",
+        "src/services/copilot/get-models.ts",
+        "src/services/github/get-copilot-token.ts",
+        "tests/copilot-fetch-refresh.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "graceful-shutdown-fix",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

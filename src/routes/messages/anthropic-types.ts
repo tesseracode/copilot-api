@@ -1,3 +1,6 @@
+import type { CopilotUsage } from "~/lib/copilot-usage"
+import type { RequestedEffort } from "~/lib/effort"
+
 // Anthropic API Types
 
 export interface AnthropicMessagesPayload {
@@ -24,7 +27,7 @@ export interface AnthropicMessagesPayload {
   }
   service_tier?: "auto" | "standard_only"
   output_config?: {
-    effort?: "low" | "medium" | "high" | "max"
+    effort?: RequestedEffort
     [key: string]: unknown
   }
 }
@@ -105,6 +108,7 @@ export interface AnthropicResponse {
     | "refusal"
     | null
   stop_sequence: string | null
+  copilot_usage?: CopilotUsage
   usage: {
     input_tokens: number
     output_tokens: number

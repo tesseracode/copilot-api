@@ -1,0 +1,50 @@
+# Test run — 2026-07-17T15:27:04Z
+# Command: bun test src/lib/effort.test.ts src/services/copilot/forward-native-messages.test.ts tests/effort-translation.test.ts tests/native-effort-normalization.test.ts tests/responses-effort-forwarding.test.ts && bun test && bun run build
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+[warn] Model claude-sonnet-4.6 does not support reasoning effort xhigh; using high
+[warn] Model gpt-5.5 does not support reasoning effort max; using xhigh
+[warn] Model claude-opus-4.6 does not support reasoning effort xhigh; using high
+[warn] Model gemini-3.5-flash does not support reasoning effort none; using minimal
+[warn] Ignoring unknown reasoning effort "extreme"
+[warn] Model future advertises no recognized reasoning efforts
+
+ 42 pass
+ 0 fail
+ 56 expect() calls
+Ran 42 tests across 5 files. [122.00ms]
+bun test v1.3.11 (af24e281)
+[error] Error occurred: upstream
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:153:25)
+[error] HTTP error: { error:
+   { type: 'rate_limit_exceeded', message: 'too many requests', code: 'rate_limit' } }
+[error] Error occurred: upstream
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:167:25)
+[error] HTTP error: not json
+[error] Error occurred: boom
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:182:31)
+[warn] Model claude-sonnet-4.6 does not support reasoning effort xhigh; using high
+[warn] Model gpt-5.5 does not support reasoning effort max; using xhigh
+[warn] Model claude-opus-4.6 does not support reasoning effort xhigh; using high
+[warn] Model gemini-3.5-flash does not support reasoning effort none; using minimal
+[warn] Ignoring unknown reasoning effort "extreme"
+[warn] Model future advertises no recognized reasoning efforts
+
+ 152 pass
+ 0 fail
+ 287 expect() calls
+Ran 152 tests across 17 files. [332.00ms]
+$ tsdown
+[34mℹ[39m tsdown [2mv0.15.6[22m powered by rolldown [2mv1.0.0-beta.41[22m
+[34mℹ[39m Using tsdown config: [4m/Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api/tsdown.config.ts[24m
+[34mℹ[39m entry: [34msrc/main.ts[39m
+[34mℹ[39m target: [34mes2022[39m
+[34mℹ[39m tsconfig: [34mtsconfig.json[39m
+[34mℹ[39m Build start
+[34mℹ[39m Cleaning 2 files
+[34mℹ[39m Granting execute permission to [4mdist/main.js[24m
+[34mℹ[39m [2mdist/[22m[1mmain.js[22m      [2m 90.61 kB[22m [2m│ gzip: 21.98 kB[22m
+[34mℹ[39m [2mdist/[22mmain.js.map  [2m199.23 kB[22m [2m│ gzip: 47.01 kB[22m
+[34mℹ[39m 2 files, total: 289.83 kB
+[32m✔[39m Build complete in [32m41ms[39m

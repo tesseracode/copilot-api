@@ -1,7 +1,12 @@
 import consola from "consola"
 import { events } from "fetch-event-stream"
 
-import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
+import type { CopilotUsage, RawCopilotUsage } from "~/lib/copilot-usage"
+import type { RequestedEffort } from "~/lib/effort"
+
+import { copilotBaseUrl } from "~/lib/api-config"
+import { copilotFetch } from "~/lib/copilot-fetch"
+import { normalizeCopilotUsage } from "~/lib/copilot-usage"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
@@ -24,17 +29,16 @@ export const createChatCompletions = async (
   )
 
   // Build headers and add X-Initiator
-  const headers: Record<string, string> = {
-    ...copilotHeaders(state, enableVision),
-    "X-Initiator": isAgentCall ? "agent" : "user",
-  }
-
-  const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-    signal,
-  })
+  const response = await copilotFetch(
+    `${copilotBaseUrl(state)}/chat/completions`,
+    {
+      method: "POST",
+      headers: { "X-Initiator": isAgentCall ? "agent" : "user" },
+      body: JSON.stringify(payload),
+      signal,
+    },
+    { vision: enableVision },
+  )
 
   if (!response.ok) {
     consola.error("Failed to create chat completions", response)
@@ -45,7 +49,11 @@ export const createChatCompletions = async (
     return events(response)
   }
 
-  return (await response.json()) as ChatCompletionResponse
+  const result = (await response.json()) as ChatCompletionResponse & {
+    copilot_usage?: RawCopilotUsage
+  }
+  result.copilot_usage = normalizeCopilotUsage(result.copilot_usage)
+  return result
 }
 
 // Streaming types
@@ -106,6 +114,7 @@ export interface ChatCompletionResponse {
   model: string
   choices: Array<ChoiceNonStreaming>
   system_fingerprint?: string
+  copilot_usage?: CopilotUsage
   usage?: {
     prompt_tokens: number
     completion_tokens: number
@@ -148,6 +157,7 @@ export interface ChatCompletionsPayload {
   logprobs?: boolean | null
   response_format?: { type: "json_object" } | null
   seed?: number | null
+  reasoning_effort?: RequestedEffort
   tools?: Array<Tool> | null
   tool_choice?:
     | "none"

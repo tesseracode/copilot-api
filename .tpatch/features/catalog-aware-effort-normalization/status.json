@@ -1,0 +1,23 @@
+{
+  "id": "catalog-aware-effort-normalization",
+  "slug": "catalog-aware-effort-normalization",
+  "title": "Normalize effort against each model's advertised catalog capabilities",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-16T05:16:55Z",
+  "updated_at": "2026-07-17T15:26:34Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-17T15:27:04Z",
+    "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "api-context-effort-migration",
+      "kind": "hard"
+    }
+  ]
+}
