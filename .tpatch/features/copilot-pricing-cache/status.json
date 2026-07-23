@@ -1,0 +1,17 @@
+{
+  "id": "copilot-pricing-cache",
+  "slug": "copilot-pricing-cache",
+  "title": "Cache official Copilot pricing and expose versioned pricing metadata",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-22T06:23:35Z",
+  "updated_at": "2026-07-23T04:14:07Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-23T04:14:10Z",
+    "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+    "has_patch": true
+  },
+  "reconcile": {}
+}
