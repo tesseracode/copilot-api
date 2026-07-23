@@ -1,0 +1,415 @@
+{
+  "generatedAt": "2026-07-19T18:02:09.783Z",
+  "executed": true,
+  "model": {
+    "id": "gpt-4",
+    "object": "model",
+    "type": "model",
+    "created": 0,
+    "created_at": "1970-01-01T00:00:00.000Z",
+    "owned_by": "Azure OpenAI",
+    "display_name": "GPT 4",
+    "capabilities": {
+      "family": "gpt-4",
+      "limits": {
+        "max_context_window_tokens": 32768,
+        "max_output_tokens": 4096,
+        "max_prompt_tokens": 32768
+      },
+      "object": "model_capabilities",
+      "supports": {
+        "streaming": true,
+        "tool_calls": true
+      },
+      "tokenizer": "cl100k_base",
+      "type": "chat"
+    },
+    "preview": false,
+    "model_picker_enabled": false
+  },
+  "endpoint": "/chat/completions",
+  "via": "both",
+  "margin": 32,
+  "results": [
+    {
+      "case": "control",
+      "expectation": "accept",
+      "targetInputTokens": 512,
+      "estimatedInputTokens": 515,
+      "requestedOutputTokens": 16,
+      "direct": {
+        "case": "control",
+        "dimension": "direct",
+        "status": 503,
+        "ok": false,
+        "error": "\"Sorry, the upstream model provider is currently experiencing high demand. Please try another model.\\n\"",
+        "durationMs": 6574,
+        "headers": {
+          "x-copilot-service-request-id": "eb63d96c-e4e6-4ff0-ac40-d179b8f87e79",
+          "x-github-request-id": "CE37:3ED21E:29E9741:35090B0:6A5D10EE"
+        }
+      },
+      "proxy": {
+        "case": "control",
+        "dimension": "proxy",
+        "status": 200,
+        "ok": true,
+        "usage": {
+          "completion_tokens": 16,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens": 513,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 529
+        },
+        "durationMs": 1615,
+        "headers": {}
+      },
+      "classification": "proxy-preflight-or-workaround"
+    },
+    {
+      "case": "prompt-over",
+      "expectation": "reject",
+      "targetInputTokens": 32800,
+      "estimatedInputTokens": 32804,
+      "requestedOutputTokens": 16,
+      "direct": {
+        "case": "prompt-over",
+        "dimension": "direct",
+        "status": 503,
+        "ok": false,
+        "error": "\"Sorry, the upstream model provider is currently experiencing high demand. Please try another model.\\n\"",
+        "durationMs": 7177,
+        "headers": {
+          "x-copilot-service-request-id": "a57cb602-472c-4ad9-92e9-3ec0f7784e79",
+          "x-github-request-id": "CE37:3ED21E:29EAA45:350A875:6A5D10F5"
+        }
+      },
+      "proxy": {
+        "case": "prompt-over",
+        "dimension": "proxy",
+        "status": 200,
+        "ok": true,
+        "usage": {
+          "completion_tokens": 16,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens": 32699,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 32715
+        },
+        "durationMs": 2785,
+        "headers": {}
+      },
+      "classification": "proxy-preflight-or-workaround"
+    },
+    {
+      "case": "combined-over",
+      "expectation": "reject",
+      "targetInputTokens": 28704,
+      "estimatedInputTokens": 28707,
+      "requestedOutputTokens": 4096,
+      "direct": {
+        "case": "combined-over",
+        "dimension": "direct",
+        "status": 200,
+        "ok": true,
+        "usage": {
+          "completion_tokens": 184,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens": 28635,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 28819
+        },
+        "durationMs": 10732,
+        "headers": {
+          "x-copilot-service-request-id": "48846a15-c468-45c3-a511-e74ed5b3d674",
+          "x-github-request-id": "CE37:3ED21E:29EC317:350C6DB:6A5D10FE"
+        }
+      },
+      "proxy": {
+        "case": "combined-over",
+        "dimension": "proxy",
+        "status": 200,
+        "ok": true,
+        "usage": {
+          "completion_tokens": 250,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens": 28635,
+          "prompt_tokens_details": {
+            "cached_tokens": 28544
+          },
+          "total_tokens": 28885
+        },
+        "durationMs": 3458,
+        "headers": {}
+      },
+      "classification": "accepted-by-upstream"
+    },
+    {
+      "case": "output-over",
+      "expectation": "reject",
+      "targetInputTokens": 128,
+      "estimatedInputTokens": 131,
+      "requestedOutputTokens": 4128,
+      "direct": {
+        "case": "output-over",
+        "dimension": "direct",
+        "status": 200,
+        "ok": true,
+        "usage": {
+          "completion_tokens": 272,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens": 131,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 403
+        },
+        "durationMs": 2116,
+        "headers": {
+          "x-copilot-service-request-id": "133a44d5-9904-470c-9b56-aae5c5933f90",
+          "x-github-request-id": "CE37:3ED21E:29EE4BF:350F0C9:6A5D110B"
+        }
+      },
+      "proxy": {
+        "case": "output-over",
+        "dimension": "proxy",
+        "status": 200,
+        "ok": true,
+        "usage": {
+          "completion_tokens": 268,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens": 131,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 399
+        },
+        "durationMs": 16020,
+        "headers": {}
+      },
+      "classification": "accepted-by-upstream"
+    }
+  ],
+  "usageBefore": {
+    "login": "jdbencardinop",
+    "access_type_sku": "copilot_enterprise_seat_multi_quota",
+    "analytics_tracking_id": "90ef7eeaf17fe7f80be80cf2a91a1415",
+    "assigned_date": "2024-12-09T20:11:31-05:00",
+    "can_signup_for_limited": false,
+    "chat_enabled": true,
+    "cli_enabled": true,
+    "copilotignore_enabled": true,
+    "copilot_plan": "enterprise",
+    "editor_preview_features_enabled": true,
+    "is_mcp_enabled": true,
+    "is_staff": false,
+    "organization_login_list": [
+      "microsoft",
+      "Azure",
+      "MicrosoftDocs"
+    ],
+    "organization_list": [
+      {
+        "login": "microsoft",
+        "name": "Microsoft"
+      },
+      {
+        "login": "Azure",
+        "name": "Microsoft Azure"
+      },
+      {
+        "login": "MicrosoftDocs",
+        "name": "Microsoft Docs"
+      }
+    ],
+    "restricted_telemetry": false,
+    "cli_remote_control_enabled": false,
+    "copilot_app_enabled": true,
+    "cloud_session_storage_enabled": true,
+    "endpoints": {
+      "api": "https://api.enterprise.githubcopilot.com",
+      "origin-tracker": "https://origin-tracker.enterprise.githubcopilot.com",
+      "proxy": "https://proxy.enterprise.githubcopilot.com",
+      "telemetry": "https://telemetry.enterprise.githubcopilot.com"
+    },
+    "can_upgrade_plan": false,
+    "te": false,
+    "quota_reset_date": "2026-08-01",
+    "quota_snapshots": {
+      "chat": {
+        "overage_count": 0,
+        "overage_entitlement": 0,
+        "overage_permitted": false,
+        "percent_remaining": 100,
+        "quota_id": "chat",
+        "quota_remaining": 0,
+        "unlimited": true,
+        "timestamp_utc": "2026-07-19T18:01:18.637Z",
+        "has_quota": true,
+        "quota_reset_at": 0,
+        "token_based_billing": true,
+        "credits_used": 0,
+        "remaining": 0,
+        "entitlement": 0
+      },
+      "completions": {
+        "overage_count": 0,
+        "overage_entitlement": 0,
+        "overage_permitted": false,
+        "percent_remaining": 100,
+        "quota_id": "completions",
+        "quota_remaining": 0,
+        "unlimited": true,
+        "timestamp_utc": "2026-07-19T18:01:18.637Z",
+        "has_quota": true,
+        "quota_reset_at": 0,
+        "token_based_billing": true,
+        "credits_used": 0,
+        "remaining": 0,
+        "entitlement": 0
+      },
+      "premium_interactions": {
+        "overage_count": 0,
+        "overage_entitlement": 0,
+        "overage_permitted": true,
+        "percent_remaining": 100,
+        "quota_id": "premium_interactions",
+        "quota_remaining": 0,
+        "unlimited": true,
+        "timestamp_utc": "2026-07-19T18:01:18.637Z",
+        "has_quota": true,
+        "quota_reset_at": 0,
+        "token_based_billing": true,
+        "credits_used": 323907,
+        "remaining": 0,
+        "entitlement": 0
+      }
+    },
+    "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
+    "token_based_billing": true
+  },
+  "usageAfter": {
+    "login": "jdbencardinop",
+    "access_type_sku": "copilot_enterprise_seat_multi_quota",
+    "analytics_tracking_id": "90ef7eeaf17fe7f80be80cf2a91a1415",
+    "assigned_date": "2024-12-09T20:11:31-05:00",
+    "can_signup_for_limited": false,
+    "chat_enabled": true,
+    "cli_enabled": true,
+    "copilotignore_enabled": true,
+    "copilot_plan": "enterprise",
+    "editor_preview_features_enabled": true,
+    "is_mcp_enabled": true,
+    "is_staff": false,
+    "organization_login_list": [
+      "microsoft",
+      "Azure",
+      "MicrosoftDocs"
+    ],
+    "organization_list": [
+      {
+        "login": "microsoft",
+        "name": "Microsoft"
+      },
+      {
+        "login": "Azure",
+        "name": "Microsoft Azure"
+      },
+      {
+        "login": "MicrosoftDocs",
+        "name": "Microsoft Docs"
+      }
+    ],
+    "restricted_telemetry": false,
+    "cli_remote_control_enabled": false,
+    "copilot_app_enabled": true,
+    "cloud_session_storage_enabled": true,
+    "endpoints": {
+      "api": "https://api.enterprise.githubcopilot.com",
+      "origin-tracker": "https://origin-tracker.enterprise.githubcopilot.com",
+      "proxy": "https://proxy.enterprise.githubcopilot.com",
+      "telemetry": "https://telemetry.enterprise.githubcopilot.com"
+    },
+    "can_upgrade_plan": false,
+    "te": false,
+    "quota_reset_date": "2026-08-01",
+    "quota_snapshots": {
+      "chat": {
+        "overage_count": 0,
+        "overage_entitlement": 0,
+        "overage_permitted": false,
+        "percent_remaining": 100,
+        "quota_id": "chat",
+        "quota_remaining": 0,
+        "unlimited": true,
+        "timestamp_utc": "2026-07-19T18:02:09.775Z",
+        "has_quota": true,
+        "quota_reset_at": 0,
+        "token_based_billing": true,
+        "credits_used": 0,
+        "remaining": 0,
+        "entitlement": 0
+      },
+      "completions": {
+        "overage_count": 0,
+        "overage_entitlement": 0,
+        "overage_permitted": false,
+        "percent_remaining": 100,
+        "quota_id": "completions",
+        "quota_remaining": 0,
+        "unlimited": true,
+        "timestamp_utc": "2026-07-19T18:02:09.775Z",
+        "has_quota": true,
+        "quota_reset_at": 0,
+        "token_based_billing": true,
+        "credits_used": 0,
+        "remaining": 0,
+        "entitlement": 0
+      },
+      "premium_interactions": {
+        "overage_count": 0,
+        "overage_entitlement": 0,
+        "overage_permitted": true,
+        "percent_remaining": 100,
+        "quota_id": "premium_interactions",
+        "quota_remaining": 0,
+        "unlimited": true,
+        "timestamp_utc": "2026-07-19T18:02:09.775Z",
+        "has_quota": true,
+        "quota_reset_at": 0,
+        "token_based_billing": true,
+        "credits_used": 323907,
+        "remaining": 0,
+        "entitlement": 0
+      }
+    },
+    "quota_reset_date_utc": "2026-08-01T00:00:00.000Z",
+    "token_based_billing": true
+  },
+  "creditDelta": 0,
+  "costAttribution": "account-delta-only"
+}

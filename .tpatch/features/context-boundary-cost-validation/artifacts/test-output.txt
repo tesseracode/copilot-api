@@ -1,0 +1,31 @@
+# Test run — 2026-07-20T20:15:10Z
+# Command: bun test tests/context-boundary-validation.test.ts && bun test
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+
+ 7 pass
+ 0 fail
+ 15 expect() calls
+Ran 7 tests across 1 file. [32.00ms]
+bun test v1.3.11 (af24e281)
+[error] Error occurred: upstream
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:153:25)
+[error] HTTP error: { error:
+   { type: 'rate_limit_exceeded', message: 'too many requests', code: 'rate_limit' } }
+[error] Error occurred: upstream
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:167:25)
+[error] HTTP error: not json
+[error] Error occurred: boom
+  at <anonymous> (tests/messages-tool-result-validation.test.ts:182:31)
+[warn] Model claude-sonnet-4.6 does not support reasoning effort xhigh; using high
+[warn] Model gpt-5.5 does not support reasoning effort max; using xhigh
+[warn] Model claude-opus-4.6 does not support reasoning effort xhigh; using high
+[warn] Model gemini-3.5-flash does not support reasoning effort none; using minimal
+[warn] Ignoring unknown reasoning effort "extreme"
+[warn] Model future advertises no recognized reasoning efforts
+
+ 159 pass
+ 0 fail
+ 302 expect() calls
+Ran 159 tests across 18 files. [196.00ms]
