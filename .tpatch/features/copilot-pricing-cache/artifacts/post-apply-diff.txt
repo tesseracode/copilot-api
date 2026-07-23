@@ -1,0 +1,6 @@
+ src/lib/paths.ts                   |  2 ++
+ src/routes/models/route.ts         | 40 +++++++++++++++++++++++++-------------
+ src/server.ts                      |  6 ++++++
+ src/services/copilot/get-models.ts | 11 +++++++----
+ src/start.ts                       |  2 ++
+ 5 files changed, 44 insertions(+), 17 deletions(-)

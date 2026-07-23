@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "feature": "copilot-pricing-cache",
+  "current_generation": 3,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_feb6bc633319",
+      "kind": "record",
+      "patch_sha256": "d059e40812fce3844a9b9cb15cea9cf5495bd26671d92a7ccd173b62b8d715a2",
+      "git_patch_id": "3641fea1bc0f667b51010438e1f3cdbedd09c6bc",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "5e966309233c1d3a9a3500ebf46aad8489a7d9cd753446f6c6fb382ca8db5b40",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/update-copilot-pricing.ts",
+          "src/lib/copilot-pricing.ts",
+          "src/lib/paths.ts",
+          "src/routes/models/route.ts",
+          "src/routes/pricing/route.ts",
+          "src/server.ts",
+          "src/services/copilot/get-models.ts",
+          "tests/copilot-pricing.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/update-copilot-pricing.ts",
+        "src/lib/copilot-pricing.ts",
+        "src/lib/paths.ts",
+        "src/routes/models/route.ts",
+        "src/routes/pricing/route.ts",
+        "src/server.ts",
+        "src/services/copilot/get-models.ts",
+        "tests/copilot-pricing.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_d6730fe58300",
+      "kind": "amend-refresh",
+      "patch_sha256": "70e9fd9383d61d8ab53d73fd58d8357aee6956f2c1c61dce55830ec42d75f34f",
+      "git_patch_id": "f22be0b4ca7c630b5eec683afb7241383a8a15c9",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "5e966309233c1d3a9a3500ebf46aad8489a7d9cd753446f6c6fb382ca8db5b40",
+      "canonical_patch": "",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/update-copilot-pricing.ts",
+          "src/lib/copilot-pricing.ts",
+          "src/lib/paths.ts",
+          "src/routes/models/route.ts",
+          "src/routes/pricing/route.ts",
+          "src/server.ts",
+          "src/services/copilot/get-models.ts",
+          "tests/copilot-pricing.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/update-copilot-pricing.ts",
+        "src/lib/copilot-pricing.ts",
+        "src/lib/paths.ts",
+        "src/routes/models/route.ts",
+        "src/routes/pricing/route.ts",
+        "src/server.ts",
+        "src/services/copilot/get-models.ts",
+        "tests/copilot-pricing.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 3,
+      "generation_id": "pg_1f2110c3d549",
+      "kind": "amend-refresh",
+      "patch_sha256": "0895319a4a105c88ae2f3fd86d5f7bf2c65ca82b2a7983663183363ecca2acbc",
+      "git_patch_id": "f32892b2d26d51dba48b880bf31c5a9cc1d1ff23",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "0548668f21cda20729fe2e39e2ceb61016574d842540dd77f632328acb6c4d76",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/003-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/update-copilot-pricing.ts",
+          "src/lib/copilot-pricing.ts",
+          "src/lib/paths.ts",
+          "src/routes/models/route.ts",
+          "src/routes/pricing/route.ts",
+          "src/server.ts",
+          "src/services/copilot/get-models.ts",
+          "src/services/copilot/pricing-scheduler.ts",
+          "src/start.ts",
+          "tests/copilot-pricing.test.ts",
+          "tests/pricing-scheduler.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/update-copilot-pricing.ts",
+        "src/lib/copilot-pricing.ts",
+        "src/lib/paths.ts",
+        "src/routes/models/route.ts",
+        "src/routes/pricing/route.ts",
+        "src/server.ts",
+        "src/services/copilot/get-models.ts",
+        "src/services/copilot/pricing-scheduler.ts",
+        "src/start.ts",
+        "tests/copilot-pricing.test.ts",
+        "tests/pricing-scheduler.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

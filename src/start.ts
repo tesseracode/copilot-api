@@ -13,6 +13,7 @@ import { state } from "./lib/state"
 import { setupCopilotToken, setupGitHubToken } from "./lib/token"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
 import { server } from "./server"
+import { startPricingScheduler } from "./services/copilot/pricing-scheduler"
 
 interface RunServerOptions {
   port: number
@@ -62,6 +63,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   await setupCopilotToken()
+  await startPricingScheduler()
   await cacheModels()
 
   const modelCount = state.models?.data.length ?? 0

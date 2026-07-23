@@ -1,0 +1,520 @@
+diff --git a/scripts/update-copilot-pricing.ts b/scripts/update-copilot-pricing.ts
+new file mode 100644
+index 0000000..21b498d
+--- /dev/null
++++ b/scripts/update-copilot-pricing.ts
+@@ -0,0 +1,17 @@
++#!/usr/bin/env bun
++
++import { updateCopilotPricing } from "~/lib/copilot-pricing"
++
++const result = await updateCopilotPricing()
++console.log(
++  JSON.stringify(
++    {
++      status: result.status,
++      source: result.cache?.source,
++      models: result.cache?.data.length ?? 0,
++      unmatched_models: result.cache?.unmatched_models ?? [],
++    },
++    null,
++    2,
++  ),
++)
+diff --git a/src/lib/copilot-pricing.ts b/src/lib/copilot-pricing.ts
+new file mode 100644
+index 0000000..cf78c73
+--- /dev/null
++++ b/src/lib/copilot-pricing.ts
+@@ -0,0 +1,237 @@
++import { createHash } from "node:crypto"
++import fs from "node:fs/promises"
++
++import { PATHS } from "./paths"
++
++export const COPILOT_PRICING_SOURCE =
++  "https://raw.githubusercontent.com/github/docs/main/data/tables/copilot/models-and-pricing.yml"
++
++const MODEL_ALIASES: Record<string, string> = {
++  "GPT-5.6 Sol": "gpt-5.6-sol",
++  "Claude Haiku 4.5": "claude-haiku-4.5",
++}
++
++interface RawPricingRow {
++  model?: string
++  input?: string | number
++  cached_input?: string | number
++  cache_write?: string | number
++  output?: string | number
++  threshold?: string
++  tier?: string
++  category?: string
++}
++
++export interface PricingTier {
++  name: "default" | "long-context"
++  input_threshold?: { operator: "lte" | "gt"; tokens: number }
++  usd_per_1m: {
++    input: number | null
++    cache_read: number | null
++    cache_write: number | null
++    output: number | null
++  }
++  credits_per_1m: {
++    input: number | null
++    cache_read: number | null
++    cache_write: number | null
++    output: number | null
++  }
++}
++
++export interface CopilotModelPricing {
++  model: string | null
++  display_name: string
++  category?: string
++  tiers: Array<PricingTier>
++}
++
++export interface CopilotPricingCache {
++  object: "pricing.list"
++  provider: "github-copilot"
++  currency: "USD"
++  unit: "per_1m_tokens"
++  credit: { usd_per_credit: 0.01 }
++  source: {
++    url: string
++    version: string
++    etag?: string
++    fetched_at: string
++    validated_at: string
++    stale: boolean
++    error?: string
++  }
++  data: Array<CopilotModelPricing>
++  unmatched_models: Array<string>
++}
++
++function parsePrice(value: string | number | undefined): number | null {
++  if (typeof value === "number") return value
++  if (!value || value === "Not applicable") return null
++  const parsed = Number(value.replaceAll(/[$,]/g, ""))
++  return Number.isFinite(parsed) ? parsed : null
++}
++
++function parseThreshold(
++  value: string | undefined,
++): PricingTier["input_threshold"] {
++  if (!value) return undefined
++  const match = value.match(/(≤|>)\s*([\d.]+)K/)
++  if (!match) return undefined
++  return {
++    operator: match[1] === "≤" ? "lte" : "gt",
++    tokens: Math.round(Number(match[2]) * 1000),
++  }
++}
++
++function toCredits(value: number | null): number | null {
++  return value === null ? null : value / 0.01
++}
++
++export function parseCopilotPricingYaml(
++  yaml: string,
++  metadata: { etag?: string; fetchedAt?: string } = {},
++): CopilotPricingCache {
++  const rows = Bun.YAML.parse(yaml) as Array<RawPricingRow>
++  if (rows.length === 0)
++    throw new Error("Pricing source contains no model rows")
++
++  const grouped = new Map<string, Array<RawPricingRow>>()
++  for (const row of rows) {
++    if (!row.model || row.input === undefined || row.output === undefined) {
++      throw new Error("Pricing row is missing required fields")
++    }
++    const modelName = row.model
++    const validRow = row as RawPricingRow & {
++      model: string
++      input: string | number
++      output: string | number
++    }
++    grouped.set(modelName, [...(grouped.get(modelName) ?? []), validRow])
++  }
++
++  const unmatched: Array<string> = []
++  const data = [...grouped.entries()].map(([displayName, modelRows]) => {
++    const model = MODEL_ALIASES[displayName] ?? null
++    if (!model) unmatched.push(displayName)
++    const tiers = modelRows.map((row, index): PricingTier => {
++      const input = parsePrice(row.input)
++      const cacheRead = parsePrice(row.cached_input)
++      const cacheWrite = parsePrice(row.cache_write)
++      const output = parsePrice(row.output)
++      return {
++        name:
++          row.tier?.toLowerCase().includes("long") || index > 0 ?
++            "long-context"
++          : "default",
++        input_threshold: parseThreshold(row.threshold),
++        usd_per_1m: {
++          input,
++          cache_read: cacheRead,
++          cache_write: cacheWrite,
++          output,
++        },
++        credits_per_1m: {
++          input: toCredits(input),
++          cache_read: toCredits(cacheRead),
++          cache_write: toCredits(cacheWrite),
++          output: toCredits(output),
++        },
++      }
++    })
++    return {
++      model,
++      display_name: displayName,
++      category: modelRows[0].category?.toLowerCase(),
++      tiers,
++    }
++  })
++
++  const now = metadata.fetchedAt ?? new Date().toISOString()
++  return {
++    object: "pricing.list",
++    provider: "github-copilot",
++    currency: "USD",
++    unit: "per_1m_tokens",
++    credit: { usd_per_credit: 0.01 },
++    source: {
++      url: COPILOT_PRICING_SOURCE,
++      version: `sha256:${createHash("sha256").update(yaml).digest("hex")}`,
++      etag: metadata.etag,
++      fetched_at: now,
++      validated_at: now,
++      stale: false,
++    },
++    data,
++    unmatched_models: unmatched,
++  }
++}
++
++export async function readCopilotPricing(): Promise<
++  CopilotPricingCache | undefined
++> {
++  try {
++    return JSON.parse(
++      await fs.readFile(PATHS.COPILOT_PRICING_PATH),
++    ) as CopilotPricingCache
++  } catch {
++    return undefined
++  }
++}
++
++export async function writeCopilotPricing(
++  cache: CopilotPricingCache,
++): Promise<void> {
++  await fs.mkdir(PATHS.APP_DIR, { recursive: true })
++  const temporaryPath = `${PATHS.COPILOT_PRICING_PATH}.tmp-${process.pid}`
++  await fs.writeFile(temporaryPath, `${JSON.stringify(cache, null, 2)}\n`, {
++    mode: 0o600,
++  })
++  await fs.rename(temporaryPath, PATHS.COPILOT_PRICING_PATH)
++}
++
++export async function updateCopilotPricing(
++  fetcher: typeof fetch = fetch,
++): Promise<{
++  status: "updated" | "not-modified" | "stale"
++  cache?: CopilotPricingCache
++}> {
++  const existing = await readCopilotPricing()
++  try {
++    const response = await fetcher(COPILOT_PRICING_SOURCE, {
++      headers:
++        existing?.source.etag ?
++          { "if-none-match": existing.source.etag }
++        : undefined,
++      signal: AbortSignal.timeout(30_000),
++    })
++    if (response.status === 304 && existing) {
++      existing.source.validated_at = new Date().toISOString()
++      existing.source.stale = false
++      delete existing.source.error
++      await writeCopilotPricing(existing)
++      return { status: "not-modified", cache: existing }
++    }
++    if (!response.ok)
++      throw new Error(`Pricing fetch failed with HTTP ${response.status}`)
++    const cache = parseCopilotPricingYaml(await response.text(), {
++      etag: response.headers.get("etag") ?? undefined,
++    })
++    await writeCopilotPricing(cache)
++    return { status: "updated", cache }
++  } catch (error) {
++    if (!existing) throw error
++    existing.source.stale = true
++    existing.source.error =
++      error instanceof Error ? error.message : String(error)
++    await writeCopilotPricing(existing)
++    return { status: "stale", cache: existing }
++  }
++}
++
++export function pricingForModel(
++  cache: CopilotPricingCache | undefined,
++  modelId: string,
++): CopilotModelPricing | undefined {
++  return cache?.data.find((item) => item.model === modelId)
++}
+diff --git a/src/lib/paths.ts b/src/lib/paths.ts
+index 8d0a9f0..b6ca9bc 100644
+--- a/src/lib/paths.ts
++++ b/src/lib/paths.ts
+@@ -5,10 +5,12 @@ import path from "node:path"
+ const APP_DIR = path.join(os.homedir(), ".local", "share", "copilot-api")
+ 
+ const GITHUB_TOKEN_PATH = path.join(APP_DIR, "github_token")
++const COPILOT_PRICING_PATH = path.join(APP_DIR, "copilot_pricing.json")
+ 
+ export const PATHS = {
+   APP_DIR,
+   GITHUB_TOKEN_PATH,
++  COPILOT_PRICING_PATH,
+ }
+ 
+ export async function ensurePaths(): Promise<void> {
+diff --git a/src/routes/models/route.ts b/src/routes/models/route.ts
+index a78f11a..51f7fc2 100644
+--- a/src/routes/models/route.ts
++++ b/src/routes/models/route.ts
+@@ -1,5 +1,6 @@
+ import { Hono } from "hono"
+ 
++import { pricingForModel, readCopilotPricing } from "~/lib/copilot-pricing"
+ import { forwardError } from "~/lib/error"
+ import { filterModels } from "~/lib/filter-models"
+ import { state } from "~/lib/state"
+@@ -14,20 +15,33 @@ modelRoutes.get("/", async (c) => {
+       await cacheModels()
+     }
+ 
++    const pricing = await readCopilotPricing()
+     const allModels =
+-      state.models?.data.map((model) => ({
+-        id: model.id,
+-        object: "model",
+-        type: "model",
+-        created: 0, // No date available from source
+-        created_at: new Date(0).toISOString(), // No date available from source
+-        owned_by: model.vendor,
+-        display_name: model.name,
+-        capabilities: model.capabilities,
+-        supported_endpoints: model.supported_endpoints,
+-        preview: model.preview,
+-        model_picker_enabled: model.model_picker_enabled,
+-      })) ?? []
++      state.models?.data.map((model) => {
++        const modelPricing = pricingForModel(pricing, model.id)
++        return {
++          id: model.id,
++          object: "model",
++          type: "model",
++          created: 0, // No date available from source
++          created_at: new Date(0).toISOString(), // No date available from source
++          owned_by: model.vendor,
++          display_name: model.name,
++          capabilities: model.capabilities,
++          supported_endpoints: model.supported_endpoints,
++          preview: model.preview,
++          model_picker_enabled: model.model_picker_enabled,
++          model_picker_category: model.model_picker_category,
++          x_copilot_pricing:
++            modelPricing ?
++              {
++                ...modelPricing,
++                source_version: pricing?.source.version,
++                stale: pricing?.source.stale,
++              }
++            : undefined,
++        }
++      }) ?? []
+ 
+     const models = filterModels(
+       allModels,
+diff --git a/src/routes/pricing/route.ts b/src/routes/pricing/route.ts
+new file mode 100644
+index 0000000..3b1c8b6
+--- /dev/null
++++ b/src/routes/pricing/route.ts
+@@ -0,0 +1,16 @@
++import { Hono } from "hono"
++
++import { readCopilotPricing } from "~/lib/copilot-pricing"
++
++export const pricingRoutes = new Hono()
++
++pricingRoutes.get("/", async (c) => {
++  const pricing = await readCopilotPricing()
++  if (!pricing) {
++    return c.json(
++      { error: "Copilot pricing cache unavailable; run the pricing updater" },
++      503,
++    )
++  }
++  return c.json(pricing)
++})
+diff --git a/src/server.ts b/src/server.ts
+index bd8870a..192aa5e 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -7,6 +7,7 @@ import { completionRoutes } from "./routes/chat-completions/route"
+ import { embeddingRoutes } from "./routes/embeddings/route"
+ import { messageRoutes } from "./routes/messages/route"
+ import { modelRoutes } from "./routes/models/route"
++import { pricingRoutes } from "./routes/pricing/route"
+ import { tokenRoute } from "./routes/token/route"
+ import { usageRoute } from "./routes/usage/route"
+ 
+@@ -31,6 +32,7 @@ server.get("/health", (c) =>
+ 
+ server.route("/chat/completions", completionRoutes)
+ server.route("/models", modelRoutes)
++server.route("/pricing", pricingRoutes)
+ server.route("/embeddings", embeddingRoutes)
+ server.route("/usage", usageRoute)
+ server.route("/token", tokenRoute)
+@@ -38,6 +40,7 @@ server.route("/token", tokenRoute)
+ // Compatibility with tools that expect v1/ prefix
+ server.route("/v1/chat/completions", completionRoutes)
+ server.route("/v1/models", modelRoutes)
++server.route("/v1/pricing", pricingRoutes)
+ server.route("/v1/embeddings", embeddingRoutes)
+ 
+ // Anthropic compatible endpoints
+diff --git a/src/services/copilot/get-models.ts b/src/services/copilot/get-models.ts
+index efd61f2..2abd159 100644
+--- a/src/services/copilot/get-models.ts
++++ b/src/services/copilot/get-models.ts
+@@ -1,11 +1,12 @@
+-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
++import type { EffortLevel } from "~/lib/effort"
++
++import { copilotBaseUrl } from "~/lib/api-config"
++import { copilotFetch } from "~/lib/copilot-fetch"
+ import { HTTPError } from "~/lib/error"
+ import { state } from "~/lib/state"
+ 
+ export const getModels = async () => {
+-  const response = await fetch(`${copilotBaseUrl(state)}/models`, {
+-    headers: copilotHeaders(state),
+-  })
++  const response = await copilotFetch(`${copilotBaseUrl(state)}/models`)
+ 
+   if (!response.ok) throw new HTTPError("Failed to get models", response)
+ 
+@@ -28,6 +29,7 @@ interface ModelSupports {
+   tool_calls?: boolean
+   parallel_tool_calls?: boolean
+   dimensions?: boolean
++  reasoning_effort?: Array<EffortLevel>
+ }
+ 
+ interface ModelCapabilities {
+@@ -43,6 +45,7 @@ export interface Model {
+   capabilities: ModelCapabilities
+   id: string
+   model_picker_enabled: boolean
++  model_picker_category?: string
+   name: string
+   object: string
+   preview: boolean
+diff --git a/tests/copilot-pricing.test.ts b/tests/copilot-pricing.test.ts
+new file mode 100644
+index 0000000..29f329c
+--- /dev/null
++++ b/tests/copilot-pricing.test.ts
+@@ -0,0 +1,86 @@
++import { describe, expect, it } from "bun:test"
++
++import { parseCopilotPricingYaml, pricingForModel } from "~/lib/copilot-pricing"
++
++const FIXTURE = `
++- model: GPT-5.6 Sol
++  provider: openai
++  category: Powerful
++  threshold: '≤ 272K'
++  tier: Default
++  input: $5.00
++  cached_input: $0.50
++  output: $30.00
++- model: GPT-5.6 Sol
++  provider: openai
++  category: Powerful
++  threshold: '> 272K'
++  tier: 'Long context'
++  input: $10.00
++  cached_input: $1.00
++  output: $45.00
++- model: Claude Haiku 4.5
++  provider: anthropic
++  category: Versatile
++  input: $1.00
++  cached_input: $0.10
++  output: $5.00
++  cache_write: $1.25
++`
++
++describe("Copilot pricing parser", () => {
++  it("parses default and long-context GPT pricing", () => {
++    const pricing = parseCopilotPricingYaml(FIXTURE, {
++      etag: '"fixture"',
++      fetchedAt: "2026-01-01T00:00:00.000Z",
++    })
++    const sol = pricingForModel(pricing, "gpt-5.6-sol")
++
++    expect(sol?.category).toBe("powerful")
++    expect(sol?.tiers).toHaveLength(2)
++    expect(sol?.tiers[0]).toMatchObject({
++      name: "default",
++      input_threshold: { operator: "lte", tokens: 272_000 },
++      credits_per_1m: {
++        input: 500,
++        cache_read: 50,
++        cache_write: null,
++        output: 3000,
++      },
++    })
++    expect(sol?.tiers[1]).toMatchObject({
++      name: "long-context",
++      input_threshold: { operator: "gt", tokens: 272_000 },
++      credits_per_1m: { input: 1000, output: 4500 },
++    })
++    expect(pricing.source.etag).toBe('"fixture"')
++    expect(pricing.source.version).toStartWith("sha256:")
++  })
++
++  it("parses Anthropic cache-write pricing", () => {
++    const pricing = parseCopilotPricingYaml(FIXTURE)
++    expect(
++      pricingForModel(pricing, "claude-haiku-4.5")?.tiers[0],
++    ).toMatchObject({
++      credits_per_1m: {
++        input: 100,
++        cache_read: 10,
++        cache_write: 125,
++        output: 500,
++      },
++    })
++  })
++
++  it("reports unmatched model names rather than guessing", () => {
++    const pricing = parseCopilotPricingYaml(
++      `${FIXTURE}\n- model: Future Model\n  input: $1\n  output: $2\n`,
++    )
++    expect(pricing.unmatched_models).toContain("Future Model")
++  })
++
++  it("rejects structurally empty sources", () => {
++    expect(() => parseCopilotPricingYaml("[]")).toThrow(
++      "Pricing source contains no model rows",
++    )
++  })
++})
