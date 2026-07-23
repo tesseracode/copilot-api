@@ -350,6 +350,54 @@ async function runTranslationTests(): Promise<TestResult[]> {
     results.push({ test: "responses-via-chat", model: "gpt-5.5", endpoint: "/chat/completions", status: res.ok && text.length > 0 ? "pass" : "fail", detail: res.ok ? undefined : `${res.status}: ${res.body.slice(0, 60)}`, durationMs: Date.now() - start })
   }
 
+  // 7. Malformed Responses replay IDs must fail locally with a clear 400.
+  for (const malformedCase of [
+    {
+      test: "empty-assistant-tool-call-id",
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "",
+              type: "function",
+              function: { name: "read_file", arguments: "{}" },
+            },
+          ],
+        },
+      ],
+    },
+    {
+      test: "empty-tool-result-id",
+      messages: [{ role: "tool", tool_call_id: "", content: "result" }],
+    },
+  ]) {
+    const start = Date.now()
+    const res = await safeFetch(PROXY_CHAT_URL, {
+      method: "POST",
+      headers: chatHeaders(),
+      body: JSON.stringify({
+        model: "gpt-5.6-sol",
+        messages: malformedCase.messages,
+        stream: false,
+      }),
+    })
+    results.push({
+      test: malformedCase.test,
+      model: "gpt-5.6-sol",
+      endpoint: "/chat/completions",
+      status: res.status === 400 ? "pass" : "fail",
+      detail:
+        res.status === 400
+          ? `HTTP 400: ${res.body.slice(0, 100)}`
+          : res.ok
+            ? "unexpectedly accepted"
+            : `HTTP ${res.status}: ${res.body.slice(0, 100)}`,
+      durationMs: Date.now() - start,
+    })
+  }
+
   return results
 }
 

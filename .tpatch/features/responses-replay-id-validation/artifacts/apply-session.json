@@ -1,0 +1,8 @@
+{
+  "slug": "responses-replay-id-validation",
+  "completed_at": "2026-07-10T07:54:17Z",
+  "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/responses-replay-id-validation.test.ts \u0026\u0026 bun test"
+}

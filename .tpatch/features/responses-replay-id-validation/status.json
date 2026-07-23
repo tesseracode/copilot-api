@@ -1,0 +1,17 @@
+{
+  "id": "responses-replay-id-validation",
+  "slug": "responses-replay-id-validation",
+  "title": "Reject empty Responses tool correlation IDs locally and add replay regression coverage",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-10T07:36:41Z",
+  "updated_at": "2026-07-10T07:44:40Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-10T07:54:17Z",
+    "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

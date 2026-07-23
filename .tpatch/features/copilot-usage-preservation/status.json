@@ -1,0 +1,23 @@
+{
+  "id": "copilot-usage-preservation",
+  "slug": "copilot-usage-preservation",
+  "title": "Preserve Copilot cost and cache metadata across compatibility translations",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-22T06:23:35Z",
+  "updated_at": "2026-07-22T17:29:24Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-22T14:07:44Z",
+    "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "three-tier-routing",
+      "kind": "soft"
+    }
+  ]
+}

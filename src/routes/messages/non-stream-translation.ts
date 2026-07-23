@@ -47,6 +47,7 @@ export function translateToOpenAI(
     temperature: payload.temperature,
     top_p: payload.top_p,
     user: payload.metadata?.user_id,
+    reasoning_effort: payload.output_config?.effort,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
   }
@@ -324,6 +325,7 @@ export function translateToAnthropic(
     content: [...allThinkingBlocks, ...allTextBlocks, ...allToolUseBlocks],
     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
     stop_sequence: null,
+    copilot_usage: response.copilot_usage,
     usage: {
       input_tokens:
         (response.usage?.prompt_tokens ?? 0)
@@ -501,6 +503,9 @@ export function openaiToAnthropicPayload(
     result.temperature = payload.temperature
   if (payload.top_p !== null && payload.top_p !== undefined)
     result.top_p = payload.top_p
+  if (payload.reasoning_effort) {
+    result.output_config = { effort: payload.reasoning_effort }
+  }
   result.tools = convertOpenAITools(payload.tools)
   result.tool_choice = convertOpenAIToolChoice(payload.tool_choice)
 

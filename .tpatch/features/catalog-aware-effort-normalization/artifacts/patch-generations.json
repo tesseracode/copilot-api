@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "feature": "catalog-aware-effort-normalization",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_a61c821b9e2a",
+      "kind": "record",
+      "patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+      "git_patch_id": "c04f55ffa5139b3e6db69c16f15395ce71393e67",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/effort.test.ts",
+          "src/lib/effort.ts",
+          "src/lib/model-mapping.ts",
+          "src/routes/chat-completions/handler.ts",
+          "src/routes/messages/anthropic-types.ts",
+          "src/routes/messages/handler.ts",
+          "src/routes/messages/non-stream-translation.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/forward-native-messages.ts",
+          "src/services/copilot/get-models.ts",
+          "tests/effort-translation.test.ts",
+          "tests/native-effort-normalization.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/effort.test.ts",
+        "src/lib/effort.ts",
+        "src/lib/model-mapping.ts",
+        "src/routes/chat-completions/handler.ts",
+        "src/routes/messages/anthropic-types.ts",
+        "src/routes/messages/handler.ts",
+        "src/routes/messages/non-stream-translation.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/forward-native-messages.ts",
+        "src/services/copilot/get-models.ts",
+        "tests/effort-translation.test.ts",
+        "tests/native-effort-normalization.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "api-context-effort-migration",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 3,
+          "parent_patch_sha256": "670080c3a1a0a4ab272f3bed61f5e6295671dd7df94031fe9c873b46ea7a4f30",
+          "parent_recipe_sha256": "998af21f1b8ec2ce94e45284be28abbcfbb505353c7e5f58d1445c82a706ab3e"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

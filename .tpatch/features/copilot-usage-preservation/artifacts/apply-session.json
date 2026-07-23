@@ -1,0 +1,8 @@
+{
+  "slug": "copilot-usage-preservation",
+  "completed_at": "2026-07-22T14:07:44Z",
+  "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/copilot-usage-preservation.test.ts"
+}

@@ -2,11 +2,22 @@
   "id": "token-refresh-resilience",
   "slug": "token-refresh-resilience",
   "title": "Token refresh resilience: if the setInterval copilot token refresh throws, the interval dies silently and the token stays stale forever. Should retry with backoff, or at minimum log a prominent warning that all future requests will fail until restart.",
-  "state": "requested",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-05-01T07:43:54Z",
-  "updated_at": "2026-05-01T07:43:54Z",
-  "last_command": "add",
-  "apply": {},
-  "reconcile": {}
+  "updated_at": "2026-07-21T13:54:07Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-21T13:54:09Z",
+    "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "graceful-shutdown-fix",
+      "kind": "soft"
+    }
+  ]
 }

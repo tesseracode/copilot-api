@@ -1,3 +1,5 @@
+import type { EffortLevel } from "./effort"
+
 import { state } from "./state"
 
 // Forward map: Anthropic dash format → Copilot dot format
@@ -13,7 +15,13 @@ const MODEL_ID_MAP: Record<string, string> = {
 }
 
 /** Legacy effort suffixes that may appear in model names from old configs */
-const EFFORT_SUFFIXES = ["-xhigh", "-high", "-max", "-medium", "-low"] as const
+const EFFORT_SUFFIXES: ReadonlyArray<`-${EffortLevel}`> = [
+  "-xhigh",
+  "-high",
+  "-max",
+  "-medium",
+  "-low",
+]
 
 // Reverse map: Copilot dot format → Anthropic dash format
 const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
@@ -26,13 +34,13 @@ const REVERSE_MODEL_ID_MAP: Record<string, string> = Object.fromEntries(
  */
 export function extractEffortFromModelName(model: string): {
   base: string
-  effort: string | undefined
+  effort: EffortLevel | undefined
 } {
   for (const suffix of EFFORT_SUFFIXES) {
     if (model.endsWith(suffix)) {
       return {
         base: model.slice(0, -suffix.length),
-        effort: suffix.slice(1), // strip leading dash
+        effort: suffix.slice(1) as EffortLevel, // strip leading dash
       }
     }
   }

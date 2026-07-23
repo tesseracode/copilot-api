@@ -4,6 +4,7 @@ import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
+import { resolveEffort } from "~/lib/effort"
 import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { anthropicToCopilotModelId } from "~/lib/model-mapping"
 import { checkRateLimit } from "~/lib/rate-limit"
@@ -81,15 +82,26 @@ export async function handleCompletion(c: Context) {
   // /responses for GPT-5.x models (responses-only or preferred)
   if (endpoint === "/responses") {
     consola.debug(`Using /responses endpoint for ${copilotModelId}`)
-    return handleResponsesViaAnthropic(
-      c,
+    const effort = resolveEffort({
+      modelId: copilotModelId,
+      requested: anthropicPayload.output_config?.effort,
+      cachedModels: state.models,
+      defaultEffort: "medium",
+    })
+    return handleResponsesViaAnthropic({
+      context: c,
       openAIPayload,
-      anthropicPayload.output_config?.effort,
+      effort,
       signal,
-    )
+    })
   }
 
   // /chat/completions for legacy models
+  openAIPayload.reasoning_effort = resolveEffort({
+    modelId: copilotModelId,
+    requested: anthropicPayload.output_config?.effort,
+    cachedModels: state.models,
+  })
   const response = await createChatCompletions(openAIPayload, signal)
 
   if (isNonStreaming(response)) {
@@ -200,20 +212,27 @@ const isNonStreaming = (
  * Handle a request that needs the /responses endpoint but arrived via /v1/messages.
  * Flow: Anthropic payload → already translated to OpenAI → /responses → OpenAI response → Anthropic format.
  */
-async function handleResponsesViaAnthropic(
-  c: Context,
-  openAIPayload: Parameters<typeof createResponses>[0],
-  effort?: string,
-  signal?: AbortSignal,
-) {
+interface ResponsesViaAnthropicOptions {
+  context: Context
+  openAIPayload: Parameters<typeof createResponses>[0]
+  effort?: string
+  signal?: AbortSignal
+}
+
+async function handleResponsesViaAnthropic({
+  context,
+  openAIPayload,
+  effort,
+  signal,
+}: ResponsesViaAnthropicOptions) {
   const response = await createResponses(openAIPayload, effort, signal)
 
   if (isNonStreaming(response)) {
     const anthropicResponse = translateToAnthropic(response)
-    return c.json(anthropicResponse)
+    return context.json(anthropicResponse)
   }
 
-  return streamSSE(c, async (stream) => {
+  return streamSSE(context, async (stream) => {
     const responsesState = createResponsesStreamState()
     const anthropicState: AnthropicStreamState = {
       messageStartSent: false,

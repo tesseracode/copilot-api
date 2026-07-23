@@ -1,11 +1,12 @@
-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
+import type { EffortLevel } from "~/lib/effort"
+
+import { copilotBaseUrl } from "~/lib/api-config"
+import { copilotFetch } from "~/lib/copilot-fetch"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
 export const getModels = async () => {
-  const response = await fetch(`${copilotBaseUrl(state)}/models`, {
-    headers: copilotHeaders(state),
-  })
+  const response = await copilotFetch(`${copilotBaseUrl(state)}/models`)
 
   if (!response.ok) throw new HTTPError("Failed to get models", response)
 
@@ -28,6 +29,7 @@ interface ModelSupports {
   tool_calls?: boolean
   parallel_tool_calls?: boolean
   dimensions?: boolean
+  reasoning_effort?: Array<EffortLevel>
 }
 
 interface ModelCapabilities {
@@ -43,6 +45,7 @@ export interface Model {
   capabilities: ModelCapabilities
   id: string
   model_picker_enabled: boolean
+  model_picker_category?: string
   name: string
   object: string
   preview: boolean

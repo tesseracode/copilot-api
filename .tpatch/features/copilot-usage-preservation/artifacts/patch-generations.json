@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "feature": "copilot-usage-preservation",
+  "current_generation": 3,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_07fa00eeb1c3",
+      "kind": "record",
+      "patch_sha256": "ad3c82ef943de0fb350e940a510a56bbd431c4b96941c23d5cbc23e62be3dfa7",
+      "git_patch_id": "746aa030e124650bacb1ed9658bd8cf89e35410c",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "dacd7a69fa0674afde9f89e898c009ba0e9f420406770088b331422ad748f524",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/copilot-usage.ts",
+          "src/routes/messages/anthropic-types.ts",
+          "src/routes/messages/non-stream-translation.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-responses.ts",
+          "tests/copilot-usage-preservation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-usage.ts",
+        "src/routes/messages/anthropic-types.ts",
+        "src/routes/messages/non-stream-translation.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-responses.ts",
+        "tests/copilot-usage-preservation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_35e7facb5843",
+      "kind": "amend-refresh",
+      "patch_sha256": "06740977d089f785375592ca2deddd637e76dbc8c4c896f878a65b8d4fdf6ed7",
+      "git_patch_id": "1dd61bc7f13ee48db01e76a208e56cd0985efbcf",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "dacd7a69fa0674afde9f89e898c009ba0e9f420406770088b331422ad748f524",
+      "canonical_patch": "",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/copilot-usage.ts",
+          "src/routes/messages/anthropic-types.ts",
+          "src/routes/messages/non-stream-translation.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-responses.ts",
+          "tests/copilot-usage-preservation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-usage.ts",
+        "src/routes/messages/anthropic-types.ts",
+        "src/routes/messages/non-stream-translation.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-responses.ts",
+        "tests/copilot-usage-preservation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 3,
+      "generation_id": "pg_f4af22609f20",
+      "kind": "amend-refresh",
+      "patch_sha256": "5cfd6789a149291f1a2a8a71eb3cb03b363d0bdf3da65ee96b747f13d2b89ffc",
+      "git_patch_id": "ce70eca32488d3c75cb3b1e35cf1775f0e03bb41",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "dacd7a69fa0674afde9f89e898c009ba0e9f420406770088b331422ad748f524",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/003-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/copilot-usage.ts",
+          "src/routes/messages/anthropic-types.ts",
+          "src/routes/messages/non-stream-translation.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-responses.ts",
+          "tests/copilot-usage-preservation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-usage.ts",
+        "src/routes/messages/anthropic-types.ts",
+        "src/routes/messages/non-stream-translation.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-responses.ts",
+        "tests/copilot-usage-preservation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

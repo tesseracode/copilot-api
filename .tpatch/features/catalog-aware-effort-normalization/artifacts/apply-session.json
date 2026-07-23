@@ -1,0 +1,8 @@
+{
+  "slug": "catalog-aware-effort-normalization",
+  "completed_at": "2026-07-17T15:27:04Z",
+  "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test src/lib/effort.test.ts src/services/copilot/forward-native-messages.test.ts tests/effort-translation.test.ts tests/native-effort-normalization.test.ts tests/responses-effort-forwarding.test.ts \u0026\u0026 bun test \u0026\u0026 bun run build"
+}

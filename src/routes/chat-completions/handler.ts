@@ -4,6 +4,7 @@ import consola from "consola"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
+import { resolveEffort } from "~/lib/effort"
 import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
@@ -67,6 +68,11 @@ export async function handleCompletion(c: Context) {
     consola.debug(
       `Rerouting Claude model ${payload.model} to native /v1/messages`,
     )
+    payload.reasoning_effort = resolveEffort({
+      modelId: payload.model,
+      requested: payload.reasoning_effort,
+      cachedModels: state.models,
+    })
     return handleNativeReroute(c, payload)
   }
 
@@ -75,6 +81,12 @@ export async function handleCompletion(c: Context) {
     consola.debug(`Using /responses endpoint for model: ${payload.model}`)
     return handleResponsesEndpoint(c, payload, signal)
   }
+
+  payload.reasoning_effort = resolveEffort({
+    modelId: payload.model,
+    requested: payload.reasoning_effort,
+    cachedModels: state.models,
+  })
 
   // Existing /chat/completions path
   const response = await createChatCompletions(payload, signal)
@@ -109,11 +121,13 @@ async function handleResponsesEndpoint(
   payload: ChatCompletionsPayload,
   signal?: AbortSignal,
 ) {
-  // Extract effort from reasoning_effort or output_config for GPT-5.x models
-  // Default to "medium" if the model requires reasoning but no effort was specified
-  const effort = (payload as unknown as Record<string, unknown>)
-    .reasoning_effort as string | undefined
-  const response = await createResponses(payload, effort ?? "medium", signal)
+  const effort = resolveEffort({
+    modelId: payload.model,
+    requested: payload.reasoning_effort,
+    cachedModels: state.models,
+    defaultEffort: "medium",
+  })
+  const response = await createResponses(payload, effort, signal)
 
   if (isNonStreaming(response)) {
     consola.debug("Non-streaming /responses result:", JSON.stringify(response))

@@ -1,0 +1,349 @@
+diff --git a/src/lib/copilot-usage.ts b/src/lib/copilot-usage.ts
+new file mode 100644
+index 0000000..b9d4f30
+--- /dev/null
++++ b/src/lib/copilot-usage.ts
+@@ -0,0 +1,41 @@
++export interface CopilotTokenDetail {
++  batch_size: number
++  cost_per_batch: number
++  token_count: number
++  token_type: string
++}
++
++export interface RawCopilotUsage {
++  token_details: Array<CopilotTokenDetail>
++  total_nano_aiu: number
++}
++
++export interface CopilotUsage extends RawCopilotUsage {
++  total_ai_credits: number
++  cache: {
++    read_tokens: number
++    write_tokens: number
++    hit: boolean
++  }
++}
++
++export function normalizeCopilotUsage(
++  usage: RawCopilotUsage | undefined,
++): CopilotUsage | undefined {
++  if (!usage) return undefined
++  const tokens = (type: string) =>
++    usage.token_details
++      .filter((detail) => detail.token_type === type)
++      .reduce((total, detail) => total + detail.token_count, 0)
++  const readTokens = tokens("cache_read")
++  const writeTokens = tokens("cache_write")
++  return {
++    ...usage,
++    total_ai_credits: usage.total_nano_aiu / 1_000_000_000,
++    cache: {
++      read_tokens: readTokens,
++      write_tokens: writeTokens,
++      hit: readTokens > 0,
++    },
++  }
++}
+diff --git a/src/routes/messages/anthropic-types.ts b/src/routes/messages/anthropic-types.ts
+index c3dc408..f296765 100644
+--- a/src/routes/messages/anthropic-types.ts
++++ b/src/routes/messages/anthropic-types.ts
+@@ -1,3 +1,6 @@
++import type { CopilotUsage } from "~/lib/copilot-usage"
++import type { RequestedEffort } from "~/lib/effort"
++
+ // Anthropic API Types
+ 
+ export interface AnthropicMessagesPayload {
+@@ -24,7 +27,7 @@ export interface AnthropicMessagesPayload {
+   }
+   service_tier?: "auto" | "standard_only"
+   output_config?: {
+-    effort?: "low" | "medium" | "high" | "max"
++    effort?: RequestedEffort
+     [key: string]: unknown
+   }
+ }
+@@ -105,6 +108,7 @@ export interface AnthropicResponse {
+     | "refusal"
+     | null
+   stop_sequence: string | null
++  copilot_usage?: CopilotUsage
+   usage: {
+     input_tokens: number
+     output_tokens: number
+diff --git a/src/routes/messages/non-stream-translation.ts b/src/routes/messages/non-stream-translation.ts
+index dbcc566..e02346a 100644
+--- a/src/routes/messages/non-stream-translation.ts
++++ b/src/routes/messages/non-stream-translation.ts
+@@ -47,6 +47,7 @@ export function translateToOpenAI(
+     temperature: payload.temperature,
+     top_p: payload.top_p,
+     user: payload.metadata?.user_id,
++    reasoning_effort: payload.output_config?.effort,
+     tools: translateAnthropicToolsToOpenAI(payload.tools),
+     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
+   }
+@@ -324,6 +325,7 @@ export function translateToAnthropic(
+     content: [...allThinkingBlocks, ...allTextBlocks, ...allToolUseBlocks],
+     stop_reason: mapOpenAIStopReasonToAnthropic(stopReason),
+     stop_sequence: null,
++    copilot_usage: response.copilot_usage,
+     usage: {
+       input_tokens:
+         (response.usage?.prompt_tokens ?? 0)
+@@ -501,6 +503,9 @@ export function openaiToAnthropicPayload(
+     result.temperature = payload.temperature
+   if (payload.top_p !== null && payload.top_p !== undefined)
+     result.top_p = payload.top_p
++  if (payload.reasoning_effort) {
++    result.output_config = { effort: payload.reasoning_effort }
++  }
+   result.tools = convertOpenAITools(payload.tools)
+   result.tool_choice = convertOpenAIToolChoice(payload.tool_choice)
+ 
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 353f825..5aacad3 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -1,7 +1,11 @@
+ import consola from "consola"
+ import { events } from "fetch-event-stream"
+ 
+-import { copilotHeaders, copilotBaseUrl } from "~/lib/api-config"
++import type { CopilotUsage } from "~/lib/copilot-usage"
++import type { RequestedEffort } from "~/lib/effort"
++
++import { copilotBaseUrl } from "~/lib/api-config"
++import { copilotFetch } from "~/lib/copilot-fetch"
+ import { HTTPError } from "~/lib/error"
+ import { state } from "~/lib/state"
+ 
+@@ -24,17 +28,16 @@ export const createChatCompletions = async (
+   )
+ 
+   // Build headers and add X-Initiator
+-  const headers: Record<string, string> = {
+-    ...copilotHeaders(state, enableVision),
+-    "X-Initiator": isAgentCall ? "agent" : "user",
+-  }
+-
+-  const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
+-    method: "POST",
+-    headers,
+-    body: JSON.stringify(payload),
+-    signal,
+-  })
++  const response = await copilotFetch(
++    `${copilotBaseUrl(state)}/chat/completions`,
++    {
++      method: "POST",
++      headers: { "X-Initiator": isAgentCall ? "agent" : "user" },
++      body: JSON.stringify(payload),
++      signal,
++    },
++    { vision: enableVision },
++  )
+ 
+   if (!response.ok) {
+     consola.error("Failed to create chat completions", response)
+@@ -106,6 +109,7 @@ export interface ChatCompletionResponse {
+   model: string
+   choices: Array<ChoiceNonStreaming>
+   system_fingerprint?: string
++  copilot_usage?: CopilotUsage
+   usage?: {
+     prompt_tokens: number
+     completion_tokens: number
+@@ -148,6 +152,7 @@ export interface ChatCompletionsPayload {
+   logprobs?: boolean | null
+   response_format?: { type: "json_object" } | null
+   seed?: number | null
++  reasoning_effort?: RequestedEffort
+   tools?: Array<Tool> | null
+   tool_choice?:
+     | "none"
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 72e7826..da9efbe 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -2,8 +2,13 @@ import consola from "consola"
+ import { events } from "fetch-event-stream"
+ import { randomUUID } from "node:crypto"
+ 
+-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
+-import { HTTPError } from "~/lib/error"
++import { copilotBaseUrl } from "~/lib/api-config"
++import { copilotFetch } from "~/lib/copilot-fetch"
++import {
++  normalizeCopilotUsage,
++  type RawCopilotUsage,
++} from "~/lib/copilot-usage"
++import { badRequest, HTTPError } from "~/lib/error"
+ import { state } from "~/lib/state"
+ 
+ import type {
+@@ -107,6 +112,11 @@ export function translateMessageContent(
+   return parts
+ }
+ 
++function requireToolCallId(id: string | undefined, field: string): string {
++  if (!id) throw badRequest(`${field} is missing`)
++  return id
++}
++
+ function translateMessages(
+   messages: ChatCompletionsPayload["messages"],
+ ): Array<ResponsesInput> {
+@@ -153,7 +163,7 @@ function translateMessages(
+               type: "function_call",
+               name: tc.function.name,
+               arguments: tc.function.arguments,
+-              call_id: tc.id,
++              call_id: requireToolCallId(tc.id, "assistant tool call id"),
+             })
+           }
+         }
+@@ -163,7 +173,10 @@ function translateMessages(
+       case "tool": {
+         input.push({
+           type: "function_call_output",
+-          call_id: msg.tool_call_id ?? "",
++          call_id: requireToolCallId(
++            msg.tool_call_id,
++            "tool message tool_call_id",
++          ),
+           output:
+             typeof msg.content === "string" ?
+               msg.content
+@@ -226,7 +239,7 @@ export function translateRequestToResponses(
+ 
+ // ── Response translation: Responses API → OpenAI Chat Completions ──
+ 
+-interface ResponsesResponse {
++export interface ResponsesResponse {
+   id: string
+   object: string
+   created_at?: number
+@@ -237,10 +250,11 @@ interface ResponsesResponse {
+     output_tokens: number
+     total_tokens: number
+   }
++  copilot_usage?: RawCopilotUsage
+   status?: string
+ }
+ 
+-type ResponsesOutputItem =
++export type ResponsesOutputItem =
+   | {
+       type: "message"
+       role: "assistant"
+@@ -254,7 +268,7 @@ type ResponsesOutputItem =
+       encrypted_content?: string | null
+     }
+ 
+-interface ResponsesMessageContent {
++export interface ResponsesMessageContent {
+   type: "output_text"
+   text: string
+ }
+@@ -323,6 +337,7 @@ export function translateResponsesNonStreaming(
+           total_tokens: resp.usage.total_tokens,
+         }
+       : undefined,
++    copilot_usage: normalizeCopilotUsage(resp.copilot_usage),
+   }
+ }
+ 
+@@ -905,9 +920,8 @@ export async function createResponses(
+   const url = `${copilotBaseUrl(state)}/responses`
+   consola.debug(`Sending /responses request for model: ${payload.model}`)
+ 
+-  const response = await fetch(url, {
++  const response = await copilotFetch(url, {
+     method: "POST",
+-    headers: copilotHeaders(state),
+     body: JSON.stringify(responsesPayload),
+     signal,
+   })
+diff --git a/tests/copilot-usage-preservation.test.ts b/tests/copilot-usage-preservation.test.ts
+new file mode 100644
+index 0000000..f2b28f4
+--- /dev/null
++++ b/tests/copilot-usage-preservation.test.ts
+@@ -0,0 +1,74 @@
++import { describe, expect, it } from "bun:test"
++
++import { normalizeCopilotUsage } from "~/lib/copilot-usage"
++import { translateToAnthropic } from "~/routes/messages/non-stream-translation"
++import { translateResponsesNonStreaming } from "~/services/copilot/create-responses"
++
++const rawUsage = {
++  token_details: [
++    {
++      batch_size: 1_000_000,
++      cost_per_batch: 50_000_000_000,
++      token_count: 32_000,
++      token_type: "cache_read",
++    },
++    {
++      batch_size: 1_000_000,
++      cost_per_batch: 625_000_000_000,
++      token_count: 100,
++      token_type: "cache_write",
++    },
++  ],
++  total_nano_aiu: 1_662_500_000,
++}
++
++describe("Copilot usage preservation", () => {
++  it("normalizes AI credits and cache evidence", () => {
++    expect(normalizeCopilotUsage(rawUsage)).toMatchObject({
++      total_ai_credits: 1.6625,
++      cache: { read_tokens: 32_000, write_tokens: 100, hit: true },
++    })
++  })
++
++  it("preserves usage through Responses to Chat translation", () => {
++    const chat = translateResponsesNonStreaming({
++      id: "resp_1",
++      object: "response",
++      model: "gpt-5.6-sol",
++      output: [
++        {
++          type: "message",
++          role: "assistant",
++          content: [{ type: "output_text", text: "hello" }],
++        },
++      ],
++      usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
++      copilot_usage: rawUsage,
++    })
++
++    expect(chat.copilot_usage?.total_ai_credits).toBe(1.6625)
++    expect(chat.copilot_usage?.cache.hit).toBe(true)
++  })
++
++  it("preserves usage through Chat to Anthropic translation", () => {
++    const anthropic = translateToAnthropic({
++      id: "chat_1",
++      object: "chat.completion",
++      created: 0,
++      model: "gpt-5.6-sol",
++      choices: [
++        {
++          index: 0,
++          message: { role: "assistant", content: "hello" },
++          logprobs: null,
++          finish_reason: "stop",
++        },
++      ],
++      copilot_usage: normalizeCopilotUsage(rawUsage),
++      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
++    })
++
++    expect(anthropic.copilot_usage?.cache.read_tokens).toBe(32_000)
++    expect(anthropic.usage).toEqual({ input_tokens: 10, output_tokens: 2 })
++  })
++})

@@ -1,9 +1,12 @@
 import consola from "consola"
 import { events } from "fetch-event-stream"
 
+import type { EffortLevel } from "~/lib/effort"
 import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
 
-import { copilotBaseUrl, copilotHeaders } from "~/lib/api-config"
+import { copilotBaseUrl } from "~/lib/api-config"
+import { copilotFetch } from "~/lib/copilot-fetch"
+import { resolveEffort as resolveCatalogEffort } from "~/lib/effort"
 import { HTTPError } from "~/lib/error"
 import {
   anthropicToCopilotModelId,
@@ -38,7 +41,7 @@ function detectGeneration(copilotModelId: string): ModelGeneration {
  * Compute a thinking budget from effort level and max_tokens.
  */
 function budgetFromEffort(
-  effort: string | undefined,
+  effort: EffortLevel | undefined,
   maxTokens: number,
   existingBudget: number | undefined,
 ): number {
@@ -71,7 +74,7 @@ interface NormalizeThinkingOpts {
   thinking: AnthropicMessagesPayload["thinking"]
   maxTokens: number
   generation: ModelGeneration
-  effort?: "low" | "medium" | "high" | "max"
+  effort?: EffortLevel
 }
 
 /**
@@ -147,11 +150,10 @@ const OPTIONAL_FIELDS = [
  * the advertised reasoning_effort capabilities from the model catalog.
  */
 function supportsEffort(copilotModelId: string): boolean {
-  const model = state.models?.data.find((m) => m.id === copilotModelId)
-  const supports = (model?.capabilities as Record<string, unknown> | undefined)
-    ?.supports as Record<string, unknown> | undefined
-  const efforts = supports?.reasoning_effort
-  return Array.isArray(efforts) && efforts.length > 0
+  const model = state.models?.data.find((m) => m.id === copilotModelId) as
+    | { capabilities?: { supports?: { reasoning_effort?: Array<string> } } }
+    | undefined
+  return Boolean(model?.capabilities?.supports?.reasoning_effort?.length)
 }
 
 interface ResolveEffortOpts {
@@ -171,7 +173,12 @@ function resolveEffort(opts: ResolveEffortOpts): boolean {
   if (!effort) return false
 
   if (supportsEffort(copilotModelId)) {
-    body.output_config = { ...outputConfig, effort }
+    const resolved = resolveCatalogEffort({
+      modelId: copilotModelId,
+      requested: effort,
+      cachedModels: state.models,
+    })
+    if (resolved) body.output_config = { ...outputConfig, effort: resolved }
     return true
   }
 
@@ -219,7 +226,8 @@ export function buildNativeBody(
 
   // Extract effort: prefer output_config.effort, fall back to legacy model-name suffix
   const { effort: modelNameEffort } = extractEffortFromModelName(payload.model)
-  const effort = payload.output_config?.effort ?? modelNameEffort
+  const requestedEffort = payload.output_config?.effort ?? modelNameEffort
+  const effort = requestedEffort === "auto" ? undefined : requestedEffort
   const generation = detectGeneration(copilotModelId)
 
   const effortHandled = resolveEffort({
@@ -264,9 +272,8 @@ export async function forwardNativeMessages(
     `Native passthrough: ${payload.model} -> ${body.model as string} via ${url}`,
   )
 
-  const response = await fetch(url, {
+  const response = await copilotFetch(url, {
     method: "POST",
-    headers: copilotHeaders(state),
     body: JSON.stringify(body),
     signal,
   })
