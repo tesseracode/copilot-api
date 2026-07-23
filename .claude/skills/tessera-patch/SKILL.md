@@ -47,6 +47,59 @@ active       → tpatch reconcile  → active | upstream_merged | blocked
 
 Never skip a phase. Never go backwards without `tpatch reconcile`.
 
+## Preferred Workflow (v0.8+)
+
+**Default to Path B.** You implement the code, then let tpatch track it.
+
+### For new features (implement → land):
+
+```bash
+# 1. Add the feature
+tpatch add --slug <clean-slug> "<short description>"
+
+# 2. Author brief artifacts (10-20 lines each)
+#    analysis.md — gap, risk, affected files
+#    spec.md — testable acceptance criteria
+#    exploration.md — files changed and why
+
+# 3. Advance phases
+tpatch analyze <slug> --manual
+tpatch define <slug> --manual
+tpatch explore <slug> --manual
+
+# 4. Implement normally in your working tree
+
+# 5. Land (records patch + stages + commits in one step)
+tpatch land <slug> --auto --files <paths>
+# Or dry-run first:
+tpatch land <slug> --auto --files <paths> --dry-run
+```
+
+### For already-committed features (retroactive Path B):
+
+```bash
+tpatch add --slug <slug> "<description>"
+# Author artifacts, advance phases as above, then:
+tpatch land <slug> --from <base-commit> --to <tip-commit> --files <paths> --no-record
+# Or record separately:
+tpatch record <slug> --from <base> --to <tip> --files <paths> --regenerate-recipe
+```
+
+### Dependencies:
+
+```bash
+# Declare before implementation/recording
+tpatch feature deps <child> add <parent>:hard   # child can't work without parent
+tpatch feature deps <child> add <parent>:soft   # ordering hint
+# Validate
+tpatch feature deps --validate-all
+```
+
+### Provider guidance:
+- Try provider on `analyze` once. If boilerplate, switch to `--manual` immediately.
+- Never let the provider run `implement` unless using a top-tier model (Sonnet 4.6+).
+- Path B artifacts + recorded patches are always more reliable than provider-generated recipes.
+
 ## Before You Run Anything
 
 1. `tpatch status <slug>` — see current state and last command.
