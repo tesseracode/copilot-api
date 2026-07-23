@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "feature": "native-responses-route",
+  "current_generation": 3,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_cda4de6de0ac",
+      "kind": "record",
+      "patch_sha256": "11f41a659cede41c6c55c4e17d5c03e8b108614b4e3b873821712eb48f702943",
+      "git_patch_id": "583be67491fbdfec21a09352b6a501ecc63c70c2",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/routes/responses/route.ts",
+          "src/server.ts",
+          "tests/native-responses-route.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/routes/responses/route.ts",
+        "src/server.ts",
+        "tests/native-responses-route.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "token-refresh-resilience",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 2,
+          "parent_patch_sha256": "cbca1c91bcad902009c526f0949cece63fa326185938ef8a15d32c3b873f9a37",
+          "parent_recipe_sha256": "8764413bc005511afedfa7c7a7d14378654022b06e558865df8f9ff9dddaf638"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_fe5bfad1b9da",
+      "kind": "amend-refresh",
+      "patch_sha256": "2ec7865fe7be7e1ff6e0e0d11c96ea12df7e8046a7a51e5ed68baa3fbb4e5667",
+      "git_patch_id": "1bb6d33f6c3ab19e9d9a40702c261a9bc8a1332a",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
+      "canonical_patch": "",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/routes/responses/route.ts",
+          "src/server.ts",
+          "tests/native-responses-route.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/routes/responses/route.ts",
+        "src/server.ts",
+        "tests/native-responses-route.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "token-refresh-resilience",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 2,
+          "parent_patch_sha256": "cbca1c91bcad902009c526f0949cece63fa326185938ef8a15d32c3b873f9a37",
+          "parent_recipe_sha256": "8764413bc005511afedfa7c7a7d14378654022b06e558865df8f9ff9dddaf638"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 3,
+      "generation_id": "pg_796e79fe9013",
+      "kind": "amend-refresh",
+      "patch_sha256": "bf45f3e843e7fa29dae0e4bd9e1b9250c53d42c99ad4639300eef353de50c9ea",
+      "git_patch_id": "cfdf2f505fbc48f0eeca3df446ec8eefcaff5bc3",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/003-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/routes/responses/route.ts",
+          "src/server.ts",
+          "tests/native-responses-route.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/routes/responses/route.ts",
+        "src/server.ts",
+        "tests/native-responses-route.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "token-refresh-resilience",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 2,
+          "parent_patch_sha256": "cbca1c91bcad902009c526f0949cece63fa326185938ef8a15d32c3b873f9a37",
+          "parent_recipe_sha256": "8764413bc005511afedfa7c7a7d14378654022b06e558865df8f9ff9dddaf638"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,274 @@
+diff --git a/src/routes/responses/route.ts b/src/routes/responses/route.ts
+new file mode 100644
+index 0000000..dc8d088
+--- /dev/null
++++ b/src/routes/responses/route.ts
+@@ -0,0 +1,66 @@
++import { Hono } from "hono"
++
++import { copilotBaseUrl } from "~/lib/api-config"
++import { copilotFetch } from "~/lib/copilot-fetch"
++import { state } from "~/lib/state"
++
++export const responsesRoutes = new Hono()
++
++responsesRoutes.post("/", async (c) => {
++  let payload: Record<string, unknown>
++  try {
++    payload = await c.req.json<Record<string, unknown>>()
++  } catch {
++    return c.json(
++      { error: { message: "Request body must be valid JSON" } },
++      400,
++    )
++  }
++
++  const modelId = typeof payload.model === "string" ? payload.model : ""
++  if (!modelId) {
++    return c.json(
++      { error: { message: "Responses request requires model" } },
++      400,
++    )
++  }
++  if (payload.stream !== undefined && typeof payload.stream !== "boolean") {
++    return c.json({ error: { message: "stream must be a boolean" } }, 400)
++  }
++
++  const model = state.models?.data.find((item) => item.id === modelId)
++  if (!model?.supported_endpoints?.includes("/responses")) {
++    return c.json(
++      {
++        error: {
++          message: `Model ${modelId} does not advertise /responses support`,
++        },
++      },
++      400,
++    )
++  }
++
++  const upstream = await copilotFetch(`${copilotBaseUrl(state)}/responses`, {
++    method: "POST",
++    body: JSON.stringify(payload),
++    signal: c.req.raw.signal,
++  })
++
++  const headers = new Headers()
++  const contentType = upstream.headers.get("content-type")
++  if (contentType) headers.set("content-type", contentType)
++  for (const name of [
++    "x-copilot-service-request-id",
++    "x-github-request-id",
++    "retry-after",
++  ]) {
++    const value = upstream.headers.get(name)
++    if (value) headers.set(name, value)
++  }
++
++  return new Response(upstream.body, {
++    status: upstream.status,
++    statusText: upstream.statusText,
++    headers,
++  })
++})
+diff --git a/src/server.ts b/src/server.ts
+index bd8870a..cb08534 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -7,6 +7,8 @@ import { completionRoutes } from "./routes/chat-completions/route"
+ import { embeddingRoutes } from "./routes/embeddings/route"
+ import { messageRoutes } from "./routes/messages/route"
+ import { modelRoutes } from "./routes/models/route"
++import { pricingRoutes } from "./routes/pricing/route"
++import { responsesRoutes } from "./routes/responses/route"
+ import { tokenRoute } from "./routes/token/route"
+ import { usageRoute } from "./routes/usage/route"
+ 
+@@ -31,6 +33,8 @@ server.get("/health", (c) =>
+ 
+ server.route("/chat/completions", completionRoutes)
+ server.route("/models", modelRoutes)
++server.route("/pricing", pricingRoutes)
++server.route("/responses", responsesRoutes)
+ server.route("/embeddings", embeddingRoutes)
+ server.route("/usage", usageRoute)
+ server.route("/token", tokenRoute)
+@@ -38,6 +42,8 @@ server.route("/token", tokenRoute)
+ // Compatibility with tools that expect v1/ prefix
+ server.route("/v1/chat/completions", completionRoutes)
+ server.route("/v1/models", modelRoutes)
++server.route("/v1/pricing", pricingRoutes)
++server.route("/v1/responses", responsesRoutes)
+ server.route("/v1/embeddings", embeddingRoutes)
+ 
+ // Anthropic compatible endpoints
+diff --git a/tests/native-responses-route.test.ts b/tests/native-responses-route.test.ts
+new file mode 100644
+index 0000000..dacf269
+--- /dev/null
++++ b/tests/native-responses-route.test.ts
+@@ -0,0 +1,165 @@
++import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
++
++import { state } from "~/lib/state"
++import { server } from "~/server"
++
++const originalFetch = globalThis.fetch
++
++beforeEach(() => {
++  state.copilotToken = "test-token"
++  state.models = {
++    object: "list",
++    data: [
++      {
++        id: "gpt-responses",
++        name: "GPT Responses",
++        object: "model",
++        vendor: "openai",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        supported_endpoints: ["/responses"],
++        capabilities: {
++          family: "gpt",
++          limits: {},
++          object: "model_capabilities",
++          supports: {},
++          tokenizer: "test",
++          type: "chat",
++        },
++      },
++      {
++        id: "legacy-chat",
++        name: "Legacy",
++        object: "model",
++        vendor: "openai",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        supported_endpoints: ["/chat/completions"],
++        capabilities: {
++          family: "legacy",
++          limits: {},
++          object: "model_capabilities",
++          supports: {},
++          tokenizer: "test",
++          type: "chat",
++        },
++      },
++    ],
++  }
++})
++
++afterEach(() => {
++  globalThis.fetch = originalFetch
++})
++
++describe("native Responses route", () => {
++  it("preserves arbitrary request and response fields", async () => {
++    let upstreamBody: unknown
++    globalThis.fetch = mock(
++      (_input: string | URL | Request, init?: RequestInit) => {
++        if (typeof init?.body !== "string")
++          throw new Error("Expected JSON body")
++        upstreamBody = JSON.parse(init.body)
++        return Promise.resolve(
++          Response.json({
++            id: "resp_1",
++            object: "response",
++            output: [{ type: "reasoning", id: "rs_1", summary: [] }],
++            copilot_usage: { token_details: [], total_nano_aiu: 10 },
++            custom_field: true,
++          }),
++        )
++      },
++    ) as unknown as typeof fetch
++
++    const body = {
++      model: "gpt-responses",
++      input: "hello",
++      include: ["reasoning.encrypted_content"],
++      metadata: { harness: "test" },
++      stream: false,
++    }
++    const response = await server.request("/v1/responses", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify(body),
++    })
++
++    expect(response.status).toBe(200)
++    expect(upstreamBody).toEqual(body)
++    expect(await response.json()).toMatchObject({
++      custom_field: true,
++      copilot_usage: { total_nano_aiu: 10 },
++    })
++  })
++
++  it("preserves raw SSE bytes", async () => {
++    const sse =
++      'event: response.created\ndata: {"type":"response.created"}\n\ndata: [DONE]\n\n'
++    globalThis.fetch = mock(() =>
++      Promise.resolve(
++        new Response(sse, {
++          headers: { "content-type": "text/event-stream" },
++        }),
++      ),
++    ) as unknown as typeof fetch
++
++    const response = await server.request("/responses", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        model: "gpt-responses",
++        input: "hello",
++        stream: true,
++      }),
++    })
++
++    expect(response.headers.get("content-type")).toBe("text/event-stream")
++    expect(await response.text()).toBe(sse)
++  })
++
++  it("rejects models without Responses support locally", async () => {
++    let calls = 0
++    globalThis.fetch = mock(() => {
++      calls += 1
++      return Promise.resolve(Response.json({}))
++    }) as unknown as typeof fetch
++
++    const response = await server.request("/v1/responses", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({ model: "legacy-chat", input: "hello" }),
++    })
++
++    expect(response.status).toBe(400)
++    expect(calls).toBe(0)
++  })
++
++  it("forwards upstream error status and request IDs", async () => {
++    globalThis.fetch = mock(() =>
++      Promise.resolve(
++        new Response("bad request", {
++          status: 422,
++          headers: {
++            "content-type": "text/plain",
++            "x-copilot-service-request-id": "request-1",
++          },
++        }),
++      ),
++    ) as unknown as typeof fetch
++
++    const response = await server.request("/v1/responses", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({ model: "gpt-responses", input: "hello" }),
++    })
++
++    expect(response.status).toBe(422)
++    expect(response.headers.get("x-copilot-service-request-id")).toBe(
++      "request-1",
++    )
++    expect(await response.text()).toBe("bad request")
++  })
++})
