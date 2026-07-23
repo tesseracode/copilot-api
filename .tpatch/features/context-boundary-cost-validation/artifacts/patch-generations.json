@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "feature": "context-boundary-cost-validation",
+  "current_generation": 6,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_d2e670404079",
+      "kind": "record",
+      "patch_sha256": "4eb72921360c0930fed035751ef9cd1ae9e88cf46c2dc221db58825f347a90c9",
+      "git_patch_id": "bcb3afca13bc6aeacba87828771e51b190c322df",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/reports/context-boundary/latest.json",
+          "scripts/reports/context-boundary/latest.md",
+          "tests/context-boundary-validation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/reports/context-boundary/latest.json",
+        "scripts/reports/context-boundary/latest.md",
+        "tests/context-boundary-validation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "catalog-aware-effort-normalization",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+          "parent_recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_e2b83f1c8f02",
+      "kind": "amend-refresh",
+      "patch_sha256": "db865e67cb6d7503e0c4f56715590c787365f3cd445b56afbf8c86f1b24b46c6",
+      "git_patch_id": "601c7164acdee62e45090cae7f83f1bfd33aa87c",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
+      "canonical_patch": "",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/reports/context-boundary/latest.json",
+          "scripts/reports/context-boundary/latest.md",
+          "tests/context-boundary-validation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/reports/context-boundary/latest.json",
+        "scripts/reports/context-boundary/latest.md",
+        "tests/context-boundary-validation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "catalog-aware-effort-normalization",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+          "parent_recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 3,
+      "generation_id": "pg_001dfc8108a6",
+      "kind": "amend-refresh",
+      "patch_sha256": "6bcd2360d544482a136ad4e8666aea3d6676f9f62ad97a35025fbd73a8f4bd3c",
+      "git_patch_id": "5e4743b64060b18e61cdbbd93cb5a0ae4f504ae1",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
+      "canonical_patch": "",
+      "audit_patch": "patches/003-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/reports/context-boundary/latest.json",
+          "scripts/reports/context-boundary/latest.md",
+          "tests/context-boundary-validation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/reports/context-boundary/latest.json",
+        "scripts/reports/context-boundary/latest.md",
+        "tests/context-boundary-validation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "catalog-aware-effort-normalization",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+          "parent_recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 4,
+      "generation_id": "pg_add196159e3f",
+      "kind": "amend-refresh",
+      "patch_sha256": "15ce2991f37420bfabbe5d708cb57e4c099389ff036ca830d6fc281bfac6115a",
+      "git_patch_id": "aa7e9257ac2a436d73047111d1789c9d2115357b",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
+      "canonical_patch": "",
+      "audit_patch": "patches/004-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/reports/context-boundary/latest.json",
+          "scripts/reports/context-boundary/latest.md",
+          "tests/context-boundary-validation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/reports/context-boundary/latest.json",
+        "scripts/reports/context-boundary/latest.md",
+        "tests/context-boundary-validation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "catalog-aware-effort-normalization",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+          "parent_recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 5,
+      "generation_id": "pg_a9ff34ba61c0",
+      "kind": "amend-refresh",
+      "patch_sha256": "61aad9e2d3ce22276cd3ae4c5fa82e39ec8a42fc3c98b52a58a40c280de3af58",
+      "git_patch_id": "6caefc37dcaa3f0a26cc8dad46f7d551322ae4fa",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "68c146d66666eb547c0030079fd8ce08c260635d80ac61692dc95e5407fb5e70",
+      "canonical_patch": "",
+      "audit_patch": "patches/005-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/reports/context-boundary/latest.json",
+          "scripts/reports/context-boundary/latest.md",
+          "scripts/reports/copilot-sdk-harness-compatibility.md",
+          "tests/context-boundary-validation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/reports/context-boundary/latest.json",
+        "scripts/reports/context-boundary/latest.md",
+        "scripts/reports/copilot-sdk-harness-compatibility.md",
+        "tests/context-boundary-validation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "catalog-aware-effort-normalization",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+          "parent_recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 6,
+      "generation_id": "pg_e77df2503798",
+      "kind": "amend-refresh",
+      "patch_sha256": "bfe3279d8159ff4972cc2a8a6152cb2920f5c8d0d17275c90482c014e0764397",
+      "git_patch_id": "5fb558c48d23a8e4a294cb2356fcc042fb01c599",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "68c146d66666eb547c0030079fd8ce08c260635d80ac61692dc95e5407fb5e70",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/006-record.patch",
+      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/reports/context-boundary/latest.json",
+          "scripts/reports/context-boundary/latest.md",
+          "scripts/reports/copilot-sdk-harness-compatibility.md",
+          "tests/context-boundary-validation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/reports/context-boundary/latest.json",
+        "scripts/reports/context-boundary/latest.md",
+        "scripts/reports/copilot-sdk-harness-compatibility.md",
+        "tests/context-boundary-validation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "catalog-aware-effort-normalization",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "24c439a3207b22e9b90d654af4769d19adbf44848660bd7738f2ebcbe5001b68",
+          "parent_recipe_sha256": "10671711a5a63c2eff85a05ef330a7a427031a738a4c8cb86144d4b0084a46af"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,1377 @@
+diff --git a/scripts/context-boundary-validation.ts b/scripts/context-boundary-validation.ts
+new file mode 100644
+index 0000000..eb5b1e7
+--- /dev/null
++++ b/scripts/context-boundary-validation.ts
+@@ -0,0 +1,459 @@
++#!/usr/bin/env bun
++
++import { mkdir, readFile, writeFile } from "node:fs/promises"
++import { homedir } from "node:os"
++import { join } from "node:path"
++
++import type { Model, ModelsResponse } from "~/services/copilot/get-models"
++
++import { copilotHeaders } from "~/lib/api-config"
++import { resolveEndpoint } from "~/lib/endpoint-routing"
++import { state } from "~/lib/state"
++import { getTokenCount } from "~/lib/tokenizer"
++import { getCopilotToken } from "~/services/github/get-copilot-token"
++
++import {
++  buildChatPayload,
++  buildProbeCases,
++  calibratePrompt,
++  classifyPair,
++  creditDelta,
++  extractCopilotUsage,
++  extractUsage,
++  type ProbeCase,
++  type ProbeResult,
++} from "./lib/context-boundary"
++
++const args = process.argv.slice(2)
++const execute = args.includes("--execute")
++const modelArg = args.find((arg) => arg.startsWith("--model="))?.slice(8)
++const via = args.find((arg) => arg.startsWith("--via="))?.slice(6) ?? "both"
++const margin = Number(
++  args.find((arg) => arg.startsWith("--margin="))?.slice(9) ?? 512,
++)
++const timeoutMs = Number(
++  args.find((arg) => arg.startsWith("--timeout="))?.slice(10) ?? 120_000,
++)
++const proxyUrl = (
++  args.find((arg) => arg.startsWith("--proxy-url="))?.slice(12)
++  ?? "http://localhost:4141"
++).replace(/\/$/, "")
++let directBaseUrl = "https://api.githubcopilot.com"
++const selectedCases = new Set(
++  (
++    args.find((arg) => arg.startsWith("--cases="))?.slice(8)
++    ?? "control,prompt-over,combined-over,output-over"
++  ).split(","),
++)
++
++if (!new Set(["direct", "proxy", "both"]).has(via)) {
++  throw new Error("--via must be direct, proxy, or both")
++}
++if (!Number.isFinite(margin) || margin < 1)
++  throw new Error("--margin must be positive")
++if (!Number.isFinite(timeoutMs) || timeoutMs < 1)
++  throw new Error("--timeout must be positive")
++
++async function fetchJson(
++  url: string,
++  init?: RequestInit,
++): Promise<{ response: Response; body: unknown; text: string }> {
++  const response = await fetch(url, {
++    ...init,
++    signal: AbortSignal.timeout(timeoutMs),
++  })
++  const text = await response.text()
++  let body: unknown
++  try {
++    body = JSON.parse(text)
++  } catch {
++    body = undefined
++  }
++  return { response, body, text }
++}
++
++function hasCompleteLimits(model: Model): boolean {
++  const unsafeModel = model as { capabilities?: Model["capabilities"] }
++  const limits = unsafeModel.capabilities?.limits
++  return Boolean(
++    limits?.max_context_window_tokens
++      && limits.max_prompt_tokens
++      && limits.max_output_tokens,
++  )
++}
++
++function chooseModel(models: ModelsResponse): Model {
++  const eligible = models.data
++    .filter((model) => hasCompleteLimits(model))
++    .sort(
++      (a, b) =>
++        (a.capabilities.limits.max_context_window_tokens ?? Infinity)
++        - (b.capabilities.limits.max_context_window_tokens ?? Infinity),
++    )
++  const model =
++    modelArg ?
++      eligible.find((item) => item.id === modelArg)
++    : eligible.find((item) => item.model_picker_enabled)
++  if (!model)
++    throw new Error(`No eligible model found${modelArg ? `: ${modelArg}` : ""}`)
++  return model
++}
++
++function directBody(
++  model: Model,
++  content: string,
++  outputTokens: number,
++): { url: string; body: unknown } {
++  const endpoint = resolveEndpoint(model.id, { object: "list", data: [model] })
++  if (endpoint === "/responses") {
++    return {
++      url: `${directBaseUrl}/responses`,
++      body: {
++        model: model.id,
++        input: [{ type: "message", role: "user", content }],
++        max_output_tokens: outputTokens,
++        reasoning: { effort: "low" },
++        stream: false,
++      },
++    }
++  }
++  if (endpoint === "/v1/messages") {
++    return {
++      url: `${directBaseUrl}/v1/messages`,
++      body: {
++        model: model.id,
++        messages: [{ role: "user", content }],
++        max_tokens: outputTokens,
++        stream: false,
++      },
++    }
++  }
++  return {
++    url: `${directBaseUrl}/chat/completions`,
++    body: buildChatPayload(model.id, content, outputTokens),
++  }
++}
++
++function proxyBody(
++  model: Model,
++  content: string,
++  outputTokens: number,
++): { url: string; body: unknown } {
++  return {
++    url: `${proxyUrl}/v1/chat/completions`,
++    body: buildChatPayload(model.id, content, outputTokens),
++  }
++}
++
++function safeHeaders(response: Response): Record<string, string> {
++  const names = [
++    "x-copilot-service-request-id",
++    "x-github-request-id",
++    "x-ratelimit-limit",
++    "x-ratelimit-remaining",
++    "retry-after",
++  ]
++  return Object.fromEntries(
++    names.flatMap((name) => {
++      const value = response.headers.get(name)
++      return value ? [[name, value]] : []
++    }),
++  )
++}
++
++async function runRequest(
++  probeCase: ProbeCase,
++  dimension: "direct" | "proxy",
++  target: { url: string; body: unknown },
++): Promise<ProbeResult> {
++  const started = Date.now()
++  try {
++    const { response, body, text } = await fetchJson(target.url, {
++      method: "POST",
++      headers:
++        dimension === "direct" ?
++          copilotHeaders(state)
++        : { "content-type": "application/json", authorization: "Bearer dummy" },
++      body: JSON.stringify(target.body),
++    })
++    const errorObject =
++      body && typeof body === "object" ?
++        (body as Record<string, unknown>).error
++      : undefined
++    return {
++      case: probeCase.name,
++      dimension,
++      status: response.status,
++      ok: response.ok,
++      error:
++        response.ok ? undefined : (
++          JSON.stringify(errorObject ?? body ?? text.slice(0, 500))
++        ),
++      usage: extractUsage(body),
++      copilotUsage: extractCopilotUsage(body),
++      durationMs: Date.now() - started,
++      headers: safeHeaders(response),
++    }
++  } catch (error) {
++    return {
++      case: probeCase.name,
++      dimension,
++      status: null,
++      ok: false,
++      error: error instanceof Error ? error.message : String(error),
++      durationMs: Date.now() - started,
++      headers: {},
++    }
++  }
++}
++
++interface PreparedCase {
++  probeCase: ProbeCase
++  content: string
++  estimatedTokens: number
++}
++
++interface ReportRow {
++  case: string
++  estimatedInputTokens: number
++  requestedOutputTokens: number
++  classification: string
++  direct?: ProbeResult
++  proxy?: ProbeResult
++  [key: string]: unknown
++}
++
++interface ContextReport {
++  generatedAt: string
++  executed: boolean
++  model: Model
++  endpoint: string
++  via: string
++  margin: number
++  results: Array<ReportRow>
++  usageBefore: unknown
++  usageAfter: unknown
++  creditDelta?: number
++  costAttribution: string
++}
++
++function formatResult(result?: ProbeResult): string {
++  if (!result) return "—"
++  return String(result.status ?? result.error ?? "unknown")
++}
++
++function renderMarkdown(report: ContextReport): string {
++  const lines = [
++    `# Context Boundary Report — ${report.generatedAt}`,
++    "",
++    `- Model: \`${report.model.id}\``,
++    `- Endpoint: \`${report.endpoint}\``,
++    `- Executed: ${String(report.executed)}`,
++    `- Cost attribution: ${report.costAttribution}`,
++    `- Observed account credit delta: ${String(report.creditDelta ?? "unavailable")}`,
++    "",
++    "| Case | Estimate | Output requested | Direct | Proxy | Classification |",
++    "|---|---:|---:|---|---|---|",
++  ]
++  for (const item of report.results) {
++    lines.push(
++      `| ${item.case} | ${item.estimatedInputTokens} | ${item.requestedOutputTokens} | ${formatResult(item.direct)} | ${formatResult(item.proxy)} | ${item.classification} |`,
++    )
++  }
++  lines.push(
++    "",
++    "## Caveats",
++    "",
++    "- Local token counts are estimates; provider usage is authoritative when returned.",
++    "- Credit delta is account-level and may include concurrent activity or delayed accounting.",
++    "- No token-to-AIC conversion formula was inferred.",
++  )
++  return lines.join("\n")
++}
++
++async function prepareCases(
++  model: Model,
++  cases: Array<ProbeCase>,
++): Promise<Array<PreparedCase>> {
++  const prepared: Array<PreparedCase> = []
++  for (const probeCase of cases) {
++    if (probeCase.expectation === "not-applicable") {
++      prepared.push({ probeCase, content: "", estimatedTokens: 0 })
++      continue
++    }
++    const calibrated = await calibratePrompt(
++      probeCase.targetInputTokens,
++      async (content) => {
++        const count = await getTokenCount(
++          buildChatPayload(model.id, content, probeCase.requestedOutputTokens),
++          model,
++        )
++        return count.input
++      },
++    )
++    prepared.push({
++      probeCase,
++      content: calibrated.content,
++      estimatedTokens: calibrated.estimatedTokens,
++    })
++  }
++  return prepared
++}
++
++async function executeMatrix(
++  model: Model,
++  prepared: Array<PreparedCase>,
++): Promise<Array<ReportRow>> {
++  const results: Array<ReportRow> = []
++  for (const item of prepared) {
++    if (item.probeCase.expectation === "not-applicable") {
++      results.push({
++        case: item.probeCase.name,
++        estimatedInputTokens: 0,
++        requestedOutputTokens: 0,
++        classification: "not-applicable",
++        reason: item.probeCase.reason,
++      })
++      continue
++    }
++    let direct: ProbeResult | undefined
++    let proxy: ProbeResult | undefined
++    if (via === "direct" || via === "both") {
++      direct = await runRequest(
++        item.probeCase,
++        "direct",
++        directBody(model, item.content, item.probeCase.requestedOutputTokens),
++      )
++    }
++    if (via === "proxy" || via === "both") {
++      proxy = await runRequest(
++        item.probeCase,
++        "proxy",
++        proxyBody(model, item.content, item.probeCase.requestedOutputTokens),
++      )
++    }
++    results.push({
++      case: item.probeCase.name,
++      expectation: item.probeCase.expectation,
++      targetInputTokens: item.probeCase.targetInputTokens,
++      estimatedInputTokens: item.estimatedTokens,
++      requestedOutputTokens: item.probeCase.requestedOutputTokens,
++      direct,
++      proxy,
++      classification: classifyPair(direct, proxy),
++    })
++  }
++  return results
++}
++
++function directBaseFromToken(token: string): string {
++  const proxyClaim = token
++    .split(";")
++    .find((part) => part.startsWith("proxy-ep="))
++    ?.slice("proxy-ep=".length)
++  if (!proxyClaim) return "https://api.githubcopilot.com"
++  return `https://${proxyClaim.replace(/^proxy\./, "api.")}`
++}
++
++function quotaSnapshot(usage: unknown): unknown {
++  if (!usage || typeof usage !== "object") return undefined
++  const record = usage as Record<string, unknown>
++  return {
++    copilot_plan: record.copilot_plan,
++    quota_reset_date: record.quota_reset_date,
++    token_based_billing: record.token_based_billing,
++    premium_interactions:
++      record.quota_snapshots && typeof record.quota_snapshots === "object" ?
++        (record.quota_snapshots as Record<string, unknown>).premium_interactions
++      : undefined,
++  }
++}
++
++async function writeReports(report: ContextReport): Promise<void> {
++  const reportDir = join(import.meta.dir, "reports", "context-boundary")
++  await mkdir(reportDir, { recursive: true })
++  const stamp = report.generatedAt.replaceAll(/[:.]/g, "-")
++  const json = `${JSON.stringify(report, null, 2)}\n`
++  const markdown = `${renderMarkdown(report)}\n`
++  await Promise.all([
++    writeFile(join(reportDir, `${stamp}.json`), json),
++    writeFile(join(reportDir, `${stamp}.md`), markdown),
++    writeFile(join(reportDir, "latest.json"), json),
++    writeFile(join(reportDir, "latest.md"), markdown),
++  ])
++  console.log(`Reports written to ${reportDir}`)
++}
++
++async function main(): Promise<void> {
++  const catalogResponse = await fetchJson(`${proxyUrl}/v1/models`, {
++    headers: { authorization: "Bearer dummy" },
++  })
++  if (!catalogResponse.response.ok)
++    throw new Error(
++      `Failed to load proxy catalog: ${catalogResponse.response.status}`,
++    )
++  const models = catalogResponse.body as ModelsResponse
++  const model = chooseModel(models)
++  const endpoint = resolveEndpoint(model.id, models)
++  const cases = buildProbeCases(model, margin).filter((item) =>
++    selectedCases.has(item.name),
++  )
++  const prepared = await prepareCases(model, cases)
++
++  console.log(
++    JSON.stringify(
++      {
++        execute,
++        model: model.id,
++        endpoint,
++        limits: model.capabilities.limits,
++        cases: prepared.map((item) => ({
++          case: item.probeCase.name,
++          estimate: item.estimatedTokens,
++          output: item.probeCase.requestedOutputTokens,
++          expectation: item.probeCase.expectation,
++        })),
++      },
++      null,
++      2,
++    ),
++  )
++  if (!execute) {
++    console.log(
++      "Dry run only. Re-run with --execute to send the minimal matrix.",
++    )
++    return
++  }
++
++  const githubToken = (
++    await readFile(
++      join(homedir(), ".local", "share", "copilot-api", "github_token"),
++      "utf8",
++    )
++  ).trim()
++  state.githubToken = githubToken
++  const tokenResponse = await getCopilotToken()
++  state.copilotToken = tokenResponse.token
++  directBaseUrl = directBaseFromToken(tokenResponse.token)
++
++  const beforeUsage = (await fetchJson(`${proxyUrl}/usage`)).body
++  const results = await executeMatrix(model, prepared)
++  const afterUsage = (await fetchJson(`${proxyUrl}/usage`)).body
++  const delta = creditDelta(beforeUsage, afterUsage)
++  const report: ContextReport = {
++    generatedAt: new Date().toISOString(),
++    executed: true,
++    model,
++    endpoint,
++    via,
++    margin,
++    results,
++    usageBefore: quotaSnapshot(beforeUsage),
++    usageAfter: quotaSnapshot(afterUsage),
++    creditDelta: delta,
++    costAttribution: delta === undefined ? "unavailable" : "account-delta-only",
++  }
++  await writeReports(report)
++}
++
++await main()
+diff --git a/scripts/lib/context-boundary.ts b/scripts/lib/context-boundary.ts
+new file mode 100644
+index 0000000..45b5e26
+--- /dev/null
++++ b/scripts/lib/context-boundary.ts
+@@ -0,0 +1,201 @@
++import type { ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
++import type { Model } from "~/services/copilot/get-models"
++
++export type ProbeCaseName =
++  | "control"
++  | "prompt-over"
++  | "combined-over"
++  | "output-over"
++
++export interface ProbeCase {
++  name: ProbeCaseName
++  targetInputTokens: number
++  requestedOutputTokens: number
++  expectation: "accept" | "reject" | "not-applicable"
++  reason?: string
++}
++
++export interface CopilotUsage {
++  token_details: Array<{
++    batch_size: number
++    cost_per_batch: number
++    token_count: number
++    token_type: string
++  }>
++  total_nano_aiu: number
++}
++
++export interface ProbeResult {
++  case: ProbeCaseName
++  dimension: "direct" | "proxy"
++  status: number | null
++  ok: boolean
++  error?: string
++  usage?: Record<string, unknown>
++  copilotUsage?: CopilotUsage
++  durationMs: number
++  headers: Record<string, string>
++}
++
++export function buildProbeCases(model: Model, margin = 32): Array<ProbeCase> {
++  const limits = model.capabilities.limits
++  const context = limits.max_context_window_tokens
++  const prompt = limits.max_prompt_tokens
++  const output = limits.max_output_tokens
++  if (!context || !prompt || !output) {
++    throw new Error(`Model ${model.id} has incomplete context limits`)
++  }
++
++  const combinedInput = context - output + margin
++  const combinedApplicable = combinedInput <= prompt && combinedInput > 0
++
++  return [
++    {
++      name: "control",
++      targetInputTokens: Math.min(512, Math.max(32, prompt - margin)),
++      requestedOutputTokens: Math.min(16, output),
++      expectation: "accept",
++    },
++    {
++      name: "prompt-over",
++      targetInputTokens: prompt + margin,
++      requestedOutputTokens: Math.min(16, output),
++      expectation: "reject",
++    },
++    {
++      name: "combined-over",
++      targetInputTokens: combinedApplicable ? combinedInput : 0,
++      requestedOutputTokens: combinedApplicable ? output : 0,
++      expectation: combinedApplicable ? "reject" : "not-applicable",
++      reason:
++        combinedApplicable ? undefined : (
++          "No prompt/output pair can exceed context while both stay within advertised limits"
++        ),
++    },
++    {
++      name: "output-over",
++      targetInputTokens: Math.min(128, Math.max(32, prompt - margin)),
++      requestedOutputTokens: output + margin,
++      expectation: "reject",
++    },
++  ]
++}
++
++export function makePrompt(units: number): string {
++  return Array.from(
++    { length: Math.max(1, units) },
++    (_, index) =>
++      `boundary_${index.toString(36)} value_${(index * 7919).toString(36)}`,
++  ).join(" ")
++}
++
++export async function calibratePrompt(
++  targetTokens: number,
++  count: (content: string) => Promise<number>,
++): Promise<{ content: string; estimatedTokens: number }> {
++  let low = 1
++  let high = Math.max(2, targetTokens)
++  while ((await count(makePrompt(high))) < targetTokens) high *= 2
++
++  while (low < high) {
++    const middle = Math.floor((low + high) / 2)
++    if ((await count(makePrompt(middle))) < targetTokens) low = middle + 1
++    else high = middle
++  }
++
++  const candidates = [Math.max(1, low - 1), low]
++  const measured = await Promise.all(
++    candidates.map(async (units) => {
++      const content = makePrompt(units)
++      return { content, estimatedTokens: await count(content) }
++    }),
++  )
++  return measured.reduce((best, item) =>
++    (
++      Math.abs(item.estimatedTokens - targetTokens)
++      < Math.abs(best.estimatedTokens - targetTokens)
++    ) ?
++      item
++    : best,
++  )
++}
++
++export function buildChatPayload(
++  model: string,
++  content: string,
++  outputTokens: number,
++): ChatCompletionsPayload {
++  return {
++    model,
++    messages: [{ role: "user", content }],
++    max_tokens: outputTokens,
++    stream: false,
++  }
++}
++
++function isTransient(result: ProbeResult): boolean {
++  return result.status === null || result.status === 429 || result.status >= 500
++}
++
++export function classifyPair(
++  direct: ProbeResult | undefined,
++  proxy: ProbeResult | undefined,
++): string {
++  if (!direct || !proxy || isTransient(direct) || isTransient(proxy)) {
++    return "inconclusive"
++  }
++  if (direct.ok && proxy.ok) return "accepted-by-upstream"
++  if (!direct.ok && !proxy.ok) return "both-enforced"
++  if (!direct.ok && proxy.ok) return "proxy-preflight-or-workaround"
++  if (direct.ok && !proxy.ok) return "proxy-regression"
++  return "inconclusive"
++}
++
++export function extractUsage(
++  body: unknown,
++): Record<string, unknown> | undefined {
++  if (!body || typeof body !== "object") return undefined
++  const usage = (body as Record<string, unknown>).usage
++  return usage && typeof usage === "object" ?
++      (usage as Record<string, unknown>)
++    : undefined
++}
++
++export function extractCopilotUsage(body: unknown): CopilotUsage | undefined {
++  if (!body || typeof body !== "object") return undefined
++  const usage = (body as Record<string, unknown>).copilot_usage
++  if (!usage || typeof usage !== "object") return undefined
++  const record = usage as Record<string, unknown>
++  return (
++      Array.isArray(record.token_details)
++        && typeof record.total_nano_aiu === "number"
++    ) ?
++      (record as unknown as CopilotUsage)
++    : undefined
++}
++
++export function calculateNanoAiu(usage: CopilotUsage): number {
++  return usage.token_details.reduce(
++    (total, detail) =>
++      total + (detail.token_count * detail.cost_per_batch) / detail.batch_size,
++    0,
++  )
++}
++
++export function creditDelta(
++  before: unknown,
++  after: unknown,
++): number | undefined {
++  const read = (value: unknown): number | undefined => {
++    if (!value || typeof value !== "object") return undefined
++    const snapshots = (value as Record<string, unknown>).quota_snapshots
++    if (!snapshots || typeof snapshots !== "object") return undefined
++    const premium = (snapshots as Record<string, unknown>).premium_interactions
++    if (!premium || typeof premium !== "object") return undefined
++    const credits = (premium as Record<string, unknown>).credits_used
++    return typeof credits === "number" ? credits : undefined
++  }
++  const start = read(before)
++  const end = read(after)
++  return start === undefined || end === undefined ? undefined : end - start
++}
+diff --git a/scripts/reports/context-boundary/latest.json b/scripts/reports/context-boundary/latest.json
+new file mode 100644
+index 0000000..cd62cb7
+--- /dev/null
++++ b/scripts/reports/context-boundary/latest.json
+@@ -0,0 +1,515 @@
++{
++  "generatedAt": "2026-07-20T20:14:39.004Z",
++  "executed": true,
++  "model": {
++    "id": "gpt-4",
++    "object": "model",
++    "type": "model",
++    "created": 0,
++    "created_at": "1970-01-01T00:00:00.000Z",
++    "owned_by": "Azure OpenAI",
++    "display_name": "GPT 4",
++    "capabilities": {
++      "family": "gpt-4",
++      "limits": {
++        "max_context_window_tokens": 32768,
++        "max_output_tokens": 4096,
++        "max_prompt_tokens": 32768
++      },
++      "object": "model_capabilities",
++      "supports": {
++        "streaming": true,
++        "tool_calls": true
++      },
++      "tokenizer": "cl100k_base",
++      "type": "chat"
++    },
++    "preview": false,
++    "model_picker_enabled": false
++  },
++  "endpoint": "/chat/completions",
++  "via": "both",
++  "margin": 512,
++  "results": [
++    {
++      "case": "control",
++      "expectation": "accept",
++      "targetInputTokens": 512,
++      "estimatedInputTokens": 515,
++      "requestedOutputTokens": 16,
++      "direct": {
++        "case": "control",
++        "dimension": "direct",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 16,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 513,
++          "prompt_tokens_details": {
++            "cached_tokens": 0
++          },
++          "total_tokens": 529
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 513,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 0,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 16,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 144250000
++        },
++        "durationMs": 1229,
++        "headers": {
++          "x-copilot-service-request-id": "456336e1-27ff-417a-93e4-f174b5087feb",
++          "x-github-request-id": "D250:20025C:8D3C0D1:A551EAF:6A5E8195"
++        }
++      },
++      "proxy": {
++        "case": "control",
++        "dimension": "proxy",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 16,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 513,
++          "prompt_tokens_details": {
++            "cached_tokens": 0
++          },
++          "total_tokens": 529
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 513,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 0,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 16,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 144250000
++        },
++        "durationMs": 1395,
++        "headers": {}
++      },
++      "classification": "accepted-by-upstream"
++    },
++    {
++      "case": "prompt-over",
++      "expectation": "reject",
++      "targetInputTokens": 33280,
++      "estimatedInputTokens": 33280,
++      "requestedOutputTokens": 16,
++      "direct": {
++        "case": "prompt-over",
++        "dimension": "direct",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 16,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 33173,
++          "prompt_tokens_details": {
++            "cached_tokens": 0
++          },
++          "total_tokens": 33189
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 33173,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 0,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 16,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 8309250000
++        },
++        "durationMs": 2326,
++        "headers": {
++          "x-copilot-service-request-id": "f5f3dd70-a227-45c7-a184-09a51776fb2e",
++          "x-github-request-id": "D250:20025C:8D3CEFD:A552E50:6A5E8195"
++        }
++      },
++      "proxy": {
++        "case": "prompt-over",
++        "dimension": "proxy",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 16,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 33173,
++          "prompt_tokens_details": {
++            "cached_tokens": 33024
++          },
++          "total_tokens": 33189
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 149,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 33024,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 16,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 4181250000
++        },
++        "durationMs": 1404,
++        "headers": {}
++      },
++      "classification": "accepted-by-upstream"
++    },
++    {
++      "case": "combined-over",
++      "expectation": "reject",
++      "targetInputTokens": 29184,
++      "estimatedInputTokens": 29182,
++      "requestedOutputTokens": 4096,
++      "direct": {
++        "case": "combined-over",
++        "dimension": "direct",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 547,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 29105,
++          "prompt_tokens_details": {
++            "cached_tokens": 28928
++          },
++          "total_tokens": 29652
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 177,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 28928,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 547,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 4207250000
++        },
++        "durationMs": 8303,
++        "headers": {
++          "x-copilot-service-request-id": "09a727d6-b252-4767-8fae-124b95283e6c",
++          "x-github-request-id": "D250:20025C:8D3E330:A554489:6A5E8199"
++        }
++      },
++      "proxy": {
++        "case": "combined-over",
++        "dimension": "proxy",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 129,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 29105,
++          "prompt_tokens_details": {
++            "cached_tokens": 28928
++          },
++          "total_tokens": 29234
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 177,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 28928,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 129,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 3789250000
++        },
++        "durationMs": 3072,
++        "headers": {}
++      },
++      "classification": "accepted-by-upstream"
++    },
++    {
++      "case": "output-over",
++      "expectation": "reject",
++      "targetInputTokens": 128,
++      "estimatedInputTokens": 131,
++      "requestedOutputTokens": 4608,
++      "direct": {
++        "case": "output-over",
++        "dimension": "direct",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 301,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 131,
++          "prompt_tokens_details": {
++            "cached_tokens": 0
++          },
++          "total_tokens": 432
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 131,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 0,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 301,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 333750000
++        },
++        "durationMs": 4386,
++        "headers": {
++          "x-copilot-service-request-id": "a39e775d-99a0-45b3-b5dc-aa78fcb850b1",
++          "x-github-request-id": "D250:20025C:8D41DB7:A55859F:6A5E81A3"
++        }
++      },
++      "proxy": {
++        "case": "output-over",
++        "dimension": "proxy",
++        "status": 200,
++        "ok": true,
++        "usage": {
++          "completion_tokens": 257,
++          "completion_tokens_details": {
++            "accepted_prediction_tokens": 0,
++            "rejected_prediction_tokens": 0
++          },
++          "prompt_tokens": 131,
++          "prompt_tokens_details": {
++            "cached_tokens": 0
++          },
++          "total_tokens": 388
++        },
++        "copilotUsage": {
++          "token_details": [
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 250000000000,
++              "token_count": 131,
++              "token_type": "input"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 125000000000,
++              "token_count": 0,
++              "token_type": "cache_read"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 0,
++              "token_count": 0,
++              "token_type": "cache_write"
++            },
++            {
++              "batch_size": 1000000,
++              "cost_per_batch": 1000000000000,
++              "token_count": 257,
++              "token_type": "output"
++            }
++          ],
++          "total_nano_aiu": 289750000
++        },
++        "durationMs": 3598,
++        "headers": {}
++      },
++      "classification": "accepted-by-upstream"
++    }
++  ],
++  "usageBefore": {
++    "copilot_plan": "enterprise",
++    "quota_reset_date": "2026-08-01",
++    "token_based_billing": true,
++    "premium_interactions": {
++      "overage_count": 0,
++      "overage_entitlement": 0,
++      "overage_permitted": true,
++      "percent_remaining": 100,
++      "quota_id": "premium_interactions",
++      "quota_remaining": 0,
++      "unlimited": true,
++      "timestamp_utc": "2026-07-20T13:13:54.912-07:00",
++      "has_quota": true,
++      "quota_reset_at": 0,
++      "token_based_billing": true,
++      "credits_used": 341334,
++      "remaining": 0,
++      "entitlement": 0
++    }
++  },
++  "usageAfter": {
++    "copilot_plan": "enterprise",
++    "quota_reset_date": "2026-08-01",
++    "token_based_billing": true,
++    "premium_interactions": {
++      "overage_count": 0,
++      "overage_entitlement": 0,
++      "overage_permitted": true,
++      "percent_remaining": 100,
++      "quota_id": "premium_interactions",
++      "quota_remaining": 0,
++      "unlimited": true,
++      "timestamp_utc": "2026-07-20T20:14:39.200Z",
++      "has_quota": true,
++      "quota_reset_at": 0,
++      "token_based_billing": true,
++      "credits_used": 341334,
++      "remaining": 0,
++      "entitlement": 0
++    }
++  },
++  "creditDelta": 0,
++  "costAttribution": "account-delta-only"
++}
+diff --git a/scripts/reports/context-boundary/latest.md b/scripts/reports/context-boundary/latest.md
+new file mode 100644
+index 0000000..2a4b686
+--- /dev/null
++++ b/scripts/reports/context-boundary/latest.md
+@@ -0,0 +1,20 @@
++# Context Boundary Report — 2026-07-20T20:14:39.004Z
++
++- Model: `gpt-4`
++- Endpoint: `/chat/completions`
++- Executed: true
++- Cost attribution: account-delta-only
++- Observed account credit delta: 0
++
++| Case | Estimate | Output requested | Direct | Proxy | Classification |
++|---|---:|---:|---|---|---|
++| control | 515 | 16 | 200 | 200 | accepted-by-upstream |
++| prompt-over | 33280 | 16 | 200 | 200 | accepted-by-upstream |
++| combined-over | 29182 | 4096 | 200 | 200 | accepted-by-upstream |
++| output-over | 131 | 4608 | 200 | 200 | accepted-by-upstream |
++
++## Caveats
++
++- Local token counts are estimates; provider usage is authoritative when returned.
++- Credit delta is account-level and may include concurrent activity or delayed accounting.
++- No token-to-AIC conversion formula was inferred.
+diff --git a/tests/context-boundary-validation.test.ts b/tests/context-boundary-validation.test.ts
+new file mode 100644
+index 0000000..cf75b36
+--- /dev/null
++++ b/tests/context-boundary-validation.test.ts
+@@ -0,0 +1,152 @@
++import { describe, expect, it } from "bun:test"
++
++import type { Model } from "~/services/copilot/get-models"
++
++import {
++  buildProbeCases,
++  calculateNanoAiu,
++  calibratePrompt,
++  classifyPair,
++  creditDelta,
++  extractCopilotUsage,
++  extractUsage,
++  type ProbeResult,
++} from "../scripts/lib/context-boundary"
++
++function model(
++  overrides: Partial<Model["capabilities"]["limits"]> = {},
++): Model {
++  return {
++    id: "tiny",
++    name: "Tiny",
++    object: "model",
++    vendor: "test",
++    version: "1",
++    preview: false,
++    model_picker_enabled: true,
++    capabilities: {
++      family: "tiny",
++      limits: {
++        max_context_window_tokens: 100,
++        max_prompt_tokens: 80,
++        max_output_tokens: 30,
++        ...overrides,
++      },
++      object: "model_capabilities",
++      supports: {},
++      tokenizer: "test",
++      type: "chat",
++    },
++  }
++}
++
++function quotaUsage(credits: number) {
++  return {
++    quota_snapshots: { premium_interactions: { credits_used: credits } },
++  }
++}
++
++function result(ok: boolean, dimension: "direct" | "proxy"): ProbeResult {
++  return {
++    case: "control",
++    dimension,
++    status: ok ? 200 : 400,
++    ok,
++    durationMs: 1,
++    headers: {},
++  }
++}
++
++describe("context boundary matrix", () => {
++  it("builds all four boundary cases", () => {
++    const cases = buildProbeCases(model(), 5)
++    expect(cases.map((item) => item.name)).toEqual([
++      "control",
++      "prompt-over",
++      "combined-over",
++      "output-over",
++    ])
++    expect(cases[1].targetInputTokens).toBe(85)
++    expect(cases[2]).toMatchObject({
++      targetInputTokens: 75,
++      requestedOutputTokens: 30,
++      expectation: "reject",
++    })
++    expect(cases[3].requestedOutputTokens).toBe(35)
++  })
++
++  it("marks combined overflow impossible when legal values cannot exceed context", () => {
++    const combined = buildProbeCases(
++      model({
++        max_context_window_tokens: 200,
++        max_prompt_tokens: 80,
++        max_output_tokens: 30,
++      }),
++      5,
++    )[2]
++    expect(combined.expectation).toBe("not-applicable")
++  })
++
++  it("calibrates generated content around a target", async () => {
++    const calibrated = await calibratePrompt(100, (content) =>
++      Promise.resolve(content.split(" ").length),
++    )
++    expect(Math.abs(calibrated.estimatedTokens - 100)).toBeLessThanOrEqual(2)
++  })
++})
++
++describe("context result reporting", () => {
++  it("classifies direct and proxy outcomes", () => {
++    expect(classifyPair(result(true, "direct"), result(true, "proxy"))).toBe(
++      "accepted-by-upstream",
++    )
++    expect(classifyPair(result(false, "direct"), result(false, "proxy"))).toBe(
++      "both-enforced",
++    )
++    expect(classifyPair(result(true, "direct"), result(false, "proxy"))).toBe(
++      "proxy-regression",
++    )
++    const unavailable = result(false, "direct")
++    unavailable.status = 503
++    expect(classifyPair(unavailable, result(true, "proxy"))).toBe(
++      "inconclusive",
++    )
++  })
++
++  it("extracts endpoint-neutral usage", () => {
++    expect(
++      extractUsage({ usage: { input_tokens: 10, output_tokens: 2 } }),
++    ).toEqual({ input_tokens: 10, output_tokens: 2 })
++    expect(extractUsage({ choices: [] })).toBeUndefined()
++  })
++
++  it("extracts and verifies provider Copilot usage", () => {
++    const body = {
++      copilot_usage: {
++        token_details: [
++          {
++            batch_size: 1_000_000,
++            cost_per_batch: 500_000_000_000,
++            token_count: 9,
++            token_type: "input",
++          },
++          {
++            batch_size: 1_000_000,
++            cost_per_batch: 3_000_000_000_000,
++            token_count: 6,
++            token_type: "output",
++          },
++        ],
++        total_nano_aiu: 22_500_000,
++      },
++    }
++    const usage = extractCopilotUsage(body)
++    if (!usage) throw new Error("Expected Copilot usage")
++    expect(calculateNanoAiu(usage)).toBe(usage.total_nano_aiu)
++  })
++
++  it("computes account-level credit deltas", () => {
++    expect(creditDelta(quotaUsage(100), quotaUsage(125))).toBe(25)
++    expect(creditDelta({}, quotaUsage(125))).toBeUndefined()
++  })
++})

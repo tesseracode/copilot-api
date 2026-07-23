@@ -1,0 +1,27 @@
+{
+  "id": "context-boundary-cost-validation",
+  "slug": "context-boundary-cost-validation",
+  "title": "Probe catalog context boundaries and observed Copilot credit usage safely",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-19T05:56:13Z",
+  "updated_at": "2026-07-20T20:22:59Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-20T20:15:10Z",
+    "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "three-tier-routing",
+      "kind": "soft"
+    },
+    {
+      "slug": "catalog-aware-effort-normalization",
+      "kind": "soft"
+    }
+  ]
+}
