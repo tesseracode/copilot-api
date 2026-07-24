@@ -54,7 +54,9 @@ const argsDone = (args: string) => ({
 
 describe("syncToolArguments divergence guard", () => {
   test("identity: done equals accumulated -> zero extra chunks, no warn", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         toolCallAdded(),
@@ -74,7 +76,9 @@ describe("syncToolArguments divergence guard", () => {
   })
 
   test("extension: done extends accumulated -> exactly one suffix chunk, no warn", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         toolCallAdded(),
@@ -97,7 +101,9 @@ describe("syncToolArguments divergence guard", () => {
   })
 
   test("divergence: done disagrees with accumulated -> zero extra chunks, warn invoked, accumulator preserved", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         toolCallAdded(),
@@ -126,7 +132,9 @@ describe("syncToolArguments divergence guard", () => {
   })
 
   test("end-to-end on divergence: reassembled tool_use input is the streamed prefix and parses", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         toolCallAdded(),

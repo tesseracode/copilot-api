@@ -54,7 +54,7 @@ const calculateContentPartsTokens = (
   for (const part of contentParts) {
     if (part.type === "image_url") {
       tokens += encoder.encode(part.image_url.url).length + 85
-    } else if (part.text) {
+    } else if (part.type === "text") {
       tokens += encoder.encode(part.text).length
     }
   }

@@ -114,14 +114,14 @@ function collectToolStreamDetails(events: Array<AnthropicStreamEventData>) {
       event.type === "content_block_start"
       && event.content_block.type === "tool_use"
     ) {
-      toolStarts.push(event)
+      toolStarts.push(event as AnthropicToolStartEvent)
     }
 
     if (
       event.type === "content_block_delta"
       && event.delta.type === "input_json_delta"
     ) {
-      inputJsonDeltas.push(event)
+      inputJsonDeltas.push(event as AnthropicInputJsonDeltaEvent)
     }
 
     if (event.type === "message_delta") {

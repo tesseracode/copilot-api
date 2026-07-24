@@ -47,7 +47,9 @@ const textDelta = (delta: string) => ({
 
 describe("Responses streaming terminal-error events", () => {
   test("response.failed yields one chunk with error and emits Anthropic error event", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         created(),
@@ -94,7 +96,9 @@ describe("Responses streaming terminal-error events", () => {
   })
 
   test("generic error event yields chunk with error and emits Anthropic error event", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         created(),
@@ -125,7 +129,9 @@ describe("Responses streaming terminal-error events", () => {
   })
 
   test("response.incomplete with max_output_tokens maps to length and emits message_stop", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         created(),
@@ -159,7 +165,9 @@ describe("Responses streaming terminal-error events", () => {
   })
 
   test("response.incomplete with no reason maps to stop", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const { chunks } = runStream([
         created(),
