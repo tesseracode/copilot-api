@@ -1,0 +1,23 @@
+{
+  "id": "copilot-pricing-node-runtime",
+  "slug": "copilot-pricing-node-runtime",
+  "title": "Make pricing refresh Node-safe, catalog-scoped, and conditionally cacheable",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-24T03:57:43Z",
+  "updated_at": "2026-07-24T08:42:07Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-24T04:28:24Z",
+    "base_commit": "c09bd7568f8ac522872ddc4b089f781d2e206c26",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "copilot-pricing-cache",
+      "kind": "hard"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+ bun.lock                      |   7 ++-
+ package.json                  |   1 +
+ src/lib/copilot-pricing.ts    | 117 +++++++++++++++++++++++++++++++++---------
+ src/routes/pricing/route.ts   |  17 +++++-
+ src/start.ts                  |   2 +-
+ tests/copilot-pricing.test.ts |  94 ++++++++++++++++++++++++++++++++-
+ 6 files changed, 208 insertions(+), 30 deletions(-)

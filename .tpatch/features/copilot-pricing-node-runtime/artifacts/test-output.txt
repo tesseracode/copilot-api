@@ -1,0 +1,28 @@
+# Test run — 2026-07-24T04:28:24Z
+# Command: bun test tests/copilot-pricing.test.ts tests/pricing-conditional-route.test.ts tests/pricing-updater-recovery.test.ts tests/pricing-scheduler.test.ts && bun run build
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+[warn] Failed to refresh Copilot pricing cache: offline
+  at <anonymous> (tests/pricing-scheduler.test.ts:49:60)
+  at refreshPricing (src/services/copilot/pricing-scheduler.ts:16:22)
+  at startPricingScheduler (src/services/copilot/pricing-scheduler.ts:42:9)
+  at <anonymous> (tests/pricing-scheduler.test.ts:49:13)
+
+ 13 pass
+ 0 fail
+ 37 expect() calls
+Ran 13 tests across 4 files. [974.00ms]
+$ tsdown
+[34mℹ[39m tsdown [2mv0.15.6[22m powered by rolldown [2mv1.0.0-beta.41[22m
+[34mℹ[39m Using tsdown config: [4m/Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api/tsdown.config.ts[24m
+[34mℹ[39m entry: [34msrc/main.ts[39m
+[34mℹ[39m target: [34mes2022[39m
+[34mℹ[39m tsconfig: [34mtsconfig.json[39m
+[34mℹ[39m Build start
+[34mℹ[39m Cleaning 2 files
+[34mℹ[39m Granting execute permission to [4mdist/main.js[24m
+[34mℹ[39m [2mdist/[22m[1mmain.js[22m      [2m109.31 kB[22m [2m│ gzip: 27.60 kB[22m
+[34mℹ[39m [2mdist/[22mmain.js.map  [2m237.06 kB[22m [2m│ gzip: 57.40 kB[22m
+[34mℹ[39m 2 files, total: 346.38 kB
+[32m✔[39m Build complete in [32m44ms[39m

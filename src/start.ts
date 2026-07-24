@@ -63,8 +63,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   await setupCopilotToken()
-  await startPricingScheduler()
   await cacheModels()
+  await startPricingScheduler()
 
   const modelCount = state.models?.data.length ?? 0
   consola.info(
