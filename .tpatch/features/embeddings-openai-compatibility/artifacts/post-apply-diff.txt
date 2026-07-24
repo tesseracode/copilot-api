@@ -1,0 +1,3 @@
+ src/routes/embeddings/route.ts            | 165 ++++++++++++++++++++++++++++--
+ src/services/copilot/create-embeddings.ts |  17 +--
+ 2 files changed, 168 insertions(+), 14 deletions(-)

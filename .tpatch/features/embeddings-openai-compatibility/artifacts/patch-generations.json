@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "feature": "embeddings-openai-compatibility",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_a2024770f8a5",
+      "kind": "record",
+      "patch_sha256": "1dccf67ec9f998fb12f5bbeb237a052f5c4495bab859b5b599bc91e544c74868",
+      "git_patch_id": "8b12e227b7b0b2b7bda3c6eb19db5fa9bde7a573",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "44a926d2ce4201314e87695a42110938fc5f67660217b7b22d7ea089328b2d68",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "c09bd7568f8ac522872ddc4b089f781d2e206c26",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/reports/gateway-live-acceptance.md",
+          "src/routes/embeddings/route.ts",
+          "src/services/copilot/create-embeddings.ts",
+          "tests/embeddings-compatibility.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/reports/gateway-live-acceptance.md",
+        "src/routes/embeddings/route.ts",
+        "src/services/copilot/create-embeddings.ts",
+        "tests/embeddings-compatibility.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

@@ -1,24 +1,25 @@
 import { copilotBaseUrl } from "~/lib/api-config"
 import { copilotFetch } from "~/lib/copilot-fetch"
-import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
-export const createEmbeddings = async (payload: EmbeddingRequest) => {
+export const createEmbeddings = async (
+  payload: EmbeddingRequest,
+  signal?: AbortSignal,
+): Promise<Response> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
-  const response = await copilotFetch(`${copilotBaseUrl(state)}/embeddings`, {
+  return await copilotFetch(`${copilotBaseUrl(state)}/embeddings`, {
     method: "POST",
     body: JSON.stringify(payload),
+    signal,
   })
-
-  if (!response.ok) throw new HTTPError("Failed to create embeddings", response)
-
-  return (await response.json()) as EmbeddingResponse
 }
 
 export interface EmbeddingRequest {
-  input: string | Array<string>
+  input: Array<string>
   model: string
+  dimensions?: number
+  encoding_format?: "float"
 }
 
 export interface Embedding {
