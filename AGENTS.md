@@ -1,5 +1,9 @@
 # AGENTS.md
 
+> **Also read [`CLAUDE.md`](./CLAUDE.md)** — it holds durable project notes and
+> preferences accumulated across agent sessions (validation gates, model-handling
+> rules, tpatch workflow gotchas).
+
 ## Build, Lint, and Test Commands
 
 - **Build:**  
