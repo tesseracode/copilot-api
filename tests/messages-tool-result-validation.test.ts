@@ -28,7 +28,9 @@ describe("translateMessageContent multimodal handling", () => {
   })
 
   test("image_url part with empty url is dropped with warn", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const out = translateMessageContent([
         { type: "image_url", image_url: { url: "" } },
@@ -56,7 +58,9 @@ describe("translateMessageContent multimodal handling", () => {
   })
 
   test("unknown type is dropped with warn carrying the type label", () => {
-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
+    const warnSpy = spyOn(consola, "warn").mockImplementation(
+      Object.assign(() => {}, { raw: () => {} }),
+    )
     try {
       const out = translateMessageContent([{ type: "mystery_box", text: "" }])
       expect(out).toEqual([])

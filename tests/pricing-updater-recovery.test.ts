@@ -17,17 +17,22 @@ describe("pricing updater recovery", () => {
     const target = path.join(directory, "pricing.json")
     try {
       const first = await updateCopilotPricing(
-        () =>
-          Promise.resolve(
-            new Response(fixture, { headers: { etag: '"first"' } }),
-          ),
+        Object.assign(
+          () =>
+            Promise.resolve(
+              new Response(fixture, { headers: { etag: '"first"' } }),
+            ),
+          { preconnect: () => {} },
+        ),
         target,
       )
       const fetchedAt = first.cache?.source.fetched_at
       const validatedAt = first.cache?.source.validated_at
 
       const failed = await updateCopilotPricing(
-        () => Promise.reject(new Error("offline")),
+        Object.assign(() => Promise.reject(new Error("offline")), {
+          preconnect: () => {},
+        }),
         target,
       )
       expect(failed.status).toBe("stale")
@@ -36,10 +41,18 @@ describe("pricing updater recovery", () => {
       expect(failed.cache?.source.last_attempt_at).toBeDefined()
       expect(failed.cache?.source.error).toBe("offline")
 
-      const recovered = await updateCopilotPricing((_input, init) => {
-        expect(new Headers(init?.headers).get("if-none-match")).toBe('"first"')
-        return Promise.resolve(new Response(null, { status: 304 }))
-      }, target)
+      const recovered = await updateCopilotPricing(
+        Object.assign(
+          (_input: string | URL | Request, init?: RequestInit) => {
+            expect(new Headers(init?.headers).get("if-none-match")).toBe(
+              '"first"',
+            )
+            return Promise.resolve(new Response(null, { status: 304 }))
+          },
+          { preconnect: () => {} },
+        ),
+        target,
+      )
       expect(recovered.status).toBe("not-modified")
       expect(recovered.cache?.source.stale).toBe(false)
       expect(recovered.cache?.source.error).toBeUndefined()

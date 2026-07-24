@@ -1,0 +1,912 @@
+diff --git a/scripts/lib/copilot-test-lib.ts b/scripts/lib/copilot-test-lib.ts
+new file mode 100644
+index 0000000..ce4423a
+--- /dev/null
++++ b/scripts/lib/copilot-test-lib.ts
+@@ -0,0 +1,148 @@
++/**
++ * Shared helpers for standalone proxy validation scripts (see
++ * scripts/proxy-model-validation.ts). Not part of the shipped server: this
++ * module authenticates directly against the upstream Copilot API (bypassing
++ * the local proxy), fetches and classifies the model catalog, and provides
++ * small header/formatting helpers used to build the 3-dimension
++ * (direct / proxy-messages / proxy-chat) blame matrix report.
++ *
++ * Uses the same building blocks as scripts/context-boundary-validation.ts:
++ * the persisted GitHub token is exchanged for a Copilot token via
++ * ~/services/github/get-copilot-token, and headers are built with the real
++ * ~/lib/api-config helpers so requests look identical to what the shipped
++ * server sends.
++ */
++
++import { readFile } from "node:fs/promises"
++
++import type { UpstreamEndpoint } from "~/lib/endpoint-routing"
++import type { Model, ModelsResponse } from "~/services/copilot/get-models"
++
++import { copilotHeaders as buildCopilotHeaders } from "~/lib/api-config"
++import { resolveEndpoint } from "~/lib/endpoint-routing"
++import { PATHS } from "~/lib/paths"
++import { state } from "~/lib/state"
++import { getCopilotToken } from "~/services/github/get-copilot-token"
++
++export type CopilotModel = Model
++
++export interface ModelProfile {
++  id: string
++  endpoint: UpstreamEndpoint
++  isClaude: boolean
++  toolSupport: boolean
++  thinkingSupport: "adaptive" | "enabled-only" | "none"
++  effortSupport: "param" | "none"
++  temperatureSupport: boolean
++  maxOutputTokens: number
++}
++
++export interface TestResult {
++  test: string
++  model: string
++  endpoint: string
++  status: "pass" | "fail" | "skip"
++  detail?: string
++  durationMs: number
++}
++
++/** Direct (non-proxied) upstream Copilot API base URL. */
++export const COPILOT_API_BASE_URL =
++  process.env.COPILOT_API_BASE_URL ?? "https://api.githubcopilot.com"
++
++/** Local copilot-api proxy base URL. */
++export const PROXY_URL = (
++  process.env.PROXY_URL ?? "http://localhost:4141"
++).replace(/\/$/, "")
++
++/**
++ * Authenticate using the GitHub token persisted by `copilot-api auth`,
++ * exchange it for a Copilot token, and return that token — the "jwt" used
++ * to call the upstream Copilot API directly.
++ */
++export async function getJwt(): Promise<string> {
++  const githubToken = (await readFile(PATHS.GITHUB_TOKEN_PATH, "utf8")).trim()
++  if (!githubToken) {
++    throw new Error(
++      `No GitHub token found at ${PATHS.GITHUB_TOKEN_PATH}. Run 'bun run dev auth' first.`,
++    )
++  }
++  state.githubToken = githubToken
++  const tokenResponse = await getCopilotToken()
++  state.copilotToken = tokenResponse.token
++  return tokenResponse.token
++}
++
++/** Build headers for a direct (non-proxied) request to the Copilot API. */
++export function copilotHeaders(jwt: string): Record<string, string> {
++  state.copilotToken = jwt
++  return buildCopilotHeaders(state)
++}
++
++/** Build headers for a request to the local proxy's /v1/messages endpoint. */
++export function proxyHeaders(): Record<string, string> {
++  return {
++    "content-type": "application/json",
++    "anthropic-version": "2023-06-01",
++  }
++}
++
++/** Fetch the full model catalog directly from the upstream Copilot API. */
++export async function fetchModels(jwt: string): Promise<Array<CopilotModel>> {
++  const response = await fetch(`${COPILOT_API_BASE_URL}/models`, {
++    headers: copilotHeaders(jwt),
++  })
++  if (!response.ok) {
++    throw new Error(`Failed to fetch models: HTTP ${response.status}`)
++  }
++  const body = (await response.json()) as ModelsResponse
++  return body.data
++}
++
++/** Keep only chat-completion models (drop embeddings and other non-chat types). */
++export function filterChatModels(
++  models: Array<CopilotModel>,
++): Array<CopilotModel> {
++  return models.filter((model) => model.capabilities.type === "chat")
++}
++
++/**
++ * Capability fields the live catalog advertises but that the shared `Model`
++ * type (src/services/copilot/get-models.ts) doesn't declare, because
++ * production code doesn't consume them yet (see `ModelSupports`).
++ */
++type ModelSupports = Model["capabilities"]["supports"]
++interface ExtendedSupports extends ModelSupports {
++  adaptive_thinking?: boolean
++}
++
++/** Classify a model's proxy-relevant capabilities for the validation report. */
++export function classifyModel(model: CopilotModel): ModelProfile {
++  const catalog: ModelsResponse = { object: "list", data: [model] }
++  const endpoint = resolveEndpoint(model.id, catalog)
++  const isClaude = model.id.startsWith("claude-")
++  const supports = model.capabilities.supports
++  const extended: ExtendedSupports = supports
++
++  let thinkingSupport: ModelProfile["thinkingSupport"] = "none"
++  if (isClaude) {
++    thinkingSupport = extended.adaptive_thinking ? "adaptive" : "enabled-only"
++  }
++
++  return {
++    id: model.id,
++    endpoint,
++    isClaude,
++    toolSupport: Boolean(supports.tool_calls),
++    thinkingSupport,
++    effortSupport:
++      (supports.reasoning_effort?.length ?? 0) > 0 ? "param" : "none",
++    temperatureSupport: endpoint !== "/responses",
++    maxOutputTokens: model.capabilities.limits.max_output_tokens ?? 0,
++  }
++}
++
++/** Format a millisecond duration for compact report tables. */
++export function fmtMs(ms: number): string {
++  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(2)}s`
++}
+diff --git a/scripts/proxy-model-validation.ts b/scripts/proxy-model-validation.ts
+index 54223b3..62901bf 100644
+--- a/scripts/proxy-model-validation.ts
++++ b/scripts/proxy-model-validation.ts
+@@ -34,7 +34,7 @@ import {
+   fmtMs,
+   COPILOT_API_BASE_URL,
+   PROXY_URL,
+-} from "/Users/jbencardino/Documents/Proyectos/ccexplore/development-repo/scripts/lib/copilot-test-lib"
++} from "./lib/copilot-test-lib"
+ 
+ // ── CLI args ─────────────────────────────────────────────────────────────────
+ 
+diff --git a/src/lib/tokenizer.ts b/src/lib/tokenizer.ts
+index 8c3eda7..6ec4a5d 100644
+--- a/src/lib/tokenizer.ts
++++ b/src/lib/tokenizer.ts
+@@ -54,7 +54,7 @@ const calculateContentPartsTokens = (
+   for (const part of contentParts) {
+     if (part.type === "image_url") {
+       tokens += encoder.encode(part.image_url.url).length + 85
+-    } else if (part.text) {
++    } else if (part.type === "text") {
+       tokens += encoder.encode(part.text).length
+     }
+   }
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index b90f2ec..fd2f566 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -372,7 +372,7 @@ function makeChunk(
+     finishReason,
+     usage,
+   }: {
+-    delta: Record<string, unknown>
++    delta: ChatCompletionChunk["choices"][0]["delta"]
+     finishReason: string | null
+     usage?: ChatCompletionChunk["usage"]
+   },
+@@ -386,7 +386,7 @@ function makeChunk(
+     choices: [
+       {
+         index: 0,
+-        delta: delta as ChatCompletionChunk["choices"][0]["delta"],
++        delta,
+         finish_reason:
+           finishReason as ChatCompletionChunk["choices"][0]["finish_reason"],
+         logprobs: null,
+diff --git a/src/services/copilot/forward-native-messages.test.ts b/src/services/copilot/forward-native-messages.test.ts
+index e974e3f..971a63e 100644
+--- a/src/services/copilot/forward-native-messages.test.ts
++++ b/src/services/copilot/forward-native-messages.test.ts
+@@ -41,274 +41,272 @@ function setCatalog(
+   } as unknown as typeof state.models
+ }
+ 
+-describe("buildNativeBody", () => {
+-  beforeEach(() => {
+-    state.is1MContext = false
+-    setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"], {
+-      "claude-sonnet-4.6": {
+-        reasoning_effort: ["low", "medium", "high", "max"],
+-      },
+-      "claude-opus-4.7": {
+-        reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
+-      },
+-    })
++beforeEach(() => {
++  state.is1MContext = false
++  setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"], {
++    "claude-sonnet-4.6": {
++      reasoning_effort: ["low", "medium", "high", "max"],
++    },
++    "claude-opus-4.7": {
++      reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
++    },
+   })
++})
+ 
+-  describe("stop_sequences sanitization", () => {
+-    it("strips whitespace-only stop sequences", () => {
+-      const body = buildNativeBody(basePayload({ stop_sequences: ["\n"] }), {})
+-      expect(body.stop_sequences).toBeUndefined()
+-    })
++describe("stop_sequences sanitization", () => {
++  it("strips whitespace-only stop sequences", () => {
++    const body = buildNativeBody(basePayload({ stop_sequences: ["\n"] }), {})
++    expect(body.stop_sequences).toBeUndefined()
++  })
+ 
+-    it("keeps valid stop sequences", () => {
+-      const body = buildNativeBody(
+-        basePayload({ stop_sequences: ["END", "STOP"] }),
+-        {},
+-      )
+-      expect(body.stop_sequences).toEqual(["END", "STOP"])
+-    })
++  it("keeps valid stop sequences", () => {
++    const body = buildNativeBody(
++      basePayload({ stop_sequences: ["END", "STOP"] }),
++      {},
++    )
++    expect(body.stop_sequences).toEqual(["END", "STOP"])
++  })
+ 
+-    it("filters mixed stop sequences", () => {
+-      const body = buildNativeBody(
+-        basePayload({ stop_sequences: ["\n", "END", " \t ", "STOP"] }),
+-        {},
+-      )
+-      expect(body.stop_sequences).toEqual(["END", "STOP"])
+-    })
++  it("filters mixed stop sequences", () => {
++    const body = buildNativeBody(
++      basePayload({ stop_sequences: ["\n", "END", " \t ", "STOP"] }),
++      {},
++    )
++    expect(body.stop_sequences).toEqual(["END", "STOP"])
++  })
+ 
+-    it("removes field when all entries are whitespace", () => {
+-      const body = buildNativeBody(
+-        basePayload({ stop_sequences: ["\n", " ", "\t"] }),
+-        {},
+-      )
+-      expect(body).not.toHaveProperty("stop_sequences")
+-    })
++  it("removes field when all entries are whitespace", () => {
++    const body = buildNativeBody(
++      basePayload({ stop_sequences: ["\n", " ", "\t"] }),
++      {},
++    )
++    expect(body).not.toHaveProperty("stop_sequences")
+   })
++})
+ 
+-  describe("thinking normalization", () => {
+-    it("downgrades adaptive to enabled", () => {
+-      const body = buildNativeBody(
+-        basePayload({ thinking: { type: "adaptive" } }),
+-        {},
+-      )
+-      expect(body.thinking).toEqual({
+-        type: "enabled",
+-        budget_tokens: Math.max(1024, 8192 - 1),
+-      })
++describe("thinking normalization", () => {
++  it("downgrades adaptive to enabled", () => {
++    const body = buildNativeBody(
++      basePayload({ thinking: { type: "adaptive" } }),
++      {},
++    )
++    expect(body.thinking).toEqual({
++      type: "enabled",
++      budget_tokens: Math.max(1024, 8192 - 1),
+     })
++  })
+ 
+-    it("preserves enabled thinking with budget", () => {
+-      const body = buildNativeBody(
+-        basePayload({
+-          thinking: { type: "enabled", budget_tokens: 4096 },
+-        }),
+-        {},
+-      )
+-      expect(body.thinking).toEqual({
+-        type: "enabled",
+-        budget_tokens: 4096,
+-      })
++  it("preserves enabled thinking with budget", () => {
++    const body = buildNativeBody(
++      basePayload({
++        thinking: { type: "enabled", budget_tokens: 4096 },
++      }),
++      {},
++    )
++    expect(body.thinking).toEqual({
++      type: "enabled",
++      budget_tokens: 4096,
+     })
++  })
+ 
+-    it("enforces minimum budget of 1024", () => {
+-      const body = buildNativeBody(
+-        basePayload({
+-          max_tokens: 1500,
+-          thinking: { type: "adaptive" },
+-        }),
+-        {},
+-      )
+-      const thinking = body.thinking as { budget_tokens: number }
+-      expect(thinking.budget_tokens).toBeGreaterThanOrEqual(1024)
+-    })
++  it("enforces minimum budget of 1024", () => {
++    const body = buildNativeBody(
++      basePayload({
++        max_tokens: 1500,
++        thinking: { type: "adaptive" },
++      }),
++      {},
++    )
++    const thinking = body.thinking as { budget_tokens: number }
++    expect(thinking.budget_tokens).toBeGreaterThanOrEqual(1024)
++  })
+ 
+-    it("passes disabled thinking through", () => {
+-      const body = buildNativeBody(
+-        basePayload({ thinking: { type: "disabled" } }),
+-        {},
+-      )
+-      expect(body.thinking).toEqual({ type: "disabled" })
+-    })
++  it("passes disabled thinking through", () => {
++    const body = buildNativeBody(
++      basePayload({ thinking: { type: "disabled" } }),
++      {},
++    )
++    expect(body.thinking).toEqual({ type: "disabled" })
++  })
+ 
+-    it("omits thinking when not specified", () => {
+-      const body = buildNativeBody(basePayload(), {})
+-      expect(body.thinking).toBeUndefined()
+-    })
++  it("omits thinking when not specified", () => {
++    const body = buildNativeBody(basePayload(), {})
++    expect(body.thinking).toBeUndefined()
+   })
++})
+ 
+-  describe("effort mapping", () => {
+-    it("forwards effort via output_config for models with reasoning_effort capability", () => {
+-      const body = buildNativeBody(
+-        basePayload({ output_config: { effort: "max" } }),
+-        {},
+-      )
+-      expect(body.output_config).toEqual({ effort: "max" })
+-    })
++describe("effort mapping", () => {
++  it("forwards effort via output_config for models with reasoning_effort capability", () => {
++    const body = buildNativeBody(
++      basePayload({ output_config: { effort: "max" } }),
++      {},
++    )
++    expect(body.output_config).toEqual({ effort: "max" })
++  })
+ 
+-    it("forwards effort=xhigh for models that support it", () => {
+-      const body = buildNativeBody(
+-        basePayload({
+-          model: "claude-opus-4-7",
+-          output_config: { effort: "xhigh" },
+-        }),
+-        {},
+-      )
+-      expect(body.output_config).toEqual({ effort: "xhigh" })
+-    })
++  it("forwards effort=xhigh for models that support it", () => {
++    const body = buildNativeBody(
++      basePayload({
++        model: "claude-opus-4-7",
++        output_config: { effort: "xhigh" },
++      }),
++      {},
++    )
++    expect(body.output_config).toEqual({ effort: "xhigh" })
++  })
+ 
+-    it("forwards effort=high via output_config", () => {
+-      const body = buildNativeBody(
+-        basePayload({ output_config: { effort: "high" } }),
+-        {},
+-      )
+-      expect(body.output_config).toEqual({ effort: "high" })
+-    })
++  it("forwards effort=high via output_config", () => {
++    const body = buildNativeBody(
++      basePayload({ output_config: { effort: "high" } }),
++      {},
++    )
++    expect(body.output_config).toEqual({ effort: "high" })
++  })
+ 
+-    it("maps low effort to disabled thinking when effort is not handled by output_config", () => {
+-      // Model without reasoning_effort capability
+-      setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
+-      const body = buildNativeBody(
+-        basePayload({ output_config: { effort: "low" } }),
+-        {},
+-      )
+-      expect(body.thinking).toEqual({ type: "disabled" })
+-    })
++  it("maps low effort to disabled thinking when effort is not handled by output_config", () => {
++    // Model without reasoning_effort capability
++    setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
++    const body = buildNativeBody(
++      basePayload({ output_config: { effort: "low" } }),
++      {},
++    )
++    expect(body.thinking).toEqual({ type: "disabled" })
++  })
+ 
+-    it("maps effort to thinking budget for models without reasoning_effort capability", () => {
+-      // Model without reasoning_effort capability (older model)
+-      setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
+-      const body = buildNativeBody(
+-        basePayload({ output_config: { effort: "medium" } }),
+-        {},
+-      )
+-      const thinking = body.thinking as { type: string; budget_tokens: number }
+-      expect(thinking.type).toBe("enabled")
+-      expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.5))
+-    })
++  it("maps effort to thinking budget for models without reasoning_effort capability", () => {
++    // Model without reasoning_effort capability (older model)
++    setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
++    const body = buildNativeBody(
++      basePayload({ output_config: { effort: "medium" } }),
++      {},
++    )
++    const thinking = body.thinking as { type: string; budget_tokens: number }
++    expect(thinking.type).toBe("enabled")
++    expect(thinking.budget_tokens).toBe(Math.floor(8192 * 0.5))
++  })
+ 
+-    it("does not override explicit thinking when effort is handled via output_config", () => {
+-      const body = buildNativeBody(
+-        basePayload({
+-          thinking: { type: "enabled", budget_tokens: 2048 },
+-          output_config: { effort: "max" },
+-        }),
+-        {},
+-      )
+-      // Effort is handled by output_config, thinking is normalized independently
+-      expect(body.output_config).toEqual({ effort: "max" })
+-      const thinking = body.thinking as { type: string; budget_tokens: number }
+-      expect(thinking.type).toBe("enabled")
+-      expect(thinking.budget_tokens).toBe(2048)
+-    })
++  it("does not override explicit thinking when effort is handled via output_config", () => {
++    const body = buildNativeBody(
++      basePayload({
++        thinking: { type: "enabled", budget_tokens: 2048 },
++        output_config: { effort: "max" },
++      }),
++      {},
++    )
++    // Effort is handled by output_config, thinking is normalized independently
++    expect(body.output_config).toEqual({ effort: "max" })
++    const thinking = body.thinking as { type: string; budget_tokens: number }
++    expect(thinking.type).toBe("enabled")
++    expect(thinking.budget_tokens).toBe(2048)
++  })
+ 
+-    it("extracts effort from legacy model-name suffix (backward compat)", () => {
+-      const body = buildNativeBody(
+-        basePayload({ model: "claude-opus-4-7-xhigh" }),
+-        {},
+-      )
+-      expect(body.model).toBe("claude-opus-4.7")
+-      expect(body.output_config).toEqual({ effort: "xhigh" })
+-    })
++  it("extracts effort from legacy model-name suffix (backward compat)", () => {
++    const body = buildNativeBody(
++      basePayload({ model: "claude-opus-4-7-xhigh" }),
++      {},
++    )
++    expect(body.model).toBe("claude-opus-4.7")
++    expect(body.output_config).toEqual({ effort: "xhigh" })
++  })
+ 
+-    it("extracts -high effort from model name", () => {
+-      const body = buildNativeBody(
+-        basePayload({ model: "claude-sonnet-4-6-high" }),
+-        {},
+-      )
+-      expect(body.model).toBe("claude-sonnet-4.6")
+-      expect(body.output_config).toEqual({ effort: "high" })
+-    })
++  it("extracts -high effort from model name", () => {
++    const body = buildNativeBody(
++      basePayload({ model: "claude-sonnet-4-6-high" }),
++      {},
++    )
++    expect(body.model).toBe("claude-sonnet-4.6")
++    expect(body.output_config).toEqual({ effort: "high" })
++  })
+ 
+-    it("output_config.effort takes priority over model-name suffix", () => {
+-      const body = buildNativeBody(
+-        basePayload({
+-          model: "claude-opus-4-7-high",
+-          output_config: { effort: "max" },
+-        }),
+-        {},
+-      )
+-      expect(body.model).toBe("claude-opus-4.7")
+-      expect(body.output_config).toEqual({ effort: "max" })
+-    })
++  it("output_config.effort takes priority over model-name suffix", () => {
++    const body = buildNativeBody(
++      basePayload({
++        model: "claude-opus-4-7-high",
++        output_config: { effort: "max" },
++      }),
++      {},
++    )
++    expect(body.model).toBe("claude-opus-4.7")
++    expect(body.output_config).toEqual({ effort: "max" })
+   })
++})
+ 
+-  describe("field allowlist", () => {
+-    it("forwards output_config.effort for models with reasoning_effort capability", () => {
+-      const body = buildNativeBody(
+-        basePayload({ output_config: { effort: "high" } }),
+-        {},
+-      )
+-      expect(body.output_config).toEqual({ effort: "high" })
+-    })
++describe("field allowlist", () => {
++  it("forwards output_config.effort for models with reasoning_effort capability", () => {
++    const body = buildNativeBody(
++      basePayload({ output_config: { effort: "high" } }),
++      {},
++    )
++    expect(body.output_config).toEqual({ effort: "high" })
++  })
+ 
+-    it("does not forward output_config for models without reasoning_effort capability", () => {
+-      setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
+-      const body = buildNativeBody(
+-        basePayload({ output_config: { effort: "high" } }),
+-        {},
+-      )
+-      expect(body).not.toHaveProperty("output_config")
+-    })
++  it("does not forward output_config for models without reasoning_effort capability", () => {
++    setCatalog(["claude-sonnet-4.6", "claude-opus-4.7"])
++    const body = buildNativeBody(
++      basePayload({ output_config: { effort: "high" } }),
++      {},
++    )
++    expect(body).not.toHaveProperty("output_config")
++  })
+ 
+-    it("does not forward unknown fields", () => {
+-      const payload = {
+-        ...basePayload(),
+-        anthropic_internal: { foo: "bar" },
+-      } as AnthropicMessagesPayload
+-      const body = buildNativeBody(payload, {})
+-      expect(body).not.toHaveProperty("anthropic_internal")
+-    })
++  it("does not forward unknown fields", () => {
++    const payload = {
++      ...basePayload(),
++      anthropic_internal: { foo: "bar" },
++    } as AnthropicMessagesPayload
++    const body = buildNativeBody(payload, {})
++    expect(body).not.toHaveProperty("anthropic_internal")
++  })
+ 
+-    it("forwards allowed optional fields", () => {
+-      const body = buildNativeBody(
+-        basePayload({
+-          system: "You are helpful",
+-          temperature: 0.7,
+-          top_p: 0.9,
+-          top_k: 40,
+-        }),
+-        {},
+-      )
+-      expect(body.system).toBe("You are helpful")
+-      expect(body.temperature).toBe(0.7)
+-      expect(body.top_p).toBe(0.9)
+-      expect(body.top_k).toBe(40)
+-    })
++  it("forwards allowed optional fields", () => {
++    const body = buildNativeBody(
++      basePayload({
++        system: "You are helpful",
++        temperature: 0.7,
++        top_p: 0.9,
++        top_k: 40,
++      }),
++      {},
++    )
++    expect(body.system).toBe("You are helpful")
++    expect(body.temperature).toBe(0.7)
++    expect(body.top_p).toBe(0.9)
++    expect(body.top_k).toBe(40)
+   })
++})
+ 
+-  describe("overrides", () => {
+-    it("applies overrides last", () => {
+-      const body = buildNativeBody(basePayload(), { stream: true })
+-      expect(body.stream).toBe(true)
+-    })
++describe("overrides", () => {
++  it("applies overrides last", () => {
++    const body = buildNativeBody(basePayload(), { stream: true })
++    expect(body.stream).toBe(true)
+   })
++})
+ 
+-  describe("1M model selection", () => {
+-    it("keeps the base model when 1M context is not requested", () => {
+-      const body = buildNativeBody(
+-        basePayload({ model: "claude-opus-4.7" }),
+-        {},
+-        false,
+-      )
+-      expect(body.model).toBe("claude-opus-4.7")
+-    })
++describe("1M model selection", () => {
++  it("keeps the base model when 1M context is not requested", () => {
++    const body = buildNativeBody(
++      basePayload({ model: "claude-opus-4.7" }),
++      {},
++      false,
++    )
++    expect(body.model).toBe("claude-opus-4.7")
++  })
+ 
+-    it("falls back to base model when no -1m variant exists (1M is now default)", () => {
+-      const body = buildNativeBody(
+-        basePayload({ model: "claude-opus-4.7" }),
+-        {},
+-        true,
+-      )
+-      expect(body.model).toBe("claude-opus-4.7")
+-    })
++  it("falls back to base model when no -1m variant exists (1M is now default)", () => {
++    const body = buildNativeBody(
++      basePayload({ model: "claude-opus-4.7" }),
++      {},
++      true,
++    )
++    expect(body.model).toBe("claude-opus-4.7")
++  })
+ 
+-    it("strips [1m] suffix and resolves to base model (1M is now default)", () => {
+-      const body = buildNativeBody(
+-        basePayload({ model: "claude-opus-4.7[1m]" }),
+-        {},
+-        false,
+-      )
+-      expect(body.model).toBe("claude-opus-4.7")
+-    })
++  it("strips [1m] suffix and resolves to base model (1M is now default)", () => {
++    const body = buildNativeBody(
++      basePayload({ model: "claude-opus-4.7[1m]" }),
++      {},
++      false,
++    )
++    expect(body.model).toBe("claude-opus-4.7")
+   })
+ })
+diff --git a/tests/anthropic-response.test.ts b/tests/anthropic-response.test.ts
+index c580ff8..74f6276 100644
+--- a/tests/anthropic-response.test.ts
++++ b/tests/anthropic-response.test.ts
+@@ -114,14 +114,14 @@ function collectToolStreamDetails(events: Array<AnthropicStreamEventData>) {
+       event.type === "content_block_start"
+       && event.content_block.type === "tool_use"
+     ) {
+-      toolStarts.push(event)
++      toolStarts.push(event as AnthropicToolStartEvent)
+     }
+ 
+     if (
+       event.type === "content_block_delta"
+       && event.delta.type === "input_json_delta"
+     ) {
+-      inputJsonDeltas.push(event)
++      inputJsonDeltas.push(event as AnthropicInputJsonDeltaEvent)
+     }
+ 
+     if (event.type === "message_delta") {
+diff --git a/tests/messages-tool-result-validation.test.ts b/tests/messages-tool-result-validation.test.ts
+index c73f1bb..9f32c94 100644
+--- a/tests/messages-tool-result-validation.test.ts
++++ b/tests/messages-tool-result-validation.test.ts
+@@ -28,7 +28,9 @@ describe("translateMessageContent multimodal handling", () => {
+   })
+ 
+   test("image_url part with empty url is dropped with warn", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const out = translateMessageContent([
+         { type: "image_url", image_url: { url: "" } },
+@@ -56,7 +58,9 @@ describe("translateMessageContent multimodal handling", () => {
+   })
+ 
+   test("unknown type is dropped with warn carrying the type label", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const out = translateMessageContent([{ type: "mystery_box", text: "" }])
+       expect(out).toEqual([])
+diff --git a/tests/pricing-updater-recovery.test.ts b/tests/pricing-updater-recovery.test.ts
+index 378d959..5b2d9d4 100644
+--- a/tests/pricing-updater-recovery.test.ts
++++ b/tests/pricing-updater-recovery.test.ts
+@@ -17,17 +17,22 @@ describe("pricing updater recovery", () => {
+     const target = path.join(directory, "pricing.json")
+     try {
+       const first = await updateCopilotPricing(
+-        () =>
+-          Promise.resolve(
+-            new Response(fixture, { headers: { etag: '"first"' } }),
+-          ),
++        Object.assign(
++          () =>
++            Promise.resolve(
++              new Response(fixture, { headers: { etag: '"first"' } }),
++            ),
++          { preconnect: () => {} },
++        ),
+         target,
+       )
+       const fetchedAt = first.cache?.source.fetched_at
+       const validatedAt = first.cache?.source.validated_at
+ 
+       const failed = await updateCopilotPricing(
+-        () => Promise.reject(new Error("offline")),
++        Object.assign(() => Promise.reject(new Error("offline")), {
++          preconnect: () => {},
++        }),
+         target,
+       )
+       expect(failed.status).toBe("stale")
+@@ -36,10 +41,18 @@ describe("pricing updater recovery", () => {
+       expect(failed.cache?.source.last_attempt_at).toBeDefined()
+       expect(failed.cache?.source.error).toBe("offline")
+ 
+-      const recovered = await updateCopilotPricing((_input, init) => {
+-        expect(new Headers(init?.headers).get("if-none-match")).toBe('"first"')
+-        return Promise.resolve(new Response(null, { status: 304 }))
+-      }, target)
++      const recovered = await updateCopilotPricing(
++        Object.assign(
++          (_input: string | URL | Request, init?: RequestInit) => {
++            expect(new Headers(init?.headers).get("if-none-match")).toBe(
++              '"first"',
++            )
++            return Promise.resolve(new Response(null, { status: 304 }))
++          },
++          { preconnect: () => {} },
++        ),
++        target,
++      )
+       expect(recovered.status).toBe("not-modified")
+       expect(recovered.cache?.source.stale).toBe(false)
+       expect(recovered.cache?.source.error).toBeUndefined()
+diff --git a/tests/responses-stream-arg-divergence-guard.test.ts b/tests/responses-stream-arg-divergence-guard.test.ts
+index b831f75..740803d 100644
+--- a/tests/responses-stream-arg-divergence-guard.test.ts
++++ b/tests/responses-stream-arg-divergence-guard.test.ts
+@@ -54,7 +54,9 @@ const argsDone = (args: string) => ({
+ 
+ describe("syncToolArguments divergence guard", () => {
+   test("identity: done equals accumulated -> zero extra chunks, no warn", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         toolCallAdded(),
+@@ -74,7 +76,9 @@ describe("syncToolArguments divergence guard", () => {
+   })
+ 
+   test("extension: done extends accumulated -> exactly one suffix chunk, no warn", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         toolCallAdded(),
+@@ -97,7 +101,9 @@ describe("syncToolArguments divergence guard", () => {
+   })
+ 
+   test("divergence: done disagrees with accumulated -> zero extra chunks, warn invoked, accumulator preserved", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         toolCallAdded(),
+@@ -126,7 +132,9 @@ describe("syncToolArguments divergence guard", () => {
+   })
+ 
+   test("end-to-end on divergence: reassembled tool_use input is the streamed prefix and parses", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         toolCallAdded(),
+diff --git a/tests/responses-stream-error-events.test.ts b/tests/responses-stream-error-events.test.ts
+index e64858a..1523593 100644
+--- a/tests/responses-stream-error-events.test.ts
++++ b/tests/responses-stream-error-events.test.ts
+@@ -47,7 +47,9 @@ const textDelta = (delta: string) => ({
+ 
+ describe("Responses streaming terminal-error events", () => {
+   test("response.failed yields one chunk with error and emits Anthropic error event", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         created(),
+@@ -94,7 +96,9 @@ describe("Responses streaming terminal-error events", () => {
+   })
+ 
+   test("generic error event yields chunk with error and emits Anthropic error event", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         created(),
+@@ -125,7 +129,9 @@ describe("Responses streaming terminal-error events", () => {
+   })
+ 
+   test("response.incomplete with max_output_tokens maps to length and emits message_stop", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         created(),
+@@ -159,7 +165,9 @@ describe("Responses streaming terminal-error events", () => {
+   })
+ 
+   test("response.incomplete with no reason maps to stop", () => {
+-    const warnSpy = spyOn(consola, "warn").mockImplementation(() => {})
++    const warnSpy = spyOn(consola, "warn").mockImplementation(
++      Object.assign(() => {}, { raw: () => {} }),
++    )
+     try {
+       const { chunks } = runStream([
+         created(),

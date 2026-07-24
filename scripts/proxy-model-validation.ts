@@ -34,7 +34,7 @@ import {
   fmtMs,
   COPILOT_API_BASE_URL,
   PROXY_URL,
-} from "/Users/jbencardino/Documents/Proyectos/ccexplore/development-repo/scripts/lib/copilot-test-lib"
+} from "./lib/copilot-test-lib"
 
 // ── CLI args ─────────────────────────────────────────────────────────────────
 

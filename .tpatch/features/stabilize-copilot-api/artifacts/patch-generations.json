@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "feature": "stabilize-copilot-api",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_5b8eb243811e",
+      "kind": "record",
+      "patch_sha256": "3052011e0e9d10744f517c1b521869b4dcaf545d3a579ceacf5e5cecd3628c67",
+      "git_patch_id": "d4c6181e2e051acf475e6525ca768dca0ddabb0c",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "d8bd4b0311984bf2f0f120cf74f1920b7652811184052cb5a3cea0bc599bba8e",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "20461a29e0bf06100d8e0e540ca66a50a5c449b5",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/lib/copilot-test-lib.ts",
+        "scripts/proxy-model-validation.ts",
+        "src/lib/tokenizer.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.test.ts",
+        "tests/anthropic-response.test.ts",
+        "tests/messages-tool-result-validation.test.ts",
+        "tests/pricing-updater-recovery.test.ts",
+        "tests/responses-stream-arg-divergence-guard.test.ts",
+        "tests/responses-stream-error-events.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

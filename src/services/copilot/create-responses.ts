@@ -372,7 +372,7 @@ function makeChunk(
     finishReason,
     usage,
   }: {
-    delta: Record<string, unknown>
+    delta: ChatCompletionChunk["choices"][0]["delta"]
     finishReason: string | null
     usage?: ChatCompletionChunk["usage"]
   },
@@ -386,7 +386,7 @@ function makeChunk(
     choices: [
       {
         index: 0,
-        delta: delta as ChatCompletionChunk["choices"][0]["delta"],
+        delta,
         finish_reason:
           finishReason as ChatCompletionChunk["choices"][0]["finish_reason"],
         logprobs: null,

@@ -1,0 +1,17 @@
+{
+  "id": "stabilize-copilot-api",
+  "slug": "stabilize-copilot-api",
+  "title": "Stabilize copilot-api: fix all currently-failing project quality gates that have accumulated silently because this fork's GitHub Actions CI has never executed once (Actions are disabled by default on forks; gh run list confirms zero runs). Fix the 25 pre-existing TypeScript errors surfaced by 'npx tsc --noEmit' (equivalent to 'bun run typecheck', and identical to tpatch's own configured test_command) across 8 files:\n(1) scripts/proxy-model-validation.ts line 37 - replace the hardcoded absolute machine-specific import '/Users/jbencardino/Documents/Proyectos/ccexplore/development-repo/scripts/lib/copilot-test-lib' (a file that was never committed to this repo, on any branch, confirmed identical to origin/master) with a properly committed scripts/lib/copilot-test-lib.ts implementing the helpers the script actually needs: getJwt, fetchModels, filterChatModels, classifyModel, copilotHeaders, proxyHeaders, fmtMs, COPILOT_API_BASE_URL, PROXY_URL, and the CopilotModel/ModelProfile/TestResult types. Also fix the 2 implicit-any parameter (TS7006) errors at lines 524 and 526 in the same file.\n(2) src/lib/tokenizer.ts lines 57-58 - TS2339 'Property text does not exist on type TextPart | AudioPart' from unsafe duck-typed property access on a union type; needs proper type narrowing (check part.type === 'text' rather than truthiness of part.text).\n(3) src/services/copilot/create-responses.ts lines 539, 582, 597, 612, 657 - TS2322 'Delta' is not assignable to type 'Record\u003cstring, unknown\u003e' (missing index signature) in makeChunk's delta payloads.\n(4) tests/anthropic-response.test.ts lines 117 and 124 - discriminated union narrowing errors passing AnthropicContentBlockStartEvent/AnthropicContentBlockDeltaEvent where a narrower event subtype is expected.\n(5) tests/messages-tool-result-validation.test.ts lines 31 and 59, tests/responses-stream-arg-divergence-guard.test.ts lines 57/77/100/129, and tests/responses-stream-error-events.test.ts lines 50/97/128/162 - consola.warn spy mocks implemented as plain '() =\u003e void' which no longer satisfy consola's LogFn type (missing a 'raw' method).\n(6) tests/pricing-updater-recovery.test.ts lines 20, 30, 39 - fetch mocks that don't satisfy 'typeof fetch' because they are missing the 'preconnect' property.\nAlso fix the 1 ESLint error blocking 'bun run lint:all': src/services/copilot/forward-native-messages.test.ts:44, arrow function body exceeds max-lines-per-function (242 lines, max 200).\nAcceptance criteria: 'bun run typecheck', 'bun run lint:all', 'bun test', and 'bun run build' all exit 0 (currently typecheck fails with 25 errors and lint:all fails with 1 error), with zero regressions to the 202 currently-passing tests, and no behavioral changes to runtime logic - these are type-safety, lint, and portability fixes only.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-24T18:03:01Z",
+  "updated_at": "2026-07-24T18:20:43Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-24T18:20:35Z",
+    "base_commit": "20461a29e0bf06100d8e0e540ca66a50a5c449b5",
+    "has_patch": true
+  },
+  "reconcile": {}
+}
