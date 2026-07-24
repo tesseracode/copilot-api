@@ -1,0 +1,10 @@
+# Test run — 2026-07-24T04:28:25Z
+# Command: bun test tests/operational-hardening.test.ts tests/native-responses-route.test.ts
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+
+ 12 pass
+ 0 fail
+ 19 expect() calls
+Ran 12 tests across 2 files. [726.00ms]

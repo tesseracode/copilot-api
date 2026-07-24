@@ -1,6 +1,6 @@
 import { Hono } from "hono"
-import { cors } from "hono/cors"
 
+import packageJson from "../package.json"
 import { requestLogger } from "./lib/request-logger"
 import { state } from "./lib/state"
 import { completionRoutes } from "./routes/chat-completions/route"
@@ -17,7 +17,6 @@ const startTime = Date.now()
 export const server = new Hono()
 
 server.use(requestLogger)
-server.use(cors())
 
 server.get("/", (c) => c.text("Server running"))
 server.get("/v1", (c) => c.text("Server running"))
@@ -27,7 +26,7 @@ server.get("/health", (c) =>
     status: "ok",
     uptime_seconds: Math.floor((Date.now() - startTime) / 1000),
     model_count: state.models?.data.length ?? 0,
-    version: process.env.npm_package_version ?? "unknown",
+    version: packageJson.version,
   }),
 )
 

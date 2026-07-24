@@ -1,0 +1,27 @@
+{
+  "id": "proxy-operational-hardening",
+  "slug": "proxy-operational-hardening",
+  "title": "Expose reliable version metadata and disable unsafe default CORS",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-24T03:57:43Z",
+  "updated_at": "2026-07-24T08:42:08Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-24T04:28:25Z",
+    "base_commit": "c09bd7568f8ac522872ddc4b089f781d2e206c26",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "native-responses-route",
+      "kind": "soft"
+    },
+    {
+      "slug": "copilot-pricing-node-runtime",
+      "kind": "soft"
+    }
+  ]
+}
