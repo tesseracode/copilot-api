@@ -1,7 +1,7 @@
 {
   "version": 1,
   "feature": "stabilize-copilot-api",
-  "current_generation": 1,
+  "current_generation": 3,
   "generations": [
     {
       "generation": 1,
@@ -11,7 +11,7 @@
       "git_patch_id": "d4c6181e2e051acf475e6525ca768dca0ddabb0c",
       "git_patch_id_algorithm": "git-patch-id-stable",
       "recipe_sha256": "d8bd4b0311984bf2f0f120cf74f1920b7652811184052cb5a3cea0bc599bba8e",
-      "canonical_patch": "artifacts/post-apply.patch",
+      "canonical_patch": "",
       "audit_patch": "",
       "base_commit": "20461a29e0bf06100d8e0e540ca66a50a5c449b5",
       "upper": {
@@ -21,6 +21,79 @@
       },
       "capture": {
         "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/lib/copilot-test-lib.ts",
+        "scripts/proxy-model-validation.ts",
+        "src/lib/tokenizer.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/forward-native-messages.test.ts",
+        "tests/anthropic-response.test.ts",
+        "tests/messages-tool-result-validation.test.ts",
+        "tests/pricing-updater-recovery.test.ts",
+        "tests/responses-stream-arg-divergence-guard.test.ts",
+        "tests/responses-stream-error-events.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_abbd74fb1939",
+      "kind": "amend-refresh",
+      "patch_sha256": "53853de0968b07c6815cc75e5e0df8203458bef084abf61926442d2e66979cbc",
+      "git_patch_id": "1ff6903bd36f1b52e7d7009aaffce5f00b54596b",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "84e15557a6169a28a944d6d05a8f98bf1daee47ef56b0dd7a88822f5e0cf89a0",
+      "canonical_patch": "",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "50e81df42f7446909e09e575c677dd683776c6cd",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/lib/copilot-test-lib.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 3,
+      "generation_id": "pg_6d396446303f",
+      "kind": "amend-refresh",
+      "patch_sha256": "79a45ca59274e85d2e3a4d9835b7988ca483b54aa7d3f7e471890c17249273a0",
+      "git_patch_id": "f6e9d6e4e9ffcaf9bd4c5cbf983cdd8cf92f11cf",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "2e2fe11ec1426277149e679dd18c6b0659546174df6cd4d8c551613cc8e06bbe",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/003-record.patch",
+      "base_commit": "20461a2",
+      "upper": {
+        "kind": "commit",
+        "ref": "HEAD",
+        "commit": "1cd27a4d26a365c7dcbc007213a40e6f9e8d287e"
+      },
+      "capture": {
+        "mode": "committed-range",
         "pathspecs": [],
         "claim_ids": []
       },
