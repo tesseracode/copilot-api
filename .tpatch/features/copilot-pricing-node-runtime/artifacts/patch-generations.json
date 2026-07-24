@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "feature": "copilot-pricing-node-runtime",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_3d52066e5589",
+      "kind": "record",
+      "patch_sha256": "eda9479f13f96a9f507457d0b1c2465c8cf165113dca00d0ba53680b25dc3fb7",
+      "git_patch_id": "d274dae896c701933e55c78386ae6630c8d0475f",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "19321fba78fefc9f6b8ce0b675603be92d9035416bd6302f7e1d3f440000a55b",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "c09bd7568f8ac522872ddc4b089f781d2e206c26",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "bun.lock",
+          "package.json",
+          "scripts/reports/gateway-live-acceptance.md",
+          "src/lib/copilot-pricing.ts",
+          "src/routes/pricing/route.ts",
+          "src/start.ts",
+          "tests/copilot-pricing.test.ts",
+          "tests/pricing-conditional-route.test.ts",
+          "tests/pricing-updater-recovery.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "bun.lock",
+        "package.json",
+        "scripts/reports/gateway-live-acceptance.md",
+        "src/lib/copilot-pricing.ts",
+        "src/routes/pricing/route.ts",
+        "src/start.ts",
+        "tests/copilot-pricing.test.ts",
+        "tests/pricing-conditional-route.test.ts",
+        "tests/pricing-updater-recovery.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "copilot-pricing-cache",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 3,
+          "parent_patch_sha256": "0895319a4a105c88ae2f3fd86d5f7bf2c65ca82b2a7983663183363ecca2acbc",
+          "parent_recipe_sha256": "0548668f21cda20729fe2e39e2ceb61016574d842540dd77f632328acb6c4d76"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

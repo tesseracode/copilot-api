@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
+import path from "node:path"
+import { parse } from "yaml"
+
+import type { ModelsResponse } from "~/services/copilot/get-models"
 
 import { PATHS } from "./paths"
 
@@ -74,11 +78,13 @@ export interface CopilotPricingCache {
   source: {
     url: string
     version: string
-    etag?: string
+    upstream_etag?: string
+    public_etag?: string
     fetched_at: string
     validated_at: string
     stale: boolean
     error?: string
+    last_attempt_at?: string
   }
   data: Array<CopilotModelPricing>
   unmatched_models: Array<string>
@@ -111,7 +117,7 @@ export function parseCopilotPricingYaml(
   yaml: string,
   metadata: { etag?: string; fetchedAt?: string } = {},
 ): CopilotPricingCache {
-  const rows = Bun.YAML.parse(yaml) as Array<RawPricingRow>
+  const rows = parse(yaml) as Array<RawPricingRow>
   if (rows.length === 0)
     throw new Error("Pricing source contains no model rows")
 
@@ -176,7 +182,7 @@ export function parseCopilotPricingYaml(
     source: {
       url: COPILOT_PRICING_SOURCE,
       version: `sha256:${createHash("sha256").update(yaml).digest("hex")}`,
-      etag: metadata.etag,
+      upstream_etag: metadata.etag,
       fetched_at: now,
       validated_at: now,
       stale: false,
@@ -186,12 +192,12 @@ export function parseCopilotPricingYaml(
   }
 }
 
-export async function readCopilotPricing(): Promise<
-  CopilotPricingCache | undefined
-> {
+export async function readCopilotPricing(
+  cachePath = PATHS.COPILOT_PRICING_PATH,
+): Promise<CopilotPricingCache | undefined> {
   try {
     return JSON.parse(
-      await fs.readFile(PATHS.COPILOT_PRICING_PATH),
+      (await fs.readFile(cachePath)).toString("utf8"),
     ) as CopilotPricingCache
   } catch {
     return undefined
@@ -200,52 +206,115 @@ export async function readCopilotPricing(): Promise<
 
 export async function writeCopilotPricing(
   cache: CopilotPricingCache,
+  cachePath = PATHS.COPILOT_PRICING_PATH,
 ): Promise<void> {
-  await fs.mkdir(PATHS.APP_DIR, { recursive: true })
-  const temporaryPath = `${PATHS.COPILOT_PRICING_PATH}.tmp-${process.pid}`
+  await fs.mkdir(path.dirname(cachePath), { recursive: true })
+  const temporaryPath = `${cachePath}.tmp-${process.pid}`
   await fs.writeFile(temporaryPath, `${JSON.stringify(cache, null, 2)}\n`, {
     mode: 0o600,
   })
-  await fs.rename(temporaryPath, PATHS.COPILOT_PRICING_PATH)
+  await fs.rename(temporaryPath, cachePath)
 }
 
 export async function updateCopilotPricing(
   fetcher: typeof fetch = fetch,
+  cachePath = PATHS.COPILOT_PRICING_PATH,
 ): Promise<{
   status: "updated" | "not-modified" | "stale"
   cache?: CopilotPricingCache
 }> {
-  const existing = await readCopilotPricing()
+  const existing = await readCopilotPricing(cachePath)
   try {
     const response = await fetcher(COPILOT_PRICING_SOURCE, {
       headers:
-        existing?.source.etag ?
-          { "if-none-match": existing.source.etag }
+        existing?.source.upstream_etag ?
+          { "if-none-match": existing.source.upstream_etag }
         : undefined,
       signal: AbortSignal.timeout(30_000),
     })
     if (response.status === 304 && existing) {
-      existing.source.validated_at = new Date().toISOString()
-      existing.source.stale = false
-      delete existing.source.error
-      await writeCopilotPricing(existing)
-      return { status: "not-modified", cache: existing }
+      const recovered = structuredClone(existing)
+      recovered.source.validated_at = new Date().toISOString()
+      recovered.source.stale = false
+      delete recovered.source.error
+      await writeCopilotPricing(recovered, cachePath)
+      return { status: "not-modified", cache: recovered }
     }
     if (!response.ok)
       throw new Error(`Pricing fetch failed with HTTP ${response.status}`)
     const cache = parseCopilotPricingYaml(await response.text(), {
       etag: response.headers.get("etag") ?? undefined,
     })
-    await writeCopilotPricing(cache)
+    await writeCopilotPricing(cache, cachePath)
     return { status: "updated", cache }
   } catch (error) {
     if (!existing) throw error
-    existing.source.stale = true
-    existing.source.error =
-      error instanceof Error ? error.message : String(error)
-    await writeCopilotPricing(existing)
-    return { status: "stale", cache: existing }
+    const stale = structuredClone(existing)
+    stale.source.last_attempt_at = new Date().toISOString()
+    stale.source.stale = true
+    stale.source.error = error instanceof Error ? error.message : String(error)
+    await writeCopilotPricing(stale, cachePath)
+    return { status: "stale", cache: stale }
   }
+}
+
+export interface PublishedPricing extends CopilotPricingCache {
+  diagnostics: {
+    mapped_but_inaccessible: Array<string>
+    accessible_without_pricing: Array<string>
+  }
+}
+
+export function publishCopilotPricing(
+  cache: CopilotPricingCache,
+  models: ModelsResponse | undefined,
+): PublishedPricing {
+  const accessible = new Set(models?.data.map((model) => model.id) ?? [])
+  const publishedData = cache.data.filter(
+    (item): item is CopilotModelPricing & { model: string } =>
+      Boolean(item.model && accessible.has(item.model)),
+  )
+  const priced = new Set(publishedData.map((item) => item.model))
+  const mappedButInaccessible = cache.data.flatMap((item) =>
+    item.model && !accessible.has(item.model) ? [item.model] : [],
+  )
+  const accessibleWithoutPricing = [...accessible].filter(
+    (model) => !priced.has(model),
+  )
+  const publicEtag = `"${createHash("sha256")
+    .update(
+      JSON.stringify({
+        source_version: cache.source.version,
+        stale: cache.source.stale,
+        error: cache.source.error,
+        data: publishedData,
+        unmatched_models: cache.unmatched_models,
+        mapped_but_inaccessible: mappedButInaccessible,
+        accessible_without_pricing: accessibleWithoutPricing,
+      }),
+    )
+    .digest("hex")}"`
+  return {
+    ...cache,
+    source: { ...cache.source, public_etag: publicEtag },
+    data: publishedData,
+    diagnostics: {
+      mapped_but_inaccessible: mappedButInaccessible,
+      accessible_without_pricing: accessibleWithoutPricing,
+    },
+  }
+}
+
+export function pricingEtagMatches(
+  ifNoneMatch: string | undefined,
+  etag: string,
+): boolean {
+  return (
+    ifNoneMatch
+      ?.split(",")
+      .map((value) => value.trim().replace(/^W\//, ""))
+      .includes(etag) ?? false
+  )
 }
 
 export function pricingForModel(

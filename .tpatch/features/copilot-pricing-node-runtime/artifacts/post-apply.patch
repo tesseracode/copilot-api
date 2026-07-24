@@ -1,0 +1,640 @@
+diff --git a/bun.lock b/bun.lock
+index f9131d8..e2c3f97 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -15,6 +15,7 @@
+         "srvx": "^0.11.15",
+         "tiny-invariant": "^1.3.3",
+         "undici": "^7.16.0",
++        "yaml": "^2.9.0",
+         "zod": "^4.1.11",
+       },
+       "devDependencies": {
+@@ -965,7 +966,7 @@
+ 
+     "y18n": ["y18n@5.0.8", "", {}, "sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA=="],
+ 
+-    "yaml": ["yaml@2.8.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw=="],
++    "yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
+ 
+     "yargs": ["yargs@18.0.0", "", { "dependencies": { "cliui": "^9.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "string-width": "^7.2.0", "y18n": "^5.0.5", "yargs-parser": "^22.0.0" } }, "sha512-4UEqdc2RYGHZc7Doyqkrqiln3p9X2DZVxaGbwhn2pi7MrRagKaOcIKe8L3OxYcbhXLgLFUS3zAYuQjKBQgmuNg=="],
+ 
+@@ -991,6 +992,8 @@
+ 
+     "@typescript-eslint/typescript-estree/minimatch": ["minimatch@9.0.5", "", { "dependencies": { "brace-expansion": "^2.0.1" } }, "sha512-G6T0ZX48xgozx7587koeX9Ys2NYy6Gmv//P89sEte9V9whIapMNF4idKxnW2QtCcLiTWlb/wfCabAtAFWhhBow=="],
+ 
++    "bumpp/yaml": ["yaml@2.8.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw=="],
++
+     "clean-regexp/escape-string-regexp": ["escape-string-regexp@1.0.5", "", {}, "sha512-vbRorB5FUQWvla16U8R/qgaFIya2qGzwDrNmCZuYKrbdSUMG6I1ZCGQRefkRVhuOkIGVne7BQ35DSfo1qvJqFg=="],
+ 
+     "cliui/string-width": ["string-width@7.2.0", "", { "dependencies": { "emoji-regex": "^10.3.0", "get-east-asian-width": "^1.0.0", "strip-ansi": "^7.1.0" } }, "sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ=="],
+@@ -1003,6 +1006,8 @@
+ 
+     "jsonc-eslint-parser/espree": ["espree@9.6.1", "", { "dependencies": { "acorn": "^8.9.0", "acorn-jsx": "^5.3.2", "eslint-visitor-keys": "^3.4.1" } }, "sha512-oruZaFkjorTpF32kDSI5/75ViwGeZginGGy2NoOSg3Q9bnwlnmDm4HLnkl0RE3n+njDXR037aY1+x58Z/zFdwQ=="],
+ 
++    "lint-staged/yaml": ["yaml@2.8.1", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw=="],
++
+     "micromatch/picomatch": ["picomatch@2.3.1", "", {}, "sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA=="],
+ 
+     "npm-run-path/path-key": ["path-key@4.0.0", "", {}, "sha512-haREypq7xkM7ErfgIyA0z+Bj4AGKlMSdlQE2jvJo6huWD1EdkKYV+G/T4nq0YEF2vgTT8kqMFKo1uHn950r4SQ=="],
+diff --git a/package.json b/package.json
+index 9334090..4d33bc0 100644
+--- a/package.json
++++ b/package.json
+@@ -50,6 +50,7 @@
+     "srvx": "^0.11.15",
+     "tiny-invariant": "^1.3.3",
+     "undici": "^7.16.0",
++    "yaml": "^2.9.0",
+     "zod": "^4.1.11"
+   },
+   "devDependencies": {
+diff --git a/scripts/reports/gateway-live-acceptance.md b/scripts/reports/gateway-live-acceptance.md
+new file mode 100644
+index 0000000..2d415fa
+--- /dev/null
++++ b/scripts/reports/gateway-live-acceptance.md
+@@ -0,0 +1,69 @@
++# Gateway Live Acceptance — 2026-07-23
++
++## Runtime
++
++- Built Node proxy: `node dist/main.js start --port 4245 --account-type enterprise --verbose`
++- `GET /health`: HTTP 200, version `0.7.0`, model_count `40`.
++- `GET /v1/models`: HTTP 200, `40` models.
++- No `Access-Control-Allow-Origin` header was emitted by health, pricing, Responses, or embeddings.
++
++## Native Responses create + stream
++
++```sh
++curl -i http://localhost:4245/v1/responses \
++  -H 'Content-Type: application/json' \
++  --data '{"model":"gpt-5.6-sol","input":"Reply PONG","max_output_tokens":8,"reasoning":{"effort":"low"},"stream":false}'
++# HTTP 400 structured provider error
++
++curl -i http://localhost:4245/v1/responses \
++  -H 'Content-Type: application/json' \
++  --data '{"model":"gpt-5.6-sol","input":"Reply PONG","max_output_tokens":64,"reasoning":{"effort":"low"},"stream":false}'
++# HTTP 200; usage, copilot_usage, output items, request IDs preserved
++
++curl -N http://localhost:4245/v1/responses \
++  -H 'Content-Type: application/json' \
++  --data '{"model":"gpt-5.6-sol","input":"Reply PONG","max_output_tokens":64,"reasoning":{"effort":"low"},"stream":true}'
++# HTTP 200; one response.completed event with usage and copilot_usage
++```
++
++`GET /v1/responses/resp_123` returned HTTP 404. Retrieve/cancel/background/conversation lifecycle remains unsupported and unadvertised.
++
++## Embeddings
++
++```sh
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":"hello"}'
++# HTTP 200; object=list; model=text-embedding-3-small; 1 x 1536 vector
++
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":["hello"]}'
++# HTTP 200; equivalent one-item result
++
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":["hello","world"],"dimensions":64,"encoding_format":"float"}'
++# HTTP 200; 2 x 64 vectors
++
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":"hello","encoding_format":"base64"}'
++# HTTP 400; stable invalid_request_error, code=invalid_value, param=encoding_format
++```
++
++Successful responses preserve `x-copilot-service-request-id` and `x-github-request-id` and normalize top-level OpenAI fields.
++
++## Pricing freshness and conditional GET
++
++- Built Node startup refresh completed without `Bun is not defined`.
++- `GET /v1/pricing`: HTTP 200, `stale=false`, no source error.
++- HTTP/body ETag: `"39cd191b606d903ada45076343d0ac4b52b5b4c408cfe3b94c3d22b46d114796"`.
++- `If-None-Match: W/"39cd191b606d903ada45076343d0ac4b52b5b4c408cfe3b94c3d22b46d114796"` returned HTTP 304 with no body.
++- Canonical docs rows: 28.
++- Published accessible priced models: 21.
++- Mapped but inaccessible rows: 0.
++- Accessible models without pricing: 19; these remain present in `/v1/models` and usable.
++- Intentional unmatched docs names: GPT-5.4 nano, Claude Sonnet 4, Claude Opus 4.5, Claude Opus 4.8 (fast mode) (preview), Claude Fable 5, Raptor mini, Kimi K2.7 Code.
++
++The source ETag (`upstream_etag`) and public filtered representation ETag (`public_etag`) are separate fields.
++
++## CORS and privacy
++
++Wildcard CORS is disabled by default. `/token`, `/usage`, pricing, health, model, embeddings, and Responses routes do not emit browser CORS grants. The service remains private/internal; tesseragateway owns public authentication and TLS policy.
+diff --git a/src/lib/copilot-pricing.ts b/src/lib/copilot-pricing.ts
+index cd114c7..a04034a 100644
+--- a/src/lib/copilot-pricing.ts
++++ b/src/lib/copilot-pricing.ts
+@@ -1,5 +1,9 @@
+ import { createHash } from "node:crypto"
+ import fs from "node:fs/promises"
++import path from "node:path"
++import { parse } from "yaml"
++
++import type { ModelsResponse } from "~/services/copilot/get-models"
+ 
+ import { PATHS } from "./paths"
+ 
+@@ -74,11 +78,13 @@ export interface CopilotPricingCache {
+   source: {
+     url: string
+     version: string
+-    etag?: string
++    upstream_etag?: string
++    public_etag?: string
+     fetched_at: string
+     validated_at: string
+     stale: boolean
+     error?: string
++    last_attempt_at?: string
+   }
+   data: Array<CopilotModelPricing>
+   unmatched_models: Array<string>
+@@ -111,7 +117,7 @@ export function parseCopilotPricingYaml(
+   yaml: string,
+   metadata: { etag?: string; fetchedAt?: string } = {},
+ ): CopilotPricingCache {
+-  const rows = Bun.YAML.parse(yaml) as Array<RawPricingRow>
++  const rows = parse(yaml) as Array<RawPricingRow>
+   if (rows.length === 0)
+     throw new Error("Pricing source contains no model rows")
+ 
+@@ -176,7 +182,7 @@ export function parseCopilotPricingYaml(
+     source: {
+       url: COPILOT_PRICING_SOURCE,
+       version: `sha256:${createHash("sha256").update(yaml).digest("hex")}`,
+-      etag: metadata.etag,
++      upstream_etag: metadata.etag,
+       fetched_at: now,
+       validated_at: now,
+       stale: false,
+@@ -186,12 +192,12 @@ export function parseCopilotPricingYaml(
+   }
+ }
+ 
+-export async function readCopilotPricing(): Promise<
+-  CopilotPricingCache | undefined
+-> {
++export async function readCopilotPricing(
++  cachePath = PATHS.COPILOT_PRICING_PATH,
++): Promise<CopilotPricingCache | undefined> {
+   try {
+     return JSON.parse(
+-      await fs.readFile(PATHS.COPILOT_PRICING_PATH),
++      (await fs.readFile(cachePath)).toString("utf8"),
+     ) as CopilotPricingCache
+   } catch {
+     return undefined
+@@ -200,54 +206,117 @@ export async function readCopilotPricing(): Promise<
+ 
+ export async function writeCopilotPricing(
+   cache: CopilotPricingCache,
++  cachePath = PATHS.COPILOT_PRICING_PATH,
+ ): Promise<void> {
+-  await fs.mkdir(PATHS.APP_DIR, { recursive: true })
+-  const temporaryPath = `${PATHS.COPILOT_PRICING_PATH}.tmp-${process.pid}`
++  await fs.mkdir(path.dirname(cachePath), { recursive: true })
++  const temporaryPath = `${cachePath}.tmp-${process.pid}`
+   await fs.writeFile(temporaryPath, `${JSON.stringify(cache, null, 2)}\n`, {
+     mode: 0o600,
+   })
+-  await fs.rename(temporaryPath, PATHS.COPILOT_PRICING_PATH)
++  await fs.rename(temporaryPath, cachePath)
+ }
+ 
+ export async function updateCopilotPricing(
+   fetcher: typeof fetch = fetch,
++  cachePath = PATHS.COPILOT_PRICING_PATH,
+ ): Promise<{
+   status: "updated" | "not-modified" | "stale"
+   cache?: CopilotPricingCache
+ }> {
+-  const existing = await readCopilotPricing()
++  const existing = await readCopilotPricing(cachePath)
+   try {
+     const response = await fetcher(COPILOT_PRICING_SOURCE, {
+       headers:
+-        existing?.source.etag ?
+-          { "if-none-match": existing.source.etag }
++        existing?.source.upstream_etag ?
++          { "if-none-match": existing.source.upstream_etag }
+         : undefined,
+       signal: AbortSignal.timeout(30_000),
+     })
+     if (response.status === 304 && existing) {
+-      existing.source.validated_at = new Date().toISOString()
+-      existing.source.stale = false
+-      delete existing.source.error
+-      await writeCopilotPricing(existing)
+-      return { status: "not-modified", cache: existing }
++      const recovered = structuredClone(existing)
++      recovered.source.validated_at = new Date().toISOString()
++      recovered.source.stale = false
++      delete recovered.source.error
++      await writeCopilotPricing(recovered, cachePath)
++      return { status: "not-modified", cache: recovered }
+     }
+     if (!response.ok)
+       throw new Error(`Pricing fetch failed with HTTP ${response.status}`)
+     const cache = parseCopilotPricingYaml(await response.text(), {
+       etag: response.headers.get("etag") ?? undefined,
+     })
+-    await writeCopilotPricing(cache)
++    await writeCopilotPricing(cache, cachePath)
+     return { status: "updated", cache }
+   } catch (error) {
+     if (!existing) throw error
+-    existing.source.stale = true
+-    existing.source.error =
+-      error instanceof Error ? error.message : String(error)
+-    await writeCopilotPricing(existing)
+-    return { status: "stale", cache: existing }
++    const stale = structuredClone(existing)
++    stale.source.last_attempt_at = new Date().toISOString()
++    stale.source.stale = true
++    stale.source.error = error instanceof Error ? error.message : String(error)
++    await writeCopilotPricing(stale, cachePath)
++    return { status: "stale", cache: stale }
++  }
++}
++
++export interface PublishedPricing extends CopilotPricingCache {
++  diagnostics: {
++    mapped_but_inaccessible: Array<string>
++    accessible_without_pricing: Array<string>
++  }
++}
++
++export function publishCopilotPricing(
++  cache: CopilotPricingCache,
++  models: ModelsResponse | undefined,
++): PublishedPricing {
++  const accessible = new Set(models?.data.map((model) => model.id) ?? [])
++  const publishedData = cache.data.filter(
++    (item): item is CopilotModelPricing & { model: string } =>
++      Boolean(item.model && accessible.has(item.model)),
++  )
++  const priced = new Set(publishedData.map((item) => item.model))
++  const mappedButInaccessible = cache.data.flatMap((item) =>
++    item.model && !accessible.has(item.model) ? [item.model] : [],
++  )
++  const accessibleWithoutPricing = [...accessible].filter(
++    (model) => !priced.has(model),
++  )
++  const publicEtag = `"${createHash("sha256")
++    .update(
++      JSON.stringify({
++        source_version: cache.source.version,
++        stale: cache.source.stale,
++        error: cache.source.error,
++        data: publishedData,
++        unmatched_models: cache.unmatched_models,
++        mapped_but_inaccessible: mappedButInaccessible,
++        accessible_without_pricing: accessibleWithoutPricing,
++      }),
++    )
++    .digest("hex")}"`
++  return {
++    ...cache,
++    source: { ...cache.source, public_etag: publicEtag },
++    data: publishedData,
++    diagnostics: {
++      mapped_but_inaccessible: mappedButInaccessible,
++      accessible_without_pricing: accessibleWithoutPricing,
++    },
+   }
+ }
+ 
++export function pricingEtagMatches(
++  ifNoneMatch: string | undefined,
++  etag: string,
++): boolean {
++  return (
++    ifNoneMatch
++      ?.split(",")
++      .map((value) => value.trim().replace(/^W\//, ""))
++      .includes(etag) ?? false
++  )
++}
++
+ export function pricingForModel(
+   cache: CopilotPricingCache | undefined,
+   modelId: string,
+diff --git a/src/routes/pricing/route.ts b/src/routes/pricing/route.ts
+index 3b1c8b6..fcd396e 100644
+--- a/src/routes/pricing/route.ts
++++ b/src/routes/pricing/route.ts
+@@ -1,6 +1,11 @@
+ import { Hono } from "hono"
+ 
+-import { readCopilotPricing } from "~/lib/copilot-pricing"
++import {
++  pricingEtagMatches,
++  publishCopilotPricing,
++  readCopilotPricing,
++} from "~/lib/copilot-pricing"
++import { state } from "~/lib/state"
+ 
+ export const pricingRoutes = new Hono()
+ 
+@@ -12,5 +17,13 @@ pricingRoutes.get("/", async (c) => {
+       503,
+     )
+   }
+-  return c.json(pricing)
++  const published = publishCopilotPricing(pricing, state.models)
++  const etag = published.source.public_etag
++  if (!etag) return c.json(published)
++  c.header("ETag", etag)
++  c.header("Cache-Control", "private, max-age=1800")
++  if (pricingEtagMatches(c.req.header("if-none-match"), etag)) {
++    return c.body(null, 304)
++  }
++  return c.json(published)
+ })
+diff --git a/src/start.ts b/src/start.ts
+index 62dd0fe..98f0fd6 100644
+--- a/src/start.ts
++++ b/src/start.ts
+@@ -63,8 +63,8 @@ export async function runServer(options: RunServerOptions): Promise<void> {
+   }
+ 
+   await setupCopilotToken()
+-  await startPricingScheduler()
+   await cacheModels()
++  await startPricingScheduler()
+ 
+   const modelCount = state.models?.data.length ?? 0
+   consola.info(
+diff --git a/tests/copilot-pricing.test.ts b/tests/copilot-pricing.test.ts
+index 29f329c..84aad9c 100644
+--- a/tests/copilot-pricing.test.ts
++++ b/tests/copilot-pricing.test.ts
+@@ -1,6 +1,11 @@
+ import { describe, expect, it } from "bun:test"
+ 
+-import { parseCopilotPricingYaml, pricingForModel } from "~/lib/copilot-pricing"
++import {
++  parseCopilotPricingYaml,
++  pricingEtagMatches,
++  pricingForModel,
++  publishCopilotPricing,
++} from "~/lib/copilot-pricing"
+ 
+ const FIXTURE = `
+ - model: GPT-5.6 Sol
+@@ -53,7 +58,7 @@ describe("Copilot pricing parser", () => {
+       input_threshold: { operator: "gt", tokens: 272_000 },
+       credits_per_1m: { input: 1000, output: 4500 },
+     })
+-    expect(pricing.source.etag).toBe('"fixture"')
++    expect(pricing.source.upstream_etag).toBe('"fixture"')
+     expect(pricing.source.version).toStartWith("sha256:")
+   })
+ 
+@@ -83,4 +88,89 @@ describe("Copilot pricing parser", () => {
+       "Pricing source contains no model rows",
+     )
+   })
++
++  it("publishes only models in the accessible catalog without blocking others", () => {
++    const pricing = parseCopilotPricingYaml(FIXTURE)
++    const published = publishCopilotPricing(pricing, {
++      object: "list",
++      data: [
++        {
++          id: "gpt-5.6-sol",
++          name: "GPT-5.6 Sol",
++          object: "model",
++          vendor: "openai",
++          version: "1",
++          preview: false,
++          model_picker_enabled: true,
++          capabilities: {
++            family: "gpt",
++            limits: {},
++            object: "model_capabilities",
++            supports: {},
++            tokenizer: "test",
++            type: "chat",
++          },
++        },
++        {
++          id: "accessible-without-price",
++          name: "Accessible",
++          object: "model",
++          vendor: "test",
++          version: "1",
++          preview: false,
++          model_picker_enabled: true,
++          capabilities: {
++            family: "test",
++            limits: {},
++            object: "model_capabilities",
++            supports: {},
++            tokenizer: "test",
++            type: "chat",
++          },
++        },
++      ],
++    })
++
++    expect(published.data.map((item) => item.model)).toEqual(["gpt-5.6-sol"])
++    expect(published.diagnostics.accessible_without_pricing).toContain(
++      "accessible-without-price",
++    )
++    expect(published.source.public_etag).toMatch(/^"[a-f0-9]{64}"$/)
++  })
++
++  it("keeps the public ETag stable across timestamp-only changes", () => {
++    const pricing = parseCopilotPricingYaml(FIXTURE)
++    const models = {
++      object: "list" as const,
++      data: [
++        {
++          id: "gpt-5.6-sol",
++          name: "GPT-5.6 Sol",
++          object: "model",
++          vendor: "openai",
++          version: "1",
++          preview: false,
++          model_picker_enabled: true,
++          capabilities: {
++            family: "gpt",
++            limits: {},
++            object: "model_capabilities",
++            supports: {},
++            tokenizer: "test",
++            type: "chat",
++          },
++        },
++      ],
++    }
++    const first = publishCopilotPricing(pricing, models)
++    pricing.source.validated_at = "2099-01-01T00:00:00.000Z"
++    pricing.source.last_attempt_at = "2099-01-01T00:00:00.000Z"
++    const second = publishCopilotPricing(pricing, models)
++    expect(second.source.public_etag).toBe(first.source.public_etag)
++  })
++
++  it("matches strong and weak conditional ETags", () => {
++    expect(pricingEtagMatches('W/"abc", "other"', '"abc"')).toBe(true)
++    expect(pricingEtagMatches('"other"', '"abc"')).toBe(false)
++  })
+ })
+diff --git a/tests/pricing-conditional-route.test.ts b/tests/pricing-conditional-route.test.ts
+new file mode 100644
+index 0000000..bf73802
+--- /dev/null
++++ b/tests/pricing-conditional-route.test.ts
+@@ -0,0 +1,89 @@
++import { beforeEach, describe, expect, it } from "bun:test"
++
++import {
++  parseCopilotPricingYaml,
++  type PublishedPricing,
++  writeCopilotPricing,
++} from "~/lib/copilot-pricing"
++import { state } from "~/lib/state"
++import { server } from "~/server"
++
++const fixture = `
++- model: GPT-5.6 Sol
++  input: $5.00
++  output: $30.00
++- model: Claude Fable 5
++  input: $1.00
++  output: $5.00
++`
++
++beforeEach(async () => {
++  state.models = {
++    object: "list",
++    data: [
++      {
++        id: "gpt-5.6-sol",
++        name: "GPT-5.6 Sol",
++        object: "model",
++        vendor: "openai",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        capabilities: {
++          family: "gpt",
++          limits: {},
++          object: "model_capabilities",
++          supports: {},
++          tokenizer: "test",
++          type: "chat",
++        },
++      },
++      {
++        id: "unpriced-model",
++        name: "Unpriced",
++        object: "model",
++        vendor: "test",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        capabilities: {
++          family: "test",
++          limits: {},
++          object: "model_capabilities",
++          supports: {},
++          tokenizer: "test",
++          type: "chat",
++        },
++      },
++    ],
++  }
++  await writeCopilotPricing(parseCopilotPricingYaml(fixture))
++})
++
++describe("pricing conditional HTTP contract", () => {
++  it("returns a representation ETag matching the body", async () => {
++    const response = await server.request("/v1/pricing")
++    const body = (await response.json()) as PublishedPricing
++
++    expect(response.status).toBe(200)
++    expect(response.headers.get("etag")).toBe(body.source.public_etag ?? null)
++    expect(body.data.map((item) => item.model)).toEqual(["gpt-5.6-sol"])
++    expect(body.diagnostics.accessible_without_pricing).toContain(
++      "unpriced-model",
++    )
++  })
++
++  it("returns bodyless 304 for a matching weak ETag", async () => {
++    const initial = await server.request("/v1/pricing")
++    const etag = initial.headers.get("etag")
++    if (!etag) throw new Error("Expected ETag")
++
++    const response = await server.request("/v1/pricing", {
++      headers: { "if-none-match": `W/${etag}` },
++    })
++
++    expect(response.status).toBe(304)
++    expect(response.headers.get("etag")).toBe(etag)
++    expect(await response.text()).toBe("")
++  })
++})
+diff --git a/tests/pricing-updater-recovery.test.ts b/tests/pricing-updater-recovery.test.ts
+new file mode 100644
+index 0000000..378d959
+--- /dev/null
++++ b/tests/pricing-updater-recovery.test.ts
+@@ -0,0 +1,52 @@
++import { describe, expect, it } from "bun:test"
++import fs from "node:fs/promises"
++import os from "node:os"
++import path from "node:path"
++
++import { readCopilotPricing, updateCopilotPricing } from "~/lib/copilot-pricing"
++
++const fixture = `
++- model: GPT-5.6 Sol
++  input: $5.00
++  output: $30.00
++`
++
++describe("pricing updater recovery", () => {
++  it("retains successful timestamps on failure and clears errors on recovery", async () => {
++    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pricing-test-"))
++    const target = path.join(directory, "pricing.json")
++    try {
++      const first = await updateCopilotPricing(
++        () =>
++          Promise.resolve(
++            new Response(fixture, { headers: { etag: '"first"' } }),
++          ),
++        target,
++      )
++      const fetchedAt = first.cache?.source.fetched_at
++      const validatedAt = first.cache?.source.validated_at
++
++      const failed = await updateCopilotPricing(
++        () => Promise.reject(new Error("offline")),
++        target,
++      )
++      expect(failed.status).toBe("stale")
++      expect(failed.cache?.source.fetched_at).toBe(fetchedAt)
++      expect(failed.cache?.source.validated_at).toBe(validatedAt)
++      expect(failed.cache?.source.last_attempt_at).toBeDefined()
++      expect(failed.cache?.source.error).toBe("offline")
++
++      const recovered = await updateCopilotPricing((_input, init) => {
++        expect(new Headers(init?.headers).get("if-none-match")).toBe('"first"')
++        return Promise.resolve(new Response(null, { status: 304 }))
++      }, target)
++      expect(recovered.status).toBe("not-modified")
++      expect(recovered.cache?.source.stale).toBe(false)
++      expect(recovered.cache?.source.error).toBeUndefined()
++      expect(recovered.cache?.source.validated_at).not.toBe(validatedAt)
++      expect(await readCopilotPricing(target)).toEqual(recovered.cache)
++    } finally {
++      await fs.rm(directory, { recursive: true, force: true })
++    }
++  })
++})
