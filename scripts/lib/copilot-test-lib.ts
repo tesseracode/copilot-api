@@ -83,6 +83,7 @@ export function copilotHeaders(jwt: string): Record<string, string> {
 export function proxyHeaders(): Record<string, string> {
   return {
     "content-type": "application/json",
+    "x-api-key": "dummy",
     "anthropic-version": "2023-06-01",
   }
 }
@@ -133,7 +134,9 @@ export function classifyModel(model: CopilotModel): ModelProfile {
     id: model.id,
     endpoint,
     isClaude,
-    toolSupport: Boolean(supports.tool_calls),
+    // Default to true so an unadvertised capability is probed and reported
+    // rather than silently skipped — this is a discovery tool.
+    toolSupport: supports.tool_calls ?? true,
     thinkingSupport,
     effortSupport:
       (supports.reasoning_effort?.length ?? 0) > 0 ? "param" : "none",
