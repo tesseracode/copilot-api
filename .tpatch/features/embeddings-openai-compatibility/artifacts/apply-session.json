@@ -1,0 +1,8 @@
+{
+  "slug": "embeddings-openai-compatibility",
+  "completed_at": "2026-07-24T04:28:23Z",
+  "base_commit": "c09bd7568f8ac522872ddc4b089f781d2e206c26",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/embeddings-compatibility.test.ts"
+}

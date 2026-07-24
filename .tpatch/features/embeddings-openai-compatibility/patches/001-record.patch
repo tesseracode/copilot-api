@@ -1,0 +1,495 @@
+diff --git a/scripts/reports/gateway-live-acceptance.md b/scripts/reports/gateway-live-acceptance.md
+new file mode 100644
+index 0000000..2d415fa
+--- /dev/null
++++ b/scripts/reports/gateway-live-acceptance.md
+@@ -0,0 +1,69 @@
++# Gateway Live Acceptance — 2026-07-23
++
++## Runtime
++
++- Built Node proxy: `node dist/main.js start --port 4245 --account-type enterprise --verbose`
++- `GET /health`: HTTP 200, version `0.7.0`, model_count `40`.
++- `GET /v1/models`: HTTP 200, `40` models.
++- No `Access-Control-Allow-Origin` header was emitted by health, pricing, Responses, or embeddings.
++
++## Native Responses create + stream
++
++```sh
++curl -i http://localhost:4245/v1/responses \
++  -H 'Content-Type: application/json' \
++  --data '{"model":"gpt-5.6-sol","input":"Reply PONG","max_output_tokens":8,"reasoning":{"effort":"low"},"stream":false}'
++# HTTP 400 structured provider error
++
++curl -i http://localhost:4245/v1/responses \
++  -H 'Content-Type: application/json' \
++  --data '{"model":"gpt-5.6-sol","input":"Reply PONG","max_output_tokens":64,"reasoning":{"effort":"low"},"stream":false}'
++# HTTP 200; usage, copilot_usage, output items, request IDs preserved
++
++curl -N http://localhost:4245/v1/responses \
++  -H 'Content-Type: application/json' \
++  --data '{"model":"gpt-5.6-sol","input":"Reply PONG","max_output_tokens":64,"reasoning":{"effort":"low"},"stream":true}'
++# HTTP 200; one response.completed event with usage and copilot_usage
++```
++
++`GET /v1/responses/resp_123` returned HTTP 404. Retrieve/cancel/background/conversation lifecycle remains unsupported and unadvertised.
++
++## Embeddings
++
++```sh
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":"hello"}'
++# HTTP 200; object=list; model=text-embedding-3-small; 1 x 1536 vector
++
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":["hello"]}'
++# HTTP 200; equivalent one-item result
++
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":["hello","world"],"dimensions":64,"encoding_format":"float"}'
++# HTTP 200; 2 x 64 vectors
++
++curl -i http://localhost:4245/v1/embeddings -H 'Content-Type: application/json' \
++  --data '{"model":"text-embedding-3-small","input":"hello","encoding_format":"base64"}'
++# HTTP 400; stable invalid_request_error, code=invalid_value, param=encoding_format
++```
++
++Successful responses preserve `x-copilot-service-request-id` and `x-github-request-id` and normalize top-level OpenAI fields.
++
++## Pricing freshness and conditional GET
++
++- Built Node startup refresh completed without `Bun is not defined`.
++- `GET /v1/pricing`: HTTP 200, `stale=false`, no source error.
++- HTTP/body ETag: `"39cd191b606d903ada45076343d0ac4b52b5b4c408cfe3b94c3d22b46d114796"`.
++- `If-None-Match: W/"39cd191b606d903ada45076343d0ac4b52b5b4c408cfe3b94c3d22b46d114796"` returned HTTP 304 with no body.
++- Canonical docs rows: 28.
++- Published accessible priced models: 21.
++- Mapped but inaccessible rows: 0.
++- Accessible models without pricing: 19; these remain present in `/v1/models` and usable.
++- Intentional unmatched docs names: GPT-5.4 nano, Claude Sonnet 4, Claude Opus 4.5, Claude Opus 4.8 (fast mode) (preview), Claude Fable 5, Raptor mini, Kimi K2.7 Code.
++
++The source ETag (`upstream_etag`) and public filtered representation ETag (`public_etag`) are separate fields.
++
++## CORS and privacy
++
++Wildcard CORS is disabled by default. `/token`, `/usage`, pricing, health, model, embeddings, and Responses routes do not emit browser CORS grants. The service remains private/internal; tesseragateway owns public authentication and TLS policy.
+diff --git a/src/routes/embeddings/route.ts b/src/routes/embeddings/route.ts
+index 4c4fc7b..cc2a572 100644
+--- a/src/routes/embeddings/route.ts
++++ b/src/routes/embeddings/route.ts
+@@ -1,6 +1,8 @@
++import type { ContentfulStatusCode } from "hono/utils/http-status"
++
+ import { Hono } from "hono"
+ 
+-import { forwardError } from "~/lib/error"
++import { state } from "~/lib/state"
+ import {
+   createEmbeddings,
+   type EmbeddingRequest,
+@@ -8,13 +10,164 @@ import {
+ 
+ export const embeddingRoutes = new Hono()
+ 
++type ErrorBody = ReturnType<typeof errorResponse>
++type ValidationResult = { payload: EmbeddingRequest } | { error: ErrorBody }
++
++function errorResponse(
++  message: string,
++  param: string | null,
++  code = "invalid_value",
++) {
++  return { error: { type: "invalid_request_error", code, message, param } }
++}
++
++function validateInput(value: unknown): Array<string> | ErrorBody {
++  const values = typeof value === "string" ? [value] : value
++  if (
++    !Array.isArray(values)
++    || values.length === 0
++    || values.some((item) => typeof item !== "string" || item.length === 0)
++  ) {
++    return errorResponse(
++      "input must be a non-empty string or array of non-empty strings",
++      "input",
++    )
++  }
++  return values as Array<string>
++}
++
++function validateOptions(
++  input: Record<string, unknown>,
++  values: Array<string>,
++): ErrorBody | undefined {
++  const model = state.models?.data.find((item) => item.id === input.model)
++  if (!model || model.capabilities.type !== "embeddings") {
++    return errorResponse(
++      `Model ${String(input.model)} is not an available embedding model`,
++      "model",
++      "model_not_found",
++    )
++  }
++  const maxInputs = model.capabilities.limits.max_inputs
++  if (maxInputs && values.length > maxInputs) {
++    return errorResponse(
++      `input contains ${values.length} items; model limit is ${maxInputs}`,
++      "input",
++    )
++  }
++  if (
++    input.dimensions !== undefined
++    && (!Number.isInteger(input.dimensions) || Number(input.dimensions) <= 0)
++  ) {
++    return errorResponse("dimensions must be a positive integer", "dimensions")
++  }
++  if (
++    input.dimensions !== undefined
++    && !model.capabilities.supports.dimensions
++  ) {
++    return errorResponse(
++      `Model ${String(input.model)} does not support dimensions`,
++      "dimensions",
++    )
++  }
++  if (
++    input.encoding_format !== undefined
++    && input.encoding_format !== "float"
++  ) {
++    return errorResponse(
++      'encoding_format must be "float"; base64 is not supported',
++      "encoding_format",
++    )
++  }
++}
++
++function validatePayload(value: unknown): ValidationResult {
++  if (!value || typeof value !== "object") {
++    return { error: errorResponse("Request body must be an object", null) }
++  }
++  const input = value as Record<string, unknown>
++  if (typeof input.model !== "string" || input.model.length === 0) {
++    return { error: errorResponse("model must be a non-empty string", "model") }
++  }
++  const values = validateInput(input.input)
++  if (!Array.isArray(values)) return { error: values }
++  const optionsError = validateOptions(input, values)
++  if (optionsError) return { error: optionsError }
++
++  return {
++    payload: {
++      model: input.model,
++      input: values,
++      dimensions: input.dimensions as number | undefined,
++      encoding_format: input.encoding_format as "float" | undefined,
++    },
++  }
++}
++
++function copySafeHeaders(
++  response: Response,
++  set: (name: string, value: string) => void,
++) {
++  for (const name of [
++    "x-copilot-service-request-id",
++    "x-github-request-id",
++    "retry-after",
++  ]) {
++    const value = response.headers.get(name)
++    if (value) set(name, value)
++  }
++}
++
++async function upstreamError(response: Response): Promise<ErrorBody> {
++  const text = await response.text()
++  let envelope: Record<string, unknown> | undefined
++  try {
++    const parsed = JSON.parse(text) as { error?: Record<string, unknown> }
++    envelope = parsed.error
++  } catch {
++    envelope = undefined
++  }
++  return {
++    error: {
++      type:
++        typeof envelope?.type === "string" ? envelope.type : "upstream_error",
++      code:
++        typeof envelope?.code === "string" ?
++          envelope.code
++        : "embedding_request_failed",
++      message:
++        typeof envelope?.message === "string" ?
++          envelope.message
++        : text.trim()
++          || `Upstream embeddings request failed (${response.status})`,
++      param: typeof envelope?.param === "string" ? envelope.param : null,
++    },
++  }
++}
++
+ embeddingRoutes.post("/", async (c) => {
++  let value: unknown
+   try {
+-    const paylod = await c.req.json<EmbeddingRequest>()
+-    const response = await createEmbeddings(paylod)
++    value = await c.req.json()
++  } catch {
++    return c.json(errorResponse("Request body must be valid JSON", null), 400)
++  }
++  const validated = validatePayload(value)
++  if ("error" in validated) return c.json(validated.error, 400)
+ 
+-    return c.json(response)
+-  } catch (error) {
+-    return await forwardError(c, error)
++  const response = await createEmbeddings(validated.payload, c.req.raw.signal)
++  copySafeHeaders(response, (name, header) => c.header(name, header))
++  if (!response.ok) {
++    return c.json(
++      await upstreamError(response),
++      response.status as ContentfulStatusCode,
++    )
+   }
++
++  const result = (await response.json()) as Record<string, unknown>
++  return c.json({
++    ...result,
++    object: "list",
++    model: validated.payload.model,
++  })
+ })
+diff --git a/src/services/copilot/create-embeddings.ts b/src/services/copilot/create-embeddings.ts
+index 4ef8143..563922e 100644
+--- a/src/services/copilot/create-embeddings.ts
++++ b/src/services/copilot/create-embeddings.ts
+@@ -1,24 +1,25 @@
+ import { copilotBaseUrl } from "~/lib/api-config"
+ import { copilotFetch } from "~/lib/copilot-fetch"
+-import { HTTPError } from "~/lib/error"
+ import { state } from "~/lib/state"
+ 
+-export const createEmbeddings = async (payload: EmbeddingRequest) => {
++export const createEmbeddings = async (
++  payload: EmbeddingRequest,
++  signal?: AbortSignal,
++): Promise<Response> => {
+   if (!state.copilotToken) throw new Error("Copilot token not found")
+ 
+-  const response = await copilotFetch(`${copilotBaseUrl(state)}/embeddings`, {
++  return await copilotFetch(`${copilotBaseUrl(state)}/embeddings`, {
+     method: "POST",
+     body: JSON.stringify(payload),
++    signal,
+   })
+-
+-  if (!response.ok) throw new HTTPError("Failed to create embeddings", response)
+-
+-  return (await response.json()) as EmbeddingResponse
+ }
+ 
+ export interface EmbeddingRequest {
+-  input: string | Array<string>
++  input: Array<string>
+   model: string
++  dimensions?: number
++  encoding_format?: "float"
+ }
+ 
+ export interface Embedding {
+diff --git a/tests/embeddings-compatibility.test.ts b/tests/embeddings-compatibility.test.ts
+new file mode 100644
+index 0000000..712bd1b
+--- /dev/null
++++ b/tests/embeddings-compatibility.test.ts
+@@ -0,0 +1,192 @@
++import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
++
++import { state } from "~/lib/state"
++import { server } from "~/server"
++
++const originalFetch = globalThis.fetch
++
++beforeEach(() => {
++  state.copilotToken = "test-token"
++  state.models = {
++    object: "list",
++    data: [
++      {
++        id: "text-embedding-test",
++        name: "Embedding",
++        object: "model",
++        vendor: "openai",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        capabilities: {
++          family: "embedding",
++          limits: { max_inputs: 2 },
++          object: "model_capabilities",
++          supports: { dimensions: true },
++          tokenizer: "test",
++          type: "embeddings",
++        },
++      },
++    ],
++  }
++})
++
++afterEach(() => {
++  globalThis.fetch = originalFetch
++})
++
++function mockSuccess(capture: (body: Record<string, unknown>) => void): void {
++  globalThis.fetch = mock(
++    (_input: string | URL | Request, init?: RequestInit) => {
++      if (typeof init?.body !== "string") throw new Error("Expected JSON body")
++      capture(JSON.parse(init.body) as Record<string, unknown>)
++      return Promise.resolve(
++        Response.json({
++          data: [{ object: "embedding", embedding: [0.1, 0.2], index: 0 }],
++          usage: { prompt_tokens: 1, total_tokens: 1 },
++        }),
++      )
++    },
++  ) as unknown as typeof fetch
++}
++
++async function request(body: unknown): Promise<Response> {
++  return await server.request("/v1/embeddings", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify(body),
++  })
++}
++
++describe("OpenAI embeddings compatibility", () => {
++  it("normalizes scalar string input and standardizes response fields", async () => {
++    let upstream: Record<string, unknown> = {}
++    mockSuccess((body) => {
++      upstream = body
++    })
++
++    const response = await request({
++      model: "text-embedding-test",
++      input: "hello",
++    })
++    const body = await response.json()
++
++    expect(upstream.input).toEqual(["hello"])
++    expect(body).toMatchObject({
++      object: "list",
++      model: "text-embedding-test",
++      data: [{ object: "embedding" }],
++    })
++  })
++
++  it("preserves batches, dimensions, and float encoding", async () => {
++    let upstream: Record<string, unknown> = {}
++    mockSuccess((body) => {
++      upstream = body
++    })
++
++    const response = await request({
++      model: "text-embedding-test",
++      input: ["hello", "world"],
++      dimensions: 2,
++      encoding_format: "float",
++    })
++
++    expect(response.status).toBe(200)
++    expect(upstream).toMatchObject({
++      input: ["hello", "world"],
++      dimensions: 2,
++      encoding_format: "float",
++    })
++  })
++
++  it("rejects unknown models with a stable model error", async () => {
++    const response = await request({ model: "unknown-model", input: "hello" })
++    expect(response.status).toBe(400)
++    expect(await response.json()).toMatchObject({
++      error: { code: "model_not_found", param: "model" },
++    })
++  })
++
++  const malformedCases: Array<[Record<string, unknown>, string]> = [
++    [{ model: "text-embedding-test", input: [] }, "input"],
++    [{ model: "text-embedding-test", input: ["a", "b", "c"] }, "input"],
++    [
++      { model: "text-embedding-test", input: "hello", dimensions: 0 },
++      "dimensions",
++    ],
++    [
++      {
++        model: "text-embedding-test",
++        input: "hello",
++        encoding_format: "base64",
++      },
++      "encoding_format",
++    ],
++  ]
++
++  it.each(malformedCases)(
++    "returns structured errors for malformed input",
++    async (payload, param) => {
++      const response = await request(payload)
++      expect(response.status).toBe(400)
++      expect(await response.json()).toMatchObject({
++        error: {
++          type: "invalid_request_error",
++          code: "invalid_value",
++          param,
++        },
++      })
++    },
++  )
++
++  it("normalizes opaque upstream errors and preserves request IDs", async () => {
++    globalThis.fetch = mock(() =>
++      Promise.resolve(
++        new Response("Bad Request\n", {
++          status: 400,
++          headers: { "x-copilot-service-request-id": "embed-request-1" },
++        }),
++      ),
++    ) as unknown as typeof fetch
++
++    const response = await request({
++      model: "text-embedding-test",
++      input: "hello",
++    })
++
++    expect(response.status).toBe(400)
++    expect(response.headers.get("x-copilot-service-request-id")).toBe(
++      "embed-request-1",
++    )
++    expect(await response.json()).toEqual({
++      error: {
++        type: "upstream_error",
++        code: "embedding_request_failed",
++        message: "Bad Request",
++        param: null,
++      },
++    })
++  })
++
++  it("propagates the downstream abort signal", async () => {
++    let upstreamSignal: AbortSignal | null | undefined
++    globalThis.fetch = mock(
++      (_input: string | URL | Request, init?: RequestInit) => {
++        upstreamSignal = init?.signal
++        return Promise.resolve(Response.json({ data: [], usage: {} }))
++      },
++    ) as unknown as typeof fetch
++    const controller = new AbortController()
++    controller.abort()
++
++    await server.request("/v1/embeddings", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({ model: "text-embedding-test", input: "hello" }),
++      signal: controller.signal,
++    })
++
++    expect(upstreamSignal?.aborted).toBe(true)
++  })
++})
