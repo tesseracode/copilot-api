@@ -1,0 +1,8 @@
+{
+  "slug": "claude-chat-completions-passthrough",
+  "completed_at": "2026-07-25T17:12:39Z",
+  "base_commit": "16f190276417c7710390f2b7119cfc10ccbe296d",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: npx tsc --noEmit"
+}

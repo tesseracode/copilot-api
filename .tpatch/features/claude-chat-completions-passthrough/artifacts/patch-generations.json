@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "feature": "claude-chat-completions-passthrough",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_c945e563924c",
+      "kind": "record",
+      "patch_sha256": "27dbecac0b227222a7a31266596784e34037cd75f921fd7d17d81029783fb5b2",
+      "git_patch_id": "48ed584b7ae80a0ed241e86169707f83444d2ee6",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "8af1354d765157965f274276577ed953f2b99e859774184148a7980224572df8",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "16f190276417c7710390f2b7119cfc10ccbe296d",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/routes/chat-completions/handler.ts",
+        "tests/claude-chat-passthrough.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

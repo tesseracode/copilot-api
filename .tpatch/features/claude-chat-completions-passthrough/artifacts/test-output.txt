@@ -1,0 +1,4 @@
+# Test run — 2026-07-25T17:12:39Z
+# Command: npx tsc --noEmit
+# Directory: /home/juanbe/development/scripts/copilot-api
+

@@ -1,0 +1,4 @@
+ .tpatch/FEATURES.md                                |  28 +++
+ .../chat-completions-native-reroute/request.md     |   8 +
+ src/routes/chat-completions/handler.ts             | 201 ---------------------
+ 3 files changed, 36 insertions(+), 201 deletions(-)
