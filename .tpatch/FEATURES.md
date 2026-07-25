@@ -7,6 +7,34 @@
 | `api-migration-test-coverage` | Add unit tests for the api-context-effort-migration feature gaps: (1) buildNativeBody extracts effort from legacy model-name suffixes like claude-opus-4-7-xhigh, (2) translateRequestToResponses populates reasoning.effort for GPT-5.x, (3) anthropicToCopilotModelId strips -1m dash suffix (not just [1m] bracket suffix). | applied | unknown |
 | `catalog-aware-effort-normalization` | Normalize effort against each model's advertised catalog capabilities | applied | unknown |
 | `chat-completions-native-reroute` | Add /v1/messages native routing to the /chat/completions handler: when resolveEndpoint returns /v1/messages for a Claude model sent to /chat/completions, reroute to native passthrough instead of forwarding through the lossy /chat/completions translation. Not a bug fix (upstream /chat/completions works for Claude) but an optimization for preserving thinking blocks and prompt caching. | applied | unknown |
+| `claude-chat-completions-passthrough` | Revert the Claude reroute on /chat/completions and let Claude models pass through to the upstream /chat/completions endpoint natively.
+
+The chat-completions-native-reroute feature intercepted Claude models arriving on /chat/completions and rerouted them through native /v1/messages, translating Anthropic->OpenAI on the way back. Its stated rationale ('Claude on /chat/completions loses tool calling') is provably false against today's upstream API, and the reroute itself is lossy:
+
+(1) Streaming tool calls are silently dropped. anthropicEventToOpenAIChunk (src/routes/chat-completions/handler.ts:322-358) maps only text_delta and message_delta.stop_reason; content_block_start/tool_use and input_json_delta both return null. Verified live: upstream /chat/completions emits full tool_calls deltas (id, name, index, incremental arguments) for claude-sonnet-5, while the proxy emits a single chunk {"delta":{},"finish_reason":"tool_calls"} with the tool name, id and arguments entirely missing - telling the client to expect a tool call that never arrives.
+
+(2) Client disconnects do not propagate. handleNativeReroute calls forwardNativeMessagesNonStreaming at :190 and forwardNativeMessagesStreaming at :197 without the AbortSignal (both functions accept one), and its streamSSE has no abort catch, so an aborted stream keeps consuming Copilot quota. The responses-stream-abort-propagation feature missed this path.
+
+(3) Thinking blocks are dropped anyway. extractAnthropicContent (:248-261) handles only text and tool_use block types, so the reroute never delivered the thinking preservation it was kept for.
+
+Verified upstream behaviour for claude-sonnet-5 on /chat/completions: tool calls preserved streaming and non-streaming; copilot_usage still carries cache_read/cache_write and usage.prompt_tokens_details.cached_tokens; thinking not returned (but the reroute did not return it either). Net: passthrough is equal or better on every axis.
+
+Scope: delete the endpoint === '/v1/messages' branch in handleCompletion, handleNativeReroute, and the four private translation helpers (mapAnthropicFinishReason, extractAnthropicContent, anthropicResponseToOpenAI, anthropicEventToOpenAIChunk), plus the imports they required. Claude requests then fall through to the existing createChatCompletions path, which already passes the request signal and has an abort catch. forward-native-messages.ts stays - /v1/messages still uses it. No change to the /v1/messages route: Anthropic-shaped clients keep full native passthrough.
+
+Add tests/claude-chat-passthrough.test.ts as the regression test: mock fetch, seed state.models so the Claude model does advertise /v1/messages, drive server.request('/v1/chat/completions') with tools and stream:true, and assert (a) emitted chunks carry tool_calls with id, name and argument deltas, and (b) the upstream request went to /chat/completions rather than /v1/messages. This is the first end-to-end coverage of that route.
+
+Supersedes chat-completions-native-reroute. | applied | unknown |
+| `claude-thinking-reasoning-text` | Surface Claude thinking blocks as reasoning_text on the OpenAI-shaped /chat/completions endpoint.
+
+Deferred, deliberately unimplemented. Filed while reverting chat-completions-native-reroute (see claude-chat-completions-passthrough) so the capability is tracked rather than lost.
+
+Today, a Claude model sent to /chat/completions passes through to the upstream /chat/completions endpoint, which does not return thinking blocks - reasoning_effort is accepted and silently ignored, and the response message carries only role and content. The old reroute did not deliver thinking either: extractAnthropicContent handled only text and tool_use block types, so thinking blocks were dropped on that path too. No capability is being lost by the revert; this feature would be net-new.
+
+If built, it should follow the convention the reasoning-block-preservation feature already established for GPT-5.x: map reasoning output to reasoning_text in /chat/completions responses and to thinking blocks in /v1/messages responses. That implies routing such requests through native /v1/messages (as the old reroute did) but with the three defects fixed: (1) a real Anthropic-events to OpenAI-chunks tool-call assembler with index bookkeeping and incremental argument deltas, mirroring the logic in create-responses.ts, (2) AbortSignal threaded to forwardNativeMessages*, (3) thinking blocks mapped to reasoning_text instead of being discarded. Multi-turn continuation additionally needs thinking signature round-tripping, which is the same blocker tracked by the reasoning-roundtrip feature.
+
+Do not start this without a confirmed consumer. A survey of the intended stack (Claude Code, OpenClaw, Codex, Copilot CLI, Hermes, Pi agent, tpatch) found no client that both sends Claude models to an OpenAI-shaped endpoint and consumes thinking: Claude Code and OpenClaw use the native Anthropic Messages API for Claude, Codex uses wire_api=responses, and tpatch - the only confirmed consumer of the OpenAI-shaped path with a Claude model - wants parseable text/JSON, not thinking blocks.
+
+Prerequisite: the tool-call assembler is the risky part. Four of the five April 2026 stability fixes landed in exactly that code in create-responses.ts, so this should reuse a shared assembler rather than growing a second copy. | requested | unknown |
 | `context-boundary-cost-validation` | Probe catalog context boundaries and observed Copilot credit usage safely | applied | unknown |
 | `copilot-pricing-cache` | Cache official Copilot pricing and expose versioned pricing metadata | applied | unknown |
 | `copilot-pricing-node-runtime` | Make pricing refresh Node-safe, catalog-scoped, and conditionally cacheable | applied | unknown |
