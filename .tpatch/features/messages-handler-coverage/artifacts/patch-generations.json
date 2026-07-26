@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "feature": "messages-handler-coverage",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_465fabd1cca4",
+      "kind": "record",
+      "patch_sha256": "7b792dde5e755ebf3da6e6d49d0458a67bf7a51326f187d2f5fa4cf03a753489",
+      "git_patch_id": "2e3f206ee1d102e9ad3adfe386668a23db04f236",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "9463e15f3a093a623bfc29481e0c6a79ef40fb2803ecea7edcbb0c1e2fe1c0d0",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "cf8b84f302e61f7fc086071c1f42ce1d827313cd",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "tests/messages-handler.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}
