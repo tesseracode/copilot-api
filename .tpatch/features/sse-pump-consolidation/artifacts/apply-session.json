@@ -1,0 +1,8 @@
+{
+  "slug": "sse-pump-consolidation",
+  "completed_at": "2026-07-27T06:00:20Z",
+  "base_commit": "bfc8e67af99a050356212068f911cfa2f9069a63",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: npx tsc --noEmit"
+}

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "feature": "sse-pump-consolidation",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_0c2a3753c61c",
+      "kind": "record",
+      "patch_sha256": "f1b24e533fb379b4994c05e9e3d25cc91100e2f1110312e720cfd7845b9013e6",
+      "git_patch_id": "d2b28b0dd271fe937acb5004faa0013fe9b2e7b7",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "a6e48f6297736eb1045107cc3c0a90b5832ce7e31d65c6754511deb39c4df0f1",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "bfc8e67af99a050356212068f911cfa2f9069a63",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/streaming.ts",
+        "src/routes/chat-completions/handler.ts",
+        "src/routes/messages/anthropic-types.ts",
+        "src/routes/messages/handler.ts",
+        "tests/streaming-abort-handling.test.ts",
+        "tests/streaming-helpers.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

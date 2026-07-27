@@ -1,0 +1,17 @@
+{
+  "id": "sse-pump-consolidation",
+  "slug": "sse-pump-consolidation",
+  "title": "Consolidate the duplicated SSE pump across the two route handlers.\n\nFive structurally identical abort-catch blocks existed across src/routes/messages/handler.ts (three) and src/routes/chat-completions/handler.ts (two), differing only in whether they wrote signal.aborted or signal?.aborted - an accident of local typing, not semantics - and in their debug label. isNonStreaming was defined twice, identically. The AnthropicStreamState object literal was hand-built twice, even though the codebase already established the factory pattern with createResponsesStreamState.\n\nExtract src/lib/streaming.ts holding one definition of what a client disconnect means (streamSSEWithAbort, plus the isClientAbort predicate it uses) and one isNonStreaming. Add createAnthropicStreamState beside its interface in src/routes/messages/anthropic-types.ts, mirroring createResponsesStreamState.\n\nisNonStreaming is also made sound while being deduplicated. It previously asked whether the value had an own 'choices' property, which worked only because the iterator returned by events() happens not to expose one (POTENTIAL_FEATURES.md item 3). It now tests Symbol.asyncIterator, which is what 'is this a stream' actually means. Deduplicating a fragile predicate into a single shared helper would otherwise make it look blessed. The full discriminated-union change is filed separately as streaming-response-discriminated-union.\n\nAbort-path tests are written first, against the five existing copies, so the consolidation is proven behaviour-preserving rather than merely green.\n\nAn important limitation was found while validating: route-level tests cannot distinguish a swallowed abort from a rethrown error, because by then the headers are sent and both end as HTTP 200 with a partial body and a clean EOF. A mutation forcing isClientAbort to return false left all six route tests passing. isClientAbort is therefore exported and pinned directly in tests/streaming-helpers.test.ts, where the mutation does fail. The route tests are retained for what they do prove - all five streaming paths across both handlers exercised end to end - with their limitation documented in the file.\n\nThat same investigation surfaced a real gap: a non-abort mid-stream failure truncates silently, indistinguishable from a completed stream. It is pinned as a characterization test and filed as stream-failure-visibility.\n\nNote that this is not a line-count win - the handlers shed lines but the shared module adds them back. The gain is locality: one definition of what a client disconnect means, in a codebase that has already shipped two separate defects in that exact area.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-27T05:59:16Z",
+  "updated_at": "2026-07-27T06:00:20Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-27T06:00:20Z",
+    "base_commit": "bfc8e67af99a050356212068f911cfa2f9069a63",
+    "has_patch": true
+  },
+  "reconcile": {}
+}

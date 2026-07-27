@@ -1,0 +1,680 @@
+diff --git a/src/lib/streaming.ts b/src/lib/streaming.ts
+new file mode 100644
+index 0000000..344565b
+--- /dev/null
++++ b/src/lib/streaming.ts
+@@ -0,0 +1,73 @@
++import type { Context } from "hono"
++import type { SSEStreamingApi } from "hono/streaming"
++
++import consola from "consola"
++import { streamSSE } from "hono/streaming"
++
++/**
++ * Narrow a service result to its non-streaming form.
++ *
++ * Streaming services return an async iterable; non-streaming ones return a
++ * plain response object. Test the property that actually defines the
++ * distinction rather than a proxy for it: an earlier version checked for an own
++ * `choices` property, which happened to work only because the iterator returned
++ * by `events()` does not expose one (see POTENTIAL_FEATURES.md #3).
++ */
++export function isNonStreaming<T>(
++  response: T,
++): response is Exclude<T, AsyncIterable<unknown>> {
++  return !(Symbol.asyncIterator in Object(response))
++}
++
++interface StreamSSEOptions {
++  /** Request signal; an abort on it means the client went away. */
++  signal?: AbortSignal
++  /** Label used when logging a client disconnect. */
++  label: string
++}
++
++/**
++ * Wrap an SSE producer so that a client disconnect ends the stream quietly.
++ *
++ * A disconnect shows up either as an already-aborted request signal or as an
++ * `AbortError` thrown while the upstream stream is being consumed. Neither is a
++ * failure worth surfacing, so the stream simply ends. Anything else is
++ * rethrown.
++ *
++ * This is the single definition of what "the client went away" means; it
++ * previously existed as five structurally identical copies across the two route
++ * handlers.
++ */
++export function streamSSEWithAbort(
++  c: Context,
++  { signal, label }: StreamSSEOptions,
++  produce: (stream: SSEStreamingApi) => Promise<void>,
++): Response {
++  return streamSSE(c, async (stream) => {
++    try {
++      await produce(stream)
++    } catch (error) {
++      if (isClientAbort(error, signal)) {
++        consola.debug(`${label} stream aborted by client`)
++        return
++      }
++      throw error
++    }
++  })
++}
++
++/**
++ * Whether an error ending a stream means the client went away.
++ *
++ * Exported because this predicate is the only real logic in this module, and
++ * it is not observable through a route: swallowing and rethrowing produce the
++ * same client-visible result (headers are already sent, so both end as HTTP
++ * 200 with a partial body and a clean EOF). It therefore has to be tested
++ * directly.
++ */
++export function isClientAbort(error: unknown, signal?: AbortSignal): boolean {
++  return (
++    signal?.aborted === true
++    || (error instanceof Error && error.name === "AbortError")
++  )
++}
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index f3bd87f..85d02a2 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -1,18 +1,18 @@
+ import type { Context } from "hono"
+ 
+ import consola from "consola"
+-import { streamSSE, type SSEMessage } from "hono/streaming"
++import { type SSEMessage } from "hono/streaming"
+ 
+ import { awaitApproval } from "~/lib/approval"
+ import { resolveEffort } from "~/lib/effort"
+ import { resolveEndpoint } from "~/lib/endpoint-routing"
+ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
++import { isNonStreaming, streamSSEWithAbort } from "~/lib/streaming"
+ import { getTokenCount } from "~/lib/tokenizer"
+ import { isNullish } from "~/lib/utils"
+ import {
+   createChatCompletions,
+-  type ChatCompletionResponse,
+   type ChatCompletionsPayload,
+ } from "~/services/copilot/create-chat-completions"
+ import {
+@@ -78,23 +78,16 @@ export async function handleCompletion(c: Context) {
+   }
+ 
+   consola.debug("Streaming response")
+-  return streamSSE(c, async (stream) => {
+-    try {
++  return streamSSEWithAbort(
++    c,
++    { signal, label: "chat-completions" },
++    async (stream) => {
+       for await (const chunk of response) {
+         consola.debug("Streaming chunk:", JSON.stringify(chunk))
+         await stream.writeSSE(chunk as SSEMessage)
+       }
+-    } catch (err) {
+-      if (
+-        signal.aborted
+-        || (err instanceof Error && err.name === "AbortError")
+-      ) {
+-        consola.debug("chat-completions stream aborted by client")
+-        return
+-      }
+-      throw err
+-    }
+-  })
++    },
++  )
+ }
+ 
+ async function handleResponsesEndpoint(
+@@ -116,10 +109,12 @@ async function handleResponsesEndpoint(
+   }
+ 
+   consola.debug("Streaming /responses response")
+-  return streamSSE(c, async (stream) => {
+-    const streamState = createResponsesStreamState()
++  return streamSSEWithAbort(
++    c,
++    { signal, label: "/responses" },
++    async (stream) => {
++      const streamState = createResponsesStreamState()
+ 
+-    try {
+       for await (const rawEvent of response) {
+         if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+ 
+@@ -139,19 +134,6 @@ async function handleResponsesEndpoint(
+           })
+         }
+       }
+-    } catch (err) {
+-      if (
+-        signal?.aborted
+-        || (err instanceof Error && err.name === "AbortError")
+-      ) {
+-        consola.debug("/responses stream aborted by client")
+-        return
+-      }
+-      throw err
+-    }
+-  })
++    },
++  )
+ }
+-
+-const isNonStreaming = (
+-  response: Awaited<ReturnType<typeof createChatCompletions>>,
+-): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+diff --git a/src/routes/messages/anthropic-types.ts b/src/routes/messages/anthropic-types.ts
+index f296765..aac65e3 100644
+--- a/src/routes/messages/anthropic-types.ts
++++ b/src/routes/messages/anthropic-types.ts
+@@ -212,3 +212,13 @@ export interface AnthropicStreamState {
+     }
+   }
+ }
++
++/** Fresh per-stream translation state. Mirrors createResponsesStreamState. */
++export function createAnthropicStreamState(): AnthropicStreamState {
++  return {
++    messageStartSent: false,
++    contentBlockIndex: 0,
++    contentBlockOpen: false,
++    toolCalls: {},
++  }
++}
+diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
+index e91bd4c..6534d01 100644
+--- a/src/routes/messages/handler.ts
++++ b/src/routes/messages/handler.ts
+@@ -1,7 +1,6 @@
+ import type { Context } from "hono"
+ 
+ import consola from "consola"
+-import { streamSSE } from "hono/streaming"
+ 
+ import { awaitApproval } from "~/lib/approval"
+ import { resolveEffort } from "~/lib/effort"
+@@ -9,10 +8,10 @@ import { resolveEndpoint } from "~/lib/endpoint-routing"
+ import { anthropicToCopilotModelId } from "~/lib/model-mapping"
+ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
++import { isNonStreaming, streamSSEWithAbort } from "~/lib/streaming"
+ import {
+   createChatCompletions,
+   type ChatCompletionChunk,
+-  type ChatCompletionResponse,
+ } from "~/services/copilot/create-chat-completions"
+ import {
+   createResponses,
+@@ -25,8 +24,8 @@ import {
+ } from "~/services/copilot/forward-native-messages"
+ 
+ import {
++  createAnthropicStreamState,
+   type AnthropicMessagesPayload,
+-  type AnthropicStreamState,
+ } from "./anthropic-types"
+ import {
+   translateToAnthropic,
+@@ -118,15 +117,12 @@ export async function handleCompletion(c: Context) {
+   }
+ 
+   consola.debug("Streaming response from Copilot")
+-  return streamSSE(c, async (stream) => {
+-    const streamState: AnthropicStreamState = {
+-      messageStartSent: false,
+-      contentBlockIndex: 0,
+-      contentBlockOpen: false,
+-      toolCalls: {},
+-    }
++  return streamSSEWithAbort(
++    c,
++    { signal, label: "/v1/messages chat-completions" },
++    async (stream) => {
++      const streamState = createAnthropicStreamState()
+ 
+-    try {
+       for await (const rawEvent of response) {
+         consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
+         if (rawEvent.data === "[DONE]") {
+@@ -148,17 +144,8 @@ export async function handleCompletion(c: Context) {
+           })
+         }
+       }
+-    } catch (err) {
+-      if (
+-        signal.aborted
+-        || (err instanceof Error && err.name === "AbortError")
+-      ) {
+-        consola.debug("/v1/messages chat-completions stream aborted by client")
+-        return
+-      }
+-      throw err
+-    }
+-  })
++    },
++  )
+ }
+ 
+ // eslint-disable-next-line max-params
+@@ -177,8 +164,10 @@ async function handleNativePassthrough(
+     return c.json(response)
+   }
+ 
+-  return streamSSE(c, async (stream) => {
+-    try {
++  return streamSSEWithAbort(
++    c,
++    { signal, label: "/v1/messages native passthrough" },
++    async (stream) => {
+       for await (const event of forwardNativeMessagesStreaming(
+         payload,
+         is1M,
+@@ -189,25 +178,10 @@ async function handleNativePassthrough(
+           data: JSON.stringify(event.data),
+         })
+       }
+-    } catch (err) {
+-      if (
+-        signal?.aborted
+-        || (err instanceof Error && err.name === "AbortError")
+-      ) {
+-        consola.debug(
+-          "/v1/messages native passthrough stream aborted by client",
+-        )
+-        return
+-      }
+-      throw err
+-    }
+-  })
++    },
++  )
+ }
+ 
+-const isNonStreaming = (
+-  response: Awaited<ReturnType<typeof createChatCompletions>>,
+-): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
+-
+ /**
+  * Handle a request that needs the /responses endpoint but arrived via /v1/messages.
+  * Flow: Anthropic payload → already translated to OpenAI → /responses → OpenAI response → Anthropic format.
+@@ -232,16 +206,13 @@ async function handleResponsesViaAnthropic({
+     return context.json(anthropicResponse)
+   }
+ 
+-  return streamSSE(context, async (stream) => {
+-    const responsesState = createResponsesStreamState()
+-    const anthropicState: AnthropicStreamState = {
+-      messageStartSent: false,
+-      contentBlockIndex: 0,
+-      contentBlockOpen: false,
+-      toolCalls: {},
+-    }
++  return streamSSEWithAbort(
++    context,
++    { signal, label: "/v1/messages /responses" },
++    async (stream) => {
++      const responsesState = createResponsesStreamState()
++      const anthropicState = createAnthropicStreamState()
+ 
+-    try {
+       for await (const rawEvent of response) {
+         if (!rawEvent.data || rawEvent.data === "[DONE]") continue
+ 
+@@ -264,15 +235,6 @@ async function handleResponsesViaAnthropic({
+           }
+         }
+       }
+-    } catch (err) {
+-      if (
+-        signal?.aborted
+-        || (err instanceof Error && err.name === "AbortError")
+-      ) {
+-        consola.debug("/v1/messages /responses stream aborted by client")
+-        return
+-      }
+-      throw err
+-    }
+-  })
++    },
++  )
+ }
+diff --git a/tests/streaming-abort-handling.test.ts b/tests/streaming-abort-handling.test.ts
+new file mode 100644
+index 0000000..eda7326
+--- /dev/null
++++ b/tests/streaming-abort-handling.test.ts
+@@ -0,0 +1,244 @@
++/**
++ * Client-visible behaviour of the streaming handlers when a stream ends early.
++ *
++ * NOTE ON WHAT THESE DO AND DO NOT PROVE. By the time a stream fails, the
++ * response headers are already sent, so a swallowed abort and a rethrown error
++ * look identical from outside: HTTP 200, a partial body, and a clean EOF. A
++ * mutation forcing isClientAbort to return false leaves every test in this file
++ * passing. So these pin the *client-visible* contract only; the swallow-versus-
++ * rethrow decision is pinned directly in tests/streaming-helpers.test.ts.
++ *
++ * They are still worth having: they exercise all five streaming paths across
++ * both handlers end to end, which is what made the consolidation of five
++ * duplicated catch blocks into src/lib/streaming.ts verifiable as
++ * behaviour-preserving.
++ */
++import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
++
++import type { ModelsResponse } from "~/services/copilot/get-models"
++
++import { state } from "~/lib/state"
++import { server } from "~/server"
++
++const originalFetch = globalThis.fetch
++const originalModels = state.models
++const originalToken = state.copilotToken
++const originalManualApprove = state.manualApprove
++
++function model(id: string, endpoints: Array<string>) {
++  return {
++    id,
++    name: id,
++    object: "model",
++    vendor: id.startsWith("claude-") ? "anthropic" : "openai",
++    version: "1",
++    preview: false,
++    model_picker_enabled: true,
++    supported_endpoints: endpoints,
++    capabilities: {
++      family: id,
++      limits: { max_output_tokens: 64000 },
++      object: "model_capabilities",
++      supports: { tool_calls: true },
++      tokenizer: "o200k_base",
++      type: "chat",
++    },
++  }
++}
++
++const catalog = {
++  object: "list",
++  data: [
++    model("claude-sonnet-5", ["/v1/messages", "/chat/completions"]),
++    model("gpt-5.5", ["/responses", "/chat/completions"]),
++    model("gpt-4.1", ["/chat/completions"]),
++  ],
++} as unknown as ModelsResponse
++
++/**
++ * An SSE response that yields one usable event and then throws an AbortError
++ * mid-iteration, mimicking a client disconnect during streaming.
++ */
++function abortingStream(firstEvent: string): Response {
++  const encoder = new TextEncoder()
++  let sent = false
++  const body = new ReadableStream<Uint8Array>({
++    pull(controller) {
++      if (!sent) {
++        sent = true
++        controller.enqueue(encoder.encode(`${firstEvent}\n\n`))
++        return
++      }
++      const abortError = new Error("The operation was aborted")
++      abortError.name = "AbortError"
++      controller.error(abortError)
++    },
++  })
++  return new Response(body, {
++    headers: { "content-type": "text/event-stream" },
++  })
++}
++
++/** An SSE response that fails mid-iteration for a reason that is NOT an abort. */
++function failingStream(firstEvent: string): Response {
++  const encoder = new TextEncoder()
++  let sent = false
++  const body = new ReadableStream<Uint8Array>({
++    pull(controller) {
++      if (!sent) {
++        sent = true
++        controller.enqueue(encoder.encode(`${firstEvent}\n\n`))
++        return
++      }
++      controller.error(new Error("upstream exploded"))
++    },
++  })
++  return new Response(body, {
++    headers: { "content-type": "text/event-stream" },
++  })
++}
++
++function mockFetch(body: () => Response) {
++  globalThis.fetch = mock(() =>
++    Promise.resolve(body()),
++  ) as unknown as typeof fetch
++}
++
++function postMessages(body: unknown) {
++  return server.request("/v1/messages", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify(body),
++  })
++}
++
++function postChat(body: unknown) {
++  return server.request("/v1/chat/completions", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify(body),
++  })
++}
++
++beforeEach(() => {
++  state.copilotToken = "test-token"
++  state.models = catalog
++  state.manualApprove = false
++})
++
++afterEach(() => {
++  globalThis.fetch = originalFetch
++  state.models = originalModels
++  state.copilotToken = originalToken
++  state.manualApprove = originalManualApprove
++})
++
++const anthropicStart = `event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","role":"assistant","content":[],"model":"claude-sonnet-5"}}`
++const responsesStart = `event: response.created\ndata: {"type":"response.created","response":{"id":"resp_1","model":"gpt-5.5"}}`
++const chunkStart = `data: {"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-4.1","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}`
++
++describe("streaming abort is swallowed, not surfaced as an error", () => {
++  it("/v1/messages native passthrough ends cleanly on AbortError", async () => {
++    mockFetch(() => abortingStream(anthropicStart))
++
++    const response = await postMessages({
++      model: "claude-sonnet-5",
++      max_tokens: 64,
++      stream: true,
++      messages: [{ role: "user", content: "hi" }],
++    })
++
++    expect(response.status).toBe(200)
++    // Consuming the body must not reject: the handler returns instead of
++    // rethrowing, so the stream simply ends after what was already emitted.
++    const body = await response.text()
++    expect(body).toContain("message_start")
++  })
++
++  it("/v1/messages /responses tier ends cleanly on AbortError", async () => {
++    mockFetch(() => abortingStream(responsesStart))
++
++    const response = await postMessages({
++      model: "gpt-5.5",
++      max_tokens: 64,
++      stream: true,
++      messages: [{ role: "user", content: "hi" }],
++    })
++
++    expect(response.status).toBe(200)
++    expect(await response.text()).toBeString()
++  })
++
++  it("/v1/messages chat-completions tier ends cleanly on AbortError", async () => {
++    mockFetch(() => abortingStream(chunkStart))
++
++    const response = await postMessages({
++      model: "gpt-4.1",
++      max_tokens: 64,
++      stream: true,
++      messages: [{ role: "user", content: "hi" }],
++    })
++
++    expect(response.status).toBe(200)
++    expect(await response.text()).toBeString()
++  })
++
++  it("/v1/chat/completions passthrough tier ends cleanly on AbortError", async () => {
++    mockFetch(() => abortingStream(chunkStart))
++
++    const response = await postChat({
++      model: "gpt-4.1",
++      max_tokens: 64,
++      stream: true,
++      messages: [{ role: "user", content: "hi" }],
++    })
++
++    expect(response.status).toBe(200)
++    expect(await response.text()).toBeString()
++  })
++
++  it("/v1/chat/completions /responses tier ends cleanly on AbortError", async () => {
++    mockFetch(() => abortingStream(responsesStart))
++
++    const response = await postChat({
++      model: "gpt-5.5",
++      max_tokens: 64,
++      stream: true,
++      messages: [{ role: "user", content: "hi" }],
++    })
++
++    expect(response.status).toBe(200)
++    expect(await response.text()).toBeString()
++  })
++
++  it("CHARACTERIZATION: a non-abort failure truncates silently", async () => {
++    mockFetch(() => failingStream(anthropicStart))
++
++    const response = await postMessages({
++      model: "claude-sonnet-5",
++      max_tokens: 64,
++      stream: true,
++      messages: [{ role: "user", content: "hi" }],
++    })
++
++    const body = await response.text()
++
++    // Pins today's behaviour, which is NOT obviously correct. The handler
++    // rethrows non-abort errors, but headers are already sent, so the client
++    // sees HTTP 200, a partial body, and a clean EOF. There is no message_stop
++    // and no error event, so a truncated stream is indistinguishable from a
++    // complete one and an Anthropic client waits for a terminator that never
++    // arrives.
++    //
++    // The responses-stream-error-events feature solved the adjacent case -
++    // errors the upstream *signals* in-band (response.failed / incomplete /
++    // error) - but a transport-level failure mid-stream is still unhandled.
++    // src/routes/messages/stream-translation.ts already exports
++    // translateErrorToAnthropicErrorEvent, so the machinery exists; it is
++    // simply not wired to these catch blocks.
++    expect(response.status).toBe(200)
++    expect(body).toContain("message_start")
++    expect(body).not.toContain("message_stop")
++    expect(body).not.toContain('"type":"error"')
++  })
++})
+diff --git a/tests/streaming-helpers.test.ts b/tests/streaming-helpers.test.ts
+new file mode 100644
+index 0000000..a85b634
+--- /dev/null
++++ b/tests/streaming-helpers.test.ts
+@@ -0,0 +1,77 @@
++/**
++ * Unit coverage for src/lib/streaming.ts.
++ *
++ * These exist because the route-level tests in
++ * tests/streaming-abort-handling.test.ts cannot distinguish a swallowed abort
++ * from a rethrown one: by the time either happens the response headers are
++ * already sent, so both end as HTTP 200 with a partial body and a clean EOF.
++ * A mutation that forced isClientAbort to return false left every one of those
++ * route tests passing. The logic therefore has to be pinned here, directly.
++ */
++import { describe, expect, it } from "bun:test"
++
++import { isClientAbort, isNonStreaming } from "~/lib/streaming"
++
++async function* oneValue() {
++  yield await Promise.resolve(1)
++}
++
++describe("isClientAbort", () => {
++  it("is true when the request signal is already aborted", () => {
++    const controller = new AbortController()
++    controller.abort()
++    expect(isClientAbort(new Error("anything"), controller.signal)).toBe(true)
++  })
++
++  it("is true for an AbortError even without a signal", () => {
++    const error = new Error("The operation was aborted")
++    error.name = "AbortError"
++    expect(isClientAbort(error)).toBe(true)
++  })
++
++  it("is false for an ordinary error on a live signal", () => {
++    const controller = new AbortController()
++    expect(
++      isClientAbort(new Error("upstream exploded"), controller.signal),
++    ).toBe(false)
++  })
++
++  it("is false for an ordinary error with no signal", () => {
++    expect(isClientAbort(new Error("upstream exploded"))).toBe(false)
++  })
++
++  it("is false for a non-Error thrown value", () => {
++    expect(isClientAbort("just a string")).toBe(false)
++    expect(isClientAbort(undefined)).toBe(false)
++  })
++})
++
++describe("isNonStreaming", () => {
++  it("treats a plain response object as non-streaming", () => {
++    expect(isNonStreaming({ id: "c1", choices: [] })).toBe(true)
++  })
++
++  it("treats an async generator as streaming", () => {
++    expect(isNonStreaming(oneValue())).toBe(false)
++  })
++
++  it("treats any async iterable as streaming, even without a choices field", () => {
++    const iterable = { [Symbol.asyncIterator]: oneValue }
++    expect(isNonStreaming(iterable)).toBe(false)
++  })
++
++  it("does not depend on a choices property", () => {
++    // The previous implementation asked whether the value had an own `choices`
++    // property, which only worked because the iterator returned by events()
++    // happens not to expose one (POTENTIAL_FEATURES.md #3). An async iterable
++    // that did carry `choices` would have been misclassified as non-streaming.
++    const streamingWithChoices = {
++      choices: [],
++      [Symbol.asyncIterator]: oneValue,
++    }
++    expect(isNonStreaming(streamingWithChoices)).toBe(false)
++
++    // And a plain object without `choices` is still non-streaming.
++    expect(isNonStreaming({ id: "resp_1", output: [] })).toBe(true)
++  })
++})
