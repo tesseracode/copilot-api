@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "feature": "anthropic-error-envelope",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_8f72cc407c0d",
+      "kind": "record",
+      "patch_sha256": "1a930329ff824e415cbae10fc79bf5cd91c51b1d69ea95730b4329563b7a6f43",
+      "git_patch_id": "3d111e9aad47a981ee0046dd64232c9ce8d95dd9",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "2d993443fa72460ab5be9204ded878fb48d4fd44bd4909abf5973a5c5477c476",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "a3b0e119fcc5e7c90fc9b729ff19a36a993aa557",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/error.ts",
+        "src/routes/messages/route.ts",
+        "tests/anthropic-error-envelope.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}
