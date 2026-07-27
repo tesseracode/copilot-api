@@ -1,18 +1,18 @@
 import type { Context } from "hono"
 
 import consola from "consola"
-import { streamSSE, type SSEMessage } from "hono/streaming"
+import { type SSEMessage } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { resolveEffort } from "~/lib/effort"
 import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
+import { isNonStreaming, streamSSEWithAbort } from "~/lib/streaming"
 import { getTokenCount } from "~/lib/tokenizer"
 import { isNullish } from "~/lib/utils"
 import {
   createChatCompletions,
-  type ChatCompletionResponse,
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
 import {
@@ -78,23 +78,16 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response")
-  return streamSSE(c, async (stream) => {
-    try {
+  return streamSSEWithAbort(
+    c,
+    { signal, label: "chat-completions" },
+    async (stream) => {
       for await (const chunk of response) {
         consola.debug("Streaming chunk:", JSON.stringify(chunk))
         await stream.writeSSE(chunk as SSEMessage)
       }
-    } catch (err) {
-      if (
-        signal.aborted
-        || (err instanceof Error && err.name === "AbortError")
-      ) {
-        consola.debug("chat-completions stream aborted by client")
-        return
-      }
-      throw err
-    }
-  })
+    },
+  )
 }
 
 async function handleResponsesEndpoint(
@@ -116,10 +109,12 @@ async function handleResponsesEndpoint(
   }
 
   consola.debug("Streaming /responses response")
-  return streamSSE(c, async (stream) => {
-    const streamState = createResponsesStreamState()
+  return streamSSEWithAbort(
+    c,
+    { signal, label: "/responses" },
+    async (stream) => {
+      const streamState = createResponsesStreamState()
 
-    try {
       for await (const rawEvent of response) {
         if (!rawEvent.data || rawEvent.data === "[DONE]") continue
 
@@ -139,19 +134,6 @@ async function handleResponsesEndpoint(
           })
         }
       }
-    } catch (err) {
-      if (
-        signal?.aborted
-        || (err instanceof Error && err.name === "AbortError")
-      ) {
-        consola.debug("/responses stream aborted by client")
-        return
-      }
-      throw err
-    }
-  })
+    },
+  )
 }
-
-const isNonStreaming = (
-  response: Awaited<ReturnType<typeof createChatCompletions>>,
-): response is ChatCompletionResponse => Object.hasOwn(response, "choices")

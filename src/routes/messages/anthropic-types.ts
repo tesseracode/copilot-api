@@ -212,3 +212,13 @@ export interface AnthropicStreamState {
     }
   }
 }
+
+/** Fresh per-stream translation state. Mirrors createResponsesStreamState. */
+export function createAnthropicStreamState(): AnthropicStreamState {
+  return {
+    messageStartSent: false,
+    contentBlockIndex: 0,
+    contentBlockOpen: false,
+    toolCalls: {},
+  }
+}

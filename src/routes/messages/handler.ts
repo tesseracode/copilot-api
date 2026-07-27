@@ -1,7 +1,6 @@
 import type { Context } from "hono"
 
 import consola from "consola"
-import { streamSSE } from "hono/streaming"
 
 import { awaitApproval } from "~/lib/approval"
 import { resolveEffort } from "~/lib/effort"
@@ -9,10 +8,10 @@ import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { anthropicToCopilotModelId } from "~/lib/model-mapping"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
+import { isNonStreaming, streamSSEWithAbort } from "~/lib/streaming"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
-  type ChatCompletionResponse,
 } from "~/services/copilot/create-chat-completions"
 import {
   createResponses,
@@ -25,8 +24,8 @@ import {
 } from "~/services/copilot/forward-native-messages"
 
 import {
+  createAnthropicStreamState,
   type AnthropicMessagesPayload,
-  type AnthropicStreamState,
 } from "./anthropic-types"
 import {
   translateToAnthropic,
@@ -118,15 +117,12 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response from Copilot")
-  return streamSSE(c, async (stream) => {
-    const streamState: AnthropicStreamState = {
-      messageStartSent: false,
-      contentBlockIndex: 0,
-      contentBlockOpen: false,
-      toolCalls: {},
-    }
+  return streamSSEWithAbort(
+    c,
+    { signal, label: "/v1/messages chat-completions" },
+    async (stream) => {
+      const streamState = createAnthropicStreamState()
 
-    try {
       for await (const rawEvent of response) {
         consola.debug("Copilot raw stream event:", JSON.stringify(rawEvent))
         if (rawEvent.data === "[DONE]") {
@@ -148,17 +144,8 @@ export async function handleCompletion(c: Context) {
           })
         }
       }
-    } catch (err) {
-      if (
-        signal.aborted
-        || (err instanceof Error && err.name === "AbortError")
-      ) {
-        consola.debug("/v1/messages chat-completions stream aborted by client")
-        return
-      }
-      throw err
-    }
-  })
+    },
+  )
 }
 
 // eslint-disable-next-line max-params
@@ -177,8 +164,10 @@ async function handleNativePassthrough(
     return c.json(response)
   }
 
-  return streamSSE(c, async (stream) => {
-    try {
+  return streamSSEWithAbort(
+    c,
+    { signal, label: "/v1/messages native passthrough" },
+    async (stream) => {
       for await (const event of forwardNativeMessagesStreaming(
         payload,
         is1M,
@@ -189,24 +178,9 @@ async function handleNativePassthrough(
           data: JSON.stringify(event.data),
         })
       }
-    } catch (err) {
-      if (
-        signal?.aborted
-        || (err instanceof Error && err.name === "AbortError")
-      ) {
-        consola.debug(
-          "/v1/messages native passthrough stream aborted by client",
-        )
-        return
-      }
-      throw err
-    }
-  })
+    },
+  )
 }
-
-const isNonStreaming = (
-  response: Awaited<ReturnType<typeof createChatCompletions>>,
-): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
 
 /**
  * Handle a request that needs the /responses endpoint but arrived via /v1/messages.
@@ -232,16 +206,13 @@ async function handleResponsesViaAnthropic({
     return context.json(anthropicResponse)
   }
 
-  return streamSSE(context, async (stream) => {
-    const responsesState = createResponsesStreamState()
-    const anthropicState: AnthropicStreamState = {
-      messageStartSent: false,
-      contentBlockIndex: 0,
-      contentBlockOpen: false,
-      toolCalls: {},
-    }
+  return streamSSEWithAbort(
+    context,
+    { signal, label: "/v1/messages /responses" },
+    async (stream) => {
+      const responsesState = createResponsesStreamState()
+      const anthropicState = createAnthropicStreamState()
 
-    try {
       for await (const rawEvent of response) {
         if (!rawEvent.data || rawEvent.data === "[DONE]") continue
 
@@ -264,15 +235,6 @@ async function handleResponsesViaAnthropic({
           }
         }
       }
-    } catch (err) {
-      if (
-        signal?.aborted
-        || (err instanceof Error && err.name === "AbortError")
-      ) {
-        consola.debug("/v1/messages /responses stream aborted by client")
-        return
-      }
-      throw err
-    }
-  })
+    },
+  )
 }

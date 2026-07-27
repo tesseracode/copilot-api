@@ -1,0 +1,5 @@
+ .tpatch/FEATURES.md                    | 37 +++++++++++++++
+ src/routes/chat-completions/handler.ts | 48 ++++++-------------
+ src/routes/messages/anthropic-types.ts | 10 ++++
+ src/routes/messages/handler.ts         | 84 ++++++++++------------------------
+ 4 files changed, 85 insertions(+), 94 deletions(-)
