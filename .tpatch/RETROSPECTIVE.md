@@ -12,16 +12,30 @@ Review performed 2026-07-25 against `16f1902` using the `improve-codebase-archit
 
 ## Part 1 — Findings in this repository
 
-Six deepening candidates were surfaced. Ranked as presented:
+Six deepening candidates were surfaced. Status as of 2026-07-27:
 
 | # | Candidate | Strength | Status |
 |---|---|---|---|
-| 1 | Put a seam under the two route handlers (638 lines, 0 tests) | Strong | open |
-| 2 | Collapse the duplicated SSE pump (abort-catch ×5, `isNonStreaming` ×2) | Strong | open |
+| 1 | Put a seam under the two route handlers | Strong → **Worth exploring** | **coverage done**, seam deferred — `messages-handler-coverage` |
+| 2 | Collapse the duplicated SSE pump | Strong | **done** — `sse-pump-consolidation` |
 | 3 | Pull Anthropic→OpenAI translation out of the chat handler | Strong | **done** — `claude-chat-completions-passthrough` |
-| 4 | Deepen tool-call assembly (7 functions mutate one stream state) | Worth exploring | open |
+| 4 | Deepen tool-call assembly | Worth exploring | **rejected** — see below |
 | 5 | Stop importing global `state` into deep internals | Worth exploring | open |
 | 6 | One error shape at the route seam | Speculative | open |
+
+Filed as deferred features while working through the above:
+`claude-thinking-reasoning-text`, `streaming-response-discriminated-union`,
+`stream-failure-visibility`.
+
+Test count over the work: 202 → 231.
+
+### Where this document records decisions
+
+Rejected candidates and their evidence are recorded here rather than as ADRs. The
+`improve-codebase-architecture` skill expects `docs/adr/`, but this repository has none, and a
+single section in the document that produced the candidates is lighter than establishing a new
+convention. If this section grows past a handful of entries, promote it to real ADRs under
+`docs/adr/` and leave pointers here.
 
 ### The headline measurement
 
@@ -49,7 +63,6 @@ Both were fixed by deletion rather than repair — the reroute's rationale did n
 measurement against the current upstream API.
 
 ### Lesson: verify a feature's premise before preserving it
-
 `chat-completions-native-reroute` recorded, in its own `analysis.md`, *"Claude on
 /chat/completions loses tool calling. Native /v1/messages passthrough preserves it."* Measured
 directly against `api.githubcopilot.com` with `claude-sonnet-5`, upstream `/chat/completions`
@@ -59,6 +72,51 @@ an upstream change. Nothing in the workflow would have caught either case.
 
 This is the same failure mode as the stale model heuristics recorded in `CLAUDE.md`: assumptions
 about a remote API frozen into code, with no mechanism to notice when the remote moves.
+
+---
+
+### Rejected candidates
+
+#### Candidate 4 — deepen tool-call assembly (rejected 2026-07-27)
+
+**Do not re-suggest without new evidence.** A reviewer looking at
+`src/services/copilot/create-responses.ts` will see the hottest file in the repository and a
+stream state mutated by roughly seven functions, and will propose extracting the tool-call
+assembler. That was proposed, measured, and rejected.
+
+The candidate as written claimed the churn and the bugs concentrated in tool-call assembly.
+They do not. Counting, per commit, how many changed lines actually touched tool-call code:
+
+| April 2026 stability fix | tool-call lines changed |
+|---|---|
+| `63731b3` stable stream ids and `created` | 0 |
+| `037b03e` terminal error events | 0 |
+| `73cbb0b` abort propagation | 0 |
+| `2104afc` tool_use_id validation | 0 |
+| `0713ed4` argument divergence guard | 8 |
+
+One of five, not four of five as the review originally asserted. Tool-call assembly's real
+history is one substantial implementation (`d4a2fe0`, ~103 lines) followed only by small
+touches (8, 7, 6 lines). That is code that stabilised, not code that keeps breaking. It is also
+covered by four dedicated test files.
+
+What the churn actually reflects is that `create-responses.ts` holds four unrelated concerns in
+818 lines: request translation (~190), non-streaming response translation (~90), streaming
+translation (~490), and the service call (~25). Every change to any one of them lands in the
+same module.
+
+Splitting the file along those lines was considered and also rejected, on the skill's own
+terms: a file split changes no interface and makes nothing deeper. It is rearrangement, not
+deepening, and the module's public surface is already small (six exports).
+
+The two genuine weaknesses in this area — `POTENTIAL_FEATURES.md` #1, the delta-before-added
+race, and #2, the `output_index` namespace collision — remain `latent` and `theoretical`
+respectively, with no runtime evidence. That file's own rule is to promote an entry when
+evidence flips from "could happen" to "happened". Neither has.
+
+**Revisit if:** #1 or #2 acquires a real trigger (a log line, a user report, a failing test, or
+an upstream event-ordering change), or if tool-call assembly starts absorbing changes again at
+a rate comparable to the rest of the file.
 
 ---
 

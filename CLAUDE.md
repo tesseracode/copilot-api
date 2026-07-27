@@ -52,6 +52,18 @@ memory*, append here instead of calling any memory tool.
 
 ## Tooling
 
+- **Architecture reviews**: when running the `improve-codebase-architecture` skill (or similar),
+  record findings — and especially *rejected* candidates with their evidence — in
+  `.tpatch/RETROSPECTIVE.md`, not in `docs/adr/`. The skill expects ADRs, but this repository has
+  none and a section in the document that produced the candidates is lighter than establishing a
+  new convention. If that section grows past a handful of entries, promote it to real ADRs under
+  `docs/adr/` and leave pointers behind. Write the review's HTML report to the OS temp directory,
+  never into the repo.
+- **Verify a candidate's premise before acting on it.** Three of this repo's review candidates
+  were materially wrong as written: one claimed handlers were untestable (they were not — a probe
+  drove them in under 12ms), one preserved a feature whose stated rationale was false against the
+  live API, and one attributed churn to code that had actually been stable for months. Measure
+  first.
 - `tpatch` is a compiled Go binary on `PATH`; never wrap it with `npx`/`npm run`.
   There is **no** `tpatch install` subcommand — `tpatch init` installs the
   workspace and skill formats.
