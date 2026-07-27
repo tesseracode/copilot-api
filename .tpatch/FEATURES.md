@@ -3,6 +3,23 @@
 | Slug | Title | State | Compatibility |
 |------|-------|-------|---------------|
 | `anthropic-beta-1m-detection` | Detect anthropic-beta: context-1m-2025-08-07 header per-request to activate 1M context window. The Claude Agent SDK sends this header instead of [1m] in the model name. Upgrades model to -1m variant when header is present. | applied | unknown |
+| `anthropic-error-envelope` | Return Anthropic-shaped errors from /v1/messages regardless of where the error originated.
+
+The /v1/messages route currently returns two different error envelopes depending on the error's origin, verified live against the running proxy:
+
+- Upstream rejection: {"type":"error","error":{"type":"invalid_request_error","message":"..."},"request_id":"..."} - correct, because forwardError passes a recognised upstream envelope through unchanged.
+- Local validation (badRequest): {"error":{"type":"invalid_request_error","message":"tool_result block is missing tool_use_id"}} - missing the top-level type field.
+- Local throw (malformed JSON body): {"error":{"message":"...","type":"error"}} - missing the top-level type field, and type is nested in the wrong place.
+
+So an Anthropic SDK client receives a correctly shaped error when upstream rejects and a malformed one when the proxy itself rejects. It is also inconsistent with the proxy's own streaming behaviour on the same endpoint: translateErrorToAnthropicErrorEvent emits { type: 'error', error: { type, message } }, and the AnthropicErrorEvent interface declares exactly that shape.
+
+Confirmed that the two upstream contracts genuinely differ, so this is differentiation rather than unification. Upstream /v1/messages returns a top-level type field and a request_id; upstream /chat/completions returns {"error":{"message":"...","code":"..."}} with no top-level type. The architecture review had proposed unifying all routes onto one envelope, which would have been wrong: it would have broken the Anthropic contract to match the OpenAI one. The embeddings route's richer type/code/message/param body is the OpenAI error contract, not drift.
+
+badRequest must stay format-neutral: the requireToolCallId badRequest in create-responses.ts is reachable from both /v1/messages and /chat/completions, while the tool_result badRequest in non-stream-translation.ts is reachable only from /v1/messages. Shaping therefore belongs at the route seam, where the contract being served is known.
+
+Add an Anthropic-shaped error forwarder used by messages/route.ts. It must preserve an upstream body that is already Anthropic-shaped, including request_id, since that path is correct today. Otherwise it emits { type: 'error', error: { type, message } }, deriving the Anthropic error type from the HTTP status - 400 invalid_request_error, 401 authentication_error, 403 permission_error, 404 not_found_error, 413 request_too_large, 429 rate_limit_error, 5xx api_error - while preserving a type the upstream already supplied. The status mapping earns its place on the upstream-non-JSON path: a plain-text 401 currently produces no usable type, so a client cannot distinguish an auth failure from a rate limit.
+
+Out of scope: the token and usage routes, which return {"error":"some string"}. They are private, unconsumed by any SDK, and folding them in would repeat the unify-everything instinct that made the original candidate wrong. The /chat/completions and /embeddings routes keep the OpenAI envelope, which is correct for them. | applied | unknown |
 | `api-context-effort-migration` | Migrate 1M context and effort handling after upstream API changes: the Copilot API no longer advertises separate -1m, -high, or -xhigh model variants. All Claude 4.6+ models are natively 1M context (max_context_window_tokens: 1000000). Effort is now sent via output_config.effort in the request body (not model name suffixes). Current proxy code is broken: max→xhigh normalization fails for opus-4.6, and opus-4.7+ effort is silently dropped because supportsEffort() checks for -1m in the ID. Need to remove dead suffix logic and forward output_config.effort directly using advertised reasoning_effort capabilities. | applied | unknown |
 | `api-migration-test-coverage` | Add unit tests for the api-context-effort-migration feature gaps: (1) buildNativeBody extracts effort from legacy model-name suffixes like claude-opus-4-7-xhigh, (2) translateRequestToResponses populates reasoning.effort for GPT-5.x, (3) anthropicToCopilotModelId strips -1m dash suffix (not just [1m] bracket suffix). | applied | unknown |
 | `catalog-aware-effort-normalization` | Normalize effort against each model's advertised catalog capabilities | applied | unknown |

@@ -21,13 +21,18 @@ Six deepening candidates were surfaced. Status as of 2026-07-27:
 | 3 | Pull Anthropic→OpenAI translation out of the chat handler | Strong | **done** — `claude-chat-completions-passthrough` |
 | 4 | Deepen tool-call assembly | Worth exploring | **rejected** — see below |
 | 5 | Stop importing global `state` into deep internals | Worth exploring | **rejected** — see below |
-| 6 | One error shape at the route seam | Speculative | open |
+| 6 | One error shape at the route seam | Speculative | **inverted → done** — `anthropic-error-envelope` |
 
 Filed as deferred features while working through the above:
 `claude-thinking-reasoning-text`, `streaming-response-discriminated-union`,
 `stream-failure-visibility`.
 
-Test count over the work: 202 → 231.
+Test count over the work: 202 → 238.
+
+All six candidates were dispositioned. Four of the six were materially wrong as written — see
+the rejections below and the note on candidate 6 — which is the single most transferable
+finding of this review: the report was a good hypothesis generator and a poor decision-maker.
+Every candidate needed measuring before acting.
 
 ### Where this document records decisions
 
@@ -76,6 +81,27 @@ about a remote API frozen into code, with no mechanism to notice when the remote
 ---
 
 ### Rejected candidates
+
+#### Candidate 6 — one error shape at the route seam (inverted, then fixed)
+
+The candidate proposed unifying error envelopes across all routes, on the observation that
+three routes use `forwardError` and three hand-roll their own. Measuring what clients actually
+receive showed unification would have been actively wrong: the two upstream contracts genuinely
+differ. `/v1/messages` returns a top-level `type: "error"` plus a `request_id`;
+`/chat/completions` returns `{"error":{"message","code"}}` with no top-level type. Forcing one
+envelope would have broken the Anthropic contract to match the OpenAI one, and the embeddings
+route's richer `type`/`code`/`param` body turned out to be the OpenAI error contract rather
+than drift.
+
+The real defect was the opposite and narrower: `/v1/messages` returned *two different shapes
+depending on where the error originated* — correct when passing an upstream rejection through,
+OpenAI-shaped whenever the proxy raised the error itself. Fixed by differentiating rather than
+unifying, in `anthropic-error-envelope`. The candidate's framing was right — the route seam is
+where the contract is known — even though its conclusion was backwards.
+
+`token` and `usage` still return `{"error": "some string"}`. Left alone deliberately: private
+routes, no SDK consumer, and folding them in would repeat the unify-everything instinct that
+made the candidate wrong.
 
 #### Candidate 4 — deepen tool-call assembly (rejected 2026-07-27)
 

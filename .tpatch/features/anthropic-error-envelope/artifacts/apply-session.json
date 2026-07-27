@@ -1,0 +1,8 @@
+{
+  "slug": "anthropic-error-envelope",
+  "completed_at": "2026-07-27T17:40:41Z",
+  "base_commit": "a3b0e119fcc5e7c90fc9b729ff19a36a993aa557",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: npx tsc --noEmit"
+}
