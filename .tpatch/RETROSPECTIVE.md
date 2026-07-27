@@ -20,7 +20,7 @@ Six deepening candidates were surfaced. Status as of 2026-07-27:
 | 2 | Collapse the duplicated SSE pump | Strong | **done** — `sse-pump-consolidation` |
 | 3 | Pull Anthropic→OpenAI translation out of the chat handler | Strong | **done** — `claude-chat-completions-passthrough` |
 | 4 | Deepen tool-call assembly | Worth exploring | **rejected** — see below |
-| 5 | Stop importing global `state` into deep internals | Worth exploring | open |
+| 5 | Stop importing global `state` into deep internals | Worth exploring | **rejected** — see below |
 | 6 | One error shape at the route seam | Speculative | open |
 
 Filed as deferred features while working through the above:
@@ -117,6 +117,40 @@ evidence flips from "could happen" to "happened". Neither has.
 **Revisit if:** #1 or #2 acquires a real trigger (a log line, a user report, a failing test, or
 an upstream event-ordering change), or if tool-call assembly starts absorbing changes again at
 a rate comparable to the rest of the file.
+
+#### Candidate 5 — stop importing global `state` into deep internals (rejected 2026-07-27)
+
+**Do not re-suggest without new evidence.** Twenty-four non-test modules import a mutable
+global singleton, which looks like textbook ambient coupling. Both concrete harms the candidate
+rested on were measured and neither exists.
+
+**Test leakage is structurally impossible, not merely absent.** The candidate noted that twelve
+test files mutate the singleton and five never restore it. True, and irrelevant: `bun test`
+gives each test file a fresh module registry. A sentinel written to `state` in one file is
+invisible to the next, and `accountType` reads back as its default. Corroborated three further
+ways — all 31 test files pass when run individually, and the full suite passes in normal order,
+reverse order, and with the five non-restoring files forced first.
+
+**There is no concurrency hazard.** Every write to the global is startup configuration
+(`start.ts`, `auth.ts`), token lifecycle (`token.ts`), the model catalog cache (`utils.ts`), or
+rate-limit timestamps (`rate-limit.ts`, deliberately cross-request). No per-request data is ever
+written to it. Per-stream state is already passed as a parameter.
+
+What remains is a design preference, and it cuts both ways. Threading state through 24 modules
+widens every signature; the counter-argument — that required configuration is part of a
+module's interface whether or not it appears in the signature, so making it explicit reveals
+rather than widens — is fair. But with no defect, no test problem, and no concurrency risk, the
+ledger is churn across 24 files of a working proxy against clarity alone.
+
+**Revisit if:** per-request or per-connection data starts being written to the global, the
+runtime changes to one that shares module state across test files, or a defect is traced to
+ambient coupling.
+
+**Taken instead:** `translateChunkToAnthropicEvents` and `isToolBlockOpen` in
+`src/routes/messages/stream-translation.ts` named their `AnthropicStreamState` parameter
+`state`, shadowing the well-known global. Lines like `state.contentBlockOpen = true` read as
+global mutation from a hot streaming path — it briefly read that way during this review. Renamed
+to `streamState`.
 
 ---
 
