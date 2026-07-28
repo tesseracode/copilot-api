@@ -8,11 +8,16 @@ import { resolveEffort } from "~/lib/effort"
 import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
-import { isNonStreaming, streamSSEWithAbort } from "~/lib/streaming"
+import {
+  isNonStreaming,
+  streamSSEWithAbort,
+  writeOpenAIStreamError,
+} from "~/lib/streaming"
 import { getTokenCount } from "~/lib/tokenizer"
 import { isNullish } from "~/lib/utils"
 import {
   createChatCompletions,
+  type ChatCompletionChunk,
   type ChatCompletionsPayload,
 } from "~/services/copilot/create-chat-completions"
 import {
@@ -78,12 +83,19 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response")
+  let terminalErrorSeen = false
   return streamSSEWithAbort(
     c,
-    { signal, label: "chat-completions" },
+    {
+      signal,
+      label: "chat-completions",
+      onError: writeOpenAIStreamError,
+      hasTerminalError: () => terminalErrorSeen,
+    },
     async (stream) => {
       for await (const chunk of response) {
         consola.debug("Streaming chunk:", JSON.stringify(chunk))
+        terminalErrorSeen ||= Boolean((chunk as ChatCompletionChunk).error)
         await stream.writeSSE(chunk as SSEMessage)
       }
     },
@@ -109,9 +121,15 @@ async function handleResponsesEndpoint(
   }
 
   consola.debug("Streaming /responses response")
+  let terminalErrorSeen = false
   return streamSSEWithAbort(
     c,
-    { signal, label: "/responses" },
+    {
+      signal,
+      label: "/responses",
+      onError: writeOpenAIStreamError,
+      hasTerminalError: () => terminalErrorSeen,
+    },
     async (stream) => {
       const streamState = createResponsesStreamState()
 
@@ -129,6 +147,7 @@ async function handleResponsesEndpoint(
 
         for (const chunk of chunks) {
           consola.debug("Translated /responses chunk:", JSON.stringify(chunk))
+          terminalErrorSeen ||= Boolean(chunk.error)
           await stream.writeSSE({
             data: JSON.stringify(chunk),
           })

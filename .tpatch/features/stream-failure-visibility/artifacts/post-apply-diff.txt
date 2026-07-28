@@ -1,0 +1,7 @@
+ src/lib/streaming.ts                   | 46 +++++++++++++++++++++++++----
+ src/routes/chat-completions/handler.ts | 25 ++++++++++++++--
+ src/routes/messages/handler.ts         | 52 +++++++++++++++++++++++++++++----
+ src/routes/responses/route.ts          |  8 ++++-
+ tests/streaming-abort-handling.test.ts | 49 +++++++++++++++++++++----------
+ tests/streaming-helpers.test.ts        | 53 ++++++++++++----------------------
+ 6 files changed, 170 insertions(+), 63 deletions(-)
