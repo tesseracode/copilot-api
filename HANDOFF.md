@@ -43,51 +43,41 @@ malformed error envelopes whenever the proxy raised the error itself.
 
 ## Outstanding — start here
 
-### 1. Verify GitHub Actions actually runs (highest value, ~5 min)
+### 1. ~~Enable CI~~ — DONE this session ✅
 
-CI has **never executed once** on this repo — `total_count: 0` runs, despite 8 pushes in one
-day. That is what let the gates rot. The API reports `enabled: true` and all workflows `active`,
-so the block is GitHub's fork gate, which the REST API does not expose.
+Actions had **never executed once** on this repo (`total_count: 0` despite 8 pushes in a day),
+which is exactly what let `typecheck` and `lint` rot for three months. It is now enabled, and the
+**first CI run in the repository's history passed** — linter, type check, tests, and build all
+green in 29s (run `30326170672`).
 
-Attempted from the CLI this session, both returning success but with no observed effect:
+What actually opened the fork gate was this, contrary to the common advice that it needs a UI
+click:
 ```sh
 gh api -X PUT repos/tesseracode/copilot-api/actions/permissions -F enabled=true -f allowed_actions=all
 gh workflow enable ci.yml -R tesseracode/copilot-api
 ```
+Note `-F` (typed) rather than `-f` (string) for the boolean — `-f enabled=true` returns HTTP 422.
 
-**Two blockers, in order:**
+**Consequence for the next machine: CI now gates every push to `master` and every PR.** Green
+locally is no longer the whole story; check `gh run list -R tesseracode/copilot-api --limit 3`
+after pushing.
 
-**(a) The `gh` token lacks the `workflow` scope.** Adding `workflow_dispatch` to
-`.github/workflows/ci.yml` was attempted and the push was rejected:
+One pre-existing annotation, harmless but worth a future cleanup: `actions/checkout@v4` targets
+Node 20, which is deprecated on GH runners and is being force-run on Node 24.
+
+**Still blocked:** the `gh` token lacks the `workflow` scope (`admin:org, gist, repo`), so any
+commit touching `.github/workflows/**` is rejected at push time:
 
 > `refusing to allow an OAuth App to create or update workflow .github/workflows/ci.yml without
 > workflow scope`
 
-Current scopes on `jdbencardinop` are `admin:org, gist, repo`. So **no workflow file can be
-modified from this CLI at all** until you run:
+Adding `workflow_dispatch` to `ci.yml` was attempted for manual triggering and had to be
+reverted; `ci.yml` is untouched on `master`. To change any workflow file, first run:
 ```sh
 gh auth refresh -h github.com -s workflow
 ```
-That change was therefore reverted, and `ci.yml` is untouched on `master`. If you want manual CI
-triggering, re-apply it after refreshing the scope:
-```yaml
-on:
-  push:
-    branches: [master]
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:          # <- add this
-```
 
-**(b) The fork gate almost certainly needs a human click.** Even with permissions enabled and
-workflows active, forks keep workflows dormant until someone visits **repo → Actions tab →
-"I understand my workflows, go ahead and enable them"**. No API exposes this.
-
-Quickest check on the new machine: push any commit, then
-`gh run list -R tesseracode/copilot-api --limit 3`. If it is still empty, do the UI click. The
-workflow itself is correct and would pass today — all four gates are green.
-
-### 2. File the retrospective upstream (~10 min)
+### 2. File the retrospective upstream (~10 min) — **now the top remaining task**
 
 `.tpatch/RETROSPECTIVE.md` Part 2 contains feedback for `tpatch` itself, aimed at
 `tesseracode/tesserapatch` (public, issues enabled, has a `docs/` dir). Two substantive asks:
