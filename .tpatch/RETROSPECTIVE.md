@@ -182,6 +182,8 @@ to `streamState`.
 
 ## Part 2 — Feedback for `tpatch` (v0.11.1)
 
+Filed upstream as [tesseracode/tesserapatch#1](https://github.com/tesseracode/tesserapatch/issues/1).
+
 Two gaps, both hit concretely during this work. Neither is a bug; both are missing concepts.
 
 ### 2.1 No first-class way to express that a feature supersedes another
