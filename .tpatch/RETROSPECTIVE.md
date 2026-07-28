@@ -24,10 +24,12 @@ Six deepening candidates were surfaced. Status as of 2026-07-27:
 | 6 | One error shape at the route seam | Speculative | **inverted → done** — `anthropic-error-envelope` |
 
 Filed as deferred features while working through the above:
-`claude-thinking-reasoning-text`, `streaming-response-discriminated-union`,
-`stream-failure-visibility`.
+`claude-thinking-reasoning-text` and `streaming-response-discriminated-union`.
+`stream-failure-visibility` was subsequently mutation-tested, implemented, independently reviewed,
+and shipped in `bfd8f16` — see Part 3.
 
-Test count over the work: 202 → 238.
+Test count over the architecture review: 202 → 238. The follow-up stream-failure work increased it
+to 241.
 
 All six candidates were dispositioned. Four of the six were materially wrong as written — see
 the rejections below and the note on candidate 6 — which is the single most transferable
@@ -257,3 +259,112 @@ The general principle: a recipe operation that cannot fail is more dangerous tha
 - Path B (`--manual`) worked well and is well documented, but nothing in the artifacts records
   *that* a phase was agent-authored rather than provider-generated. For auditing why a spec
   looks the way it does, that provenance would be useful.
+
+---
+
+## Part 3 — Implementation workflow retrospective: stream-failure visibility
+
+`stream-failure-visibility` was the first deferred finding taken through the full workflow after
+this architecture review. It shipped as `bfd8f16` and passed CI in
+[run 30374896447](https://github.com/tesseracode/copilot-api/actions/runs/30374896447).
+The test suite grew from 238 to 241 tests during the work.
+
+### 3.1 Test the absence before writing the mechanism
+
+The existing characterization said a non-abort transport failure produced partial HTTP 200 SSE
+followed by clean EOF. The first implementation step inverted that characterization into a
+requirement for one terminal Anthropic error event and ran it against unchanged production code.
+It failed at exactly the new assertion: partial `message_start` data was present, but
+`body.match(/event: error/g)` was `null`.
+
+That failure mattered more than a new test that began green. It proved the test observed the
+missing client-visible behavior rather than merely exercising the setup. This is the preferred
+sequence for future bug fixes:
+
+1. turn observed bad behavior into a failing assertion;
+2. run it against unchanged code;
+3. only then add the mechanism;
+4. break the mechanism deliberately and confirm the assertion fails again.
+
+### 3.2 Mutation tests caught what a green suite could not
+
+Two one-hunk production mutations were run after implementation:
+
+- replace `await onError(stream, error)` with a no-op;
+- replace native Responses terminal-error enqueue with a direct close.
+
+The corresponding Anthropic and Responses regressions both failed, and both passed after only the
+exact mutated hunk was restored. The commands and failure evidence live in
+`stream-failure-visibility/artifacts/mutation-test.md`.
+
+This was not ceremonial. Earlier in the architecture review, six tests passed against deliberately
+broken helpers. A green test is evidence only after a plausible fault makes it red. Mutation tests
+should remain focused on the behavior boundary rather than broad source transformations: they are
+cheap, reviewable, and safe to restore exactly.
+
+### 3.3 Independent reviewers found convergent defects
+
+Three read-only reviewers examined the completed feature from different perspectives:
+
+- defensive security;
+- external-client protocol/UX compatibility;
+- code quality and lifecycle correctness.
+
+Their useful findings converged rather than merely producing stylistic preferences:
+
+- raw substring matching could let provider/user text spoof an in-band error and suppress the real
+  terminal transport error;
+- a pre-aborted signal or a pending `reader.read()` was not actively cancelled;
+- an in-band provider error followed by transport failure could emit a duplicate synthetic error;
+- successful native bytes needed exact fidelity coverage;
+- OpenAI Chat needed a route-level assertion for its precise SSE error envelope and EOF semantics;
+- detailed exception values should not be logged at the terminal boundary;
+- the first test rewrite had weakened existing `isNonStreaming`/abort helper coverage.
+
+The resulting changes used parsed SSE frames, active reader cancellation, exactly-once terminal
+state, sanitized logs, byte-for-byte success tests, exact OpenAI/Anthropic/Responses error-shape
+tests, and restored all prior helper assertions. The final contracts are:
+
+- client aborts remain silent;
+- non-abort transport failures produce one format-correct terminal error;
+- no fake `[DONE]`, `message_stop`, or success finish reason follows an error;
+- in-band provider errors are not duplicated;
+- successful native Responses bytes are unchanged;
+- pending upstream reads are cancelled when the downstream disconnects.
+
+### 3.4 Reviewer isolation can make correct reviews irrelevant
+
+Some review agents initially inspected clean worktrees created from `HEAD`, while the feature was
+still uncommitted in the primary working tree. Their reports described older files or unrelated
+changes and were not actionable. The fix was to tell reviewers explicitly to inspect the primary
+working tree and list the exact dirty paths.
+
+For uncommitted review work:
+
+- isolated worktrees are useful only when the candidate changes are committed or supplied as a
+  complete diff;
+- otherwise point the reviewer at the primary path and scope exact files;
+- verify every finding against the current diff before editing;
+- treat a reviewer report that does not mention the changed symbols as stale evidence.
+
+This is a general tool-usage lesson, not a limitation of parallel review itself. Parallel reviewers
+were valuable once they were looking at the same artifact.
+
+### 3.5 tpatch recorded the result, but process evidence is still mostly prose
+
+Path B cleanly recorded the feature, dependencies, generated patch, tests, and mutation artifact.
+The dependency graph correctly places it after `sse-pump-consolidation` and alongside
+`responses-stream-error-events`.
+
+The feature artifacts can show *what* changed and the mutation document can show selected commands,
+but tpatch still does not natively model:
+
+- reviewer roles and findings;
+- accepted versus rejected review recommendations;
+- a mutation-test phase or its expected-failure result;
+- provenance that analysis/spec/exploration were authored through Path B;
+- CI confirmation after push.
+
+Those gaps do not block the workflow, but they explain why this Part 3 and the mutation artifact
+are necessary. A future tpatch review/verification model could make this evidence structured rather
+than relying on retrospective prose.
