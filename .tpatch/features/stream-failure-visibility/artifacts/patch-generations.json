@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "feature": "stream-failure-visibility",
+  "current_generation": 2,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_0311295069ad",
+      "kind": "record",
+      "patch_sha256": "aa74161f8edabc3b0fd9642b3597a6ecdadc754edba5c2a22bfe232d4ddae3df",
+      "git_patch_id": "6311ee1476292d37f05a79e819122fbafc16b52b",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "d4843a5f5f568cd84556d7648b39bbeb2452112eb5fa075d468d8637069f123a",
+      "canonical_patch": "",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "da17e527531645635e788c1b784a591e28f17dcc",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/responses-stream-wrapper.ts",
+          "src/lib/streaming.ts",
+          "src/routes/chat-completions/handler.ts",
+          "src/routes/messages/handler.ts",
+          "src/routes/responses/route.ts",
+          "tests/stream-failure-visibility.test.ts",
+          "tests/streaming-abort-handling.test.ts",
+          "tests/streaming-helpers.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/responses-stream-wrapper.ts",
+        "src/lib/streaming.ts",
+        "src/routes/chat-completions/handler.ts",
+        "src/routes/messages/handler.ts",
+        "src/routes/responses/route.ts",
+        "tests/stream-failure-visibility.test.ts",
+        "tests/streaming-abort-handling.test.ts",
+        "tests/streaming-helpers.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "responses-stream-error-events",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        },
+        {
+          "slug": "sse-pump-consolidation",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "f1b24e533fb379b4994c05e9e3d25cc91100e2f1110312e720cfd7845b9013e6",
+          "parent_recipe_sha256": "a6e48f6297736eb1045107cc3c0a90b5832ce7e31d65c6754511deb39c4df0f1"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_d9924bb3546c",
+      "kind": "amend-refresh",
+      "patch_sha256": "e0a91146fe0a771152488b190864c9cc414654adaaada7278c6ec62bb0bdf648",
+      "git_patch_id": "155ad20d5672f35261841be43f92829137f19540",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "d4843a5f5f568cd84556d7648b39bbeb2452112eb5fa075d468d8637069f123a",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "da17e527531645635e788c1b784a591e28f17dcc",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/responses-stream-wrapper.ts",
+          "src/lib/streaming.ts",
+          "src/routes/chat-completions/handler.ts",
+          "src/routes/messages/handler.ts",
+          "src/routes/responses/route.ts",
+          "tests/stream-failure-visibility.test.ts",
+          "tests/streaming-abort-handling.test.ts",
+          "tests/streaming-helpers.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/responses-stream-wrapper.ts",
+        "src/lib/streaming.ts",
+        "src/routes/chat-completions/handler.ts",
+        "src/routes/messages/handler.ts",
+        "src/routes/responses/route.ts",
+        "tests/stream-failure-visibility.test.ts",
+        "tests/streaming-abort-handling.test.ts",
+        "tests/streaming-helpers.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "responses-stream-error-events",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        },
+        {
+          "slug": "sse-pump-consolidation",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "f1b24e533fb379b4994c05e9e3d25cc91100e2f1110312e720cfd7845b9013e6",
+          "parent_recipe_sha256": "a6e48f6297736eb1045107cc3c0a90b5832ce7e31d65c6754511deb39c4df0f1"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

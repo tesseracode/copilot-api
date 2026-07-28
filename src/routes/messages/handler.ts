@@ -1,4 +1,5 @@
 import type { Context } from "hono"
+import type { SSEStreamingApi } from "hono/streaming"
 
 import consola from "consola"
 
@@ -8,7 +9,11 @@ import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { anthropicToCopilotModelId } from "~/lib/model-mapping"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
-import { isNonStreaming, streamSSEWithAbort } from "~/lib/streaming"
+import {
+  isNonStreaming,
+  STREAM_TRANSPORT_ERROR,
+  streamSSEWithAbort,
+} from "~/lib/streaming"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
@@ -31,9 +36,25 @@ import {
   translateToAnthropic,
   translateToOpenAI,
 } from "./non-stream-translation"
-import { translateChunkToAnthropicEvents } from "./stream-translation"
+import {
+  translateChunkToAnthropicEvents,
+  translateErrorToAnthropicErrorEvent,
+} from "./stream-translation"
 
 const CONTEXT_1M_BETA = "context-1m-2025-08-07"
+
+async function writeAnthropicStreamError(
+  stream: SSEStreamingApi,
+): Promise<void> {
+  const event = translateErrorToAnthropicErrorEvent({
+    type: STREAM_TRANSPORT_ERROR.type,
+    message: STREAM_TRANSPORT_ERROR.message,
+  })
+  await stream.writeSSE({
+    event: event.type,
+    data: JSON.stringify(event),
+  })
+}
 
 /**
  * Check if the request wants 1M context via the anthropic-beta header.
@@ -117,9 +138,15 @@ export async function handleCompletion(c: Context) {
   }
 
   consola.debug("Streaming response from Copilot")
+  let terminalErrorSeen = false
   return streamSSEWithAbort(
     c,
-    { signal, label: "/v1/messages chat-completions" },
+    {
+      signal,
+      label: "/v1/messages chat-completions",
+      onError: writeAnthropicStreamError,
+      hasTerminalError: () => terminalErrorSeen,
+    },
     async (stream) => {
       const streamState = createAnthropicStreamState()
 
@@ -138,6 +165,7 @@ export async function handleCompletion(c: Context) {
 
         for (const event of events) {
           consola.debug("Translated Anthropic event:", JSON.stringify(event))
+          terminalErrorSeen ||= event.type === "error"
           await stream.writeSSE({
             event: event.type,
             data: JSON.stringify(event),
@@ -164,15 +192,22 @@ async function handleNativePassthrough(
     return c.json(response)
   }
 
+  let terminalErrorSeen = false
   return streamSSEWithAbort(
     c,
-    { signal, label: "/v1/messages native passthrough" },
+    {
+      signal,
+      label: "/v1/messages native passthrough",
+      onError: writeAnthropicStreamError,
+      hasTerminalError: () => terminalErrorSeen,
+    },
     async (stream) => {
       for await (const event of forwardNativeMessagesStreaming(
         payload,
         is1M,
         signal,
       )) {
+        terminalErrorSeen ||= event.type === "error"
         await stream.writeSSE({
           event: event.type,
           data: JSON.stringify(event.data),
@@ -206,9 +241,15 @@ async function handleResponsesViaAnthropic({
     return context.json(anthropicResponse)
   }
 
+  let terminalErrorSeen = false
   return streamSSEWithAbort(
     context,
-    { signal, label: "/v1/messages /responses" },
+    {
+      signal,
+      label: "/v1/messages /responses",
+      onError: writeAnthropicStreamError,
+      hasTerminalError: () => terminalErrorSeen,
+    },
     async (stream) => {
       const responsesState = createResponsesStreamState()
       const anthropicState = createAnthropicStreamState()
@@ -228,6 +269,7 @@ async function handleResponsesViaAnthropic({
         for (const chunk of chunks) {
           const events = translateChunkToAnthropicEvents(chunk, anthropicState)
           for (const event of events) {
+            terminalErrorSeen ||= event.type === "error"
             await stream.writeSSE({
               event: event.type,
               data: JSON.stringify(event),

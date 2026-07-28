@@ -2,6 +2,7 @@ import { Hono } from "hono"
 
 import { copilotBaseUrl } from "~/lib/api-config"
 import { copilotFetch } from "~/lib/copilot-fetch"
+import { wrapResponsesStream } from "~/lib/responses-stream-wrapper"
 import { state } from "~/lib/state"
 
 export const responsesRoutes = new Hono()
@@ -63,7 +64,12 @@ responsesRoutes.post("/", async (c) => {
     if (value) headers.set(name, value)
   }
 
-  return new Response(upstream.body, {
+  const responseBody =
+    contentType?.startsWith("text/event-stream") && upstream.body ?
+      wrapResponsesStream(upstream.body, c.req.raw.signal)
+    : upstream.body
+
+  return new Response(responseBody, {
     status: upstream.status,
     statusText: upstream.statusText,
     headers,

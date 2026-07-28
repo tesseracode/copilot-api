@@ -211,7 +211,36 @@ describe("streaming abort is swallowed, not surfaced as an error", () => {
     expect(await response.text()).toBeString()
   })
 
-  it("CHARACTERIZATION: a non-abort failure truncates silently", async () => {
+  it("emits a terminal OpenAI error when the upstream transport fails", async () => {
+    mockFetch(() => failingStream(chunkStart))
+
+    const response = await postChat({
+      model: "gpt-4.1",
+      max_tokens: 64,
+      stream: true,
+      messages: [{ role: "user", content: "hi" }],
+    })
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain('"content":"hi"')
+    expect(body.match(/"stream_transport_error"/g)).toHaveLength(1)
+    expect(body).not.toContain("[DONE]")
+    const errorLine = body
+      .split("\n")
+      .find((line) => line.startsWith('data: {"error"'))
+    if (!errorLine) throw new Error("Expected OpenAI error SSE record")
+    expect(JSON.parse(errorLine.slice("data: ".length))).toEqual({
+      error: {
+        type: "api_error",
+        code: "stream_transport_error",
+        message: "The upstream stream terminated unexpectedly.",
+        param: null,
+      },
+    })
+  })
+
+  it("emits a terminal Anthropic error when the upstream transport fails", async () => {
     mockFetch(() => failingStream(anthropicStart))
 
     const response = await postMessages({
@@ -223,22 +252,12 @@ describe("streaming abort is swallowed, not surfaced as an error", () => {
 
     const body = await response.text()
 
-    // Pins today's behaviour, which is NOT obviously correct. The handler
-    // rethrows non-abort errors, but headers are already sent, so the client
-    // sees HTTP 200, a partial body, and a clean EOF. There is no message_stop
-    // and no error event, so a truncated stream is indistinguishable from a
-    // complete one and an Anthropic client waits for a terminator that never
-    // arrives.
-    //
-    // The responses-stream-error-events feature solved the adjacent case -
-    // errors the upstream *signals* in-band (response.failed / incomplete /
-    // error) - but a transport-level failure mid-stream is still unhandled.
-    // src/routes/messages/stream-translation.ts already exports
-    // translateErrorToAnthropicErrorEvent, so the machinery exists; it is
-    // simply not wired to these catch blocks.
     expect(response.status).toBe(200)
     expect(body).toContain("message_start")
     expect(body).not.toContain("message_stop")
-    expect(body).not.toContain('"type":"error"')
+    expect(body.match(/event: error/g)).toHaveLength(1)
+    expect(body).toContain(
+      'data: {"type":"error","error":{"type":"api_error","message":"The upstream stream terminated unexpectedly."}}',
+    )
   })
 })

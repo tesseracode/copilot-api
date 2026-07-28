@@ -1,0 +1,8 @@
+{
+  "slug": "stream-failure-visibility",
+  "completed_at": "2026-07-28T15:43:41Z",
+  "base_commit": "da17e527531645635e788c1b784a591e28f17dcc",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/streaming-abort-handling.test.ts tests/streaming-helpers.test.ts tests/stream-failure-visibility.test.ts tests/responses-stream-error-events.test.ts \u0026\u0026 bun run typecheck \u0026\u0026 bun run lint:all \u0026\u0026 bun run build"
+}

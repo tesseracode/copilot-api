@@ -135,7 +135,7 @@ The machinery already exists: src/routes/messages/stream-translation.ts exports 
 
 Design note. After sse-pump-consolidation there is exactly one place where a stream-ending error is classified, streamSSEWithAbort in src/lib/streaming.ts, so this becomes a single-site change rather than five. But that helper is deliberately format-agnostic, while emitting a typed terminal event requires knowing whether the caller speaks Anthropic or OpenAI. The likely shape is an optional onError hook supplied by each caller: the helper keeps owning the decision (is this a client abort?), the caller owns the format. That hook was deliberately not added up front, since nothing varied across it yet.
 
-Behaviour change, so it needs its own spec: clients that currently see a clean EOF would start receiving a terminal error event. | requested | unknown |
+Behaviour change, so it needs its own spec: clients that currently see a clean EOF would start receiving a terminal error event. | applied | unknown |
 | `streaming-response-discriminated-union` | Return a discriminated union from createChatCompletions and createResponses instead of relying on a type guard to tell streaming from non-streaming results.
 
 Deferred; filed while consolidating the SSE pump (see sse-pump-consolidation).
