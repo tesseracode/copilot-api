@@ -1,4 +1,4 @@
-# Test run — 2026-07-29T22:06:17Z
+# Test run — 2026-07-29T22:32:05Z
 # Command: bun run typecheck && bun run lint:all && bun test && bun run build
 # Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
 
@@ -40,7 +40,7 @@ bun test v1.3.11 (af24e281)
  256 pass
  0 fail
  558 expect() calls
-Ran 256 tests across 35 files. [1321.00ms]
+Ran 256 tests across 35 files. [1285.00ms]
 $ tsdown
 [34mℹ[39m tsdown [2mv0.15.6[22m powered by rolldown [2mv1.0.0-beta.41[22m
 [34mℹ[39m Using tsdown config: [4m/Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api/tsdown.config.ts[24m
@@ -53,4 +53,4 @@ $ tsdown
 [34mℹ[39m [2mdist/[22m[1mmain.js[22m      [2m112.69 kB[22m [2m│ gzip: 28.85 kB[22m
 [34mℹ[39m [2mdist/[22mmain.js.map  [2m251.92 kB[22m [2m│ gzip: 61.59 kB[22m
 [34mℹ[39m 2 files, total: 364.61 kB
-[32m✔[39m Build complete in [32m41ms[39m
+[32m✔[39m Build complete in [32m87ms[39m
