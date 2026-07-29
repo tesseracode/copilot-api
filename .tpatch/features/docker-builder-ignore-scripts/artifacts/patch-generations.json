@@ -1,7 +1,7 @@
 {
   "version": 1,
   "feature": "docker-builder-ignore-scripts",
-  "current_generation": 1,
+  "current_generation": 2,
   "generations": [
     {
       "generation": 1,
@@ -11,7 +11,7 @@
       "git_patch_id": "65ce4198f79da1cee75ede9e67521007286e8f78",
       "git_patch_id_algorithm": "git-patch-id-stable",
       "recipe_sha256": "aaa15e5747ed87156489500b2921ca9c1aa908632e6daa6e7d9627d8e477d8e9",
-      "canonical_patch": "artifacts/post-apply.patch",
+      "canonical_patch": "",
       "audit_patch": "patches/001-record.patch",
       "base_commit": "33d81be3c38fe03c7cc8c282dd04c3cf3845197e",
       "upper": {
@@ -21,6 +21,40 @@
       },
       "capture": {
         "mode": "working-tree-all",
+        "pathspecs": [
+          "Dockerfile"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "Dockerfile"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_5bf65e4e65e0",
+      "kind": "amend-refresh",
+      "patch_sha256": "63936b16bfa16ea6c75dd387af40fef497dbfc9564758f68794f2a3865a2977e",
+      "git_patch_id": "90d17f9295a30a8c405c41a9597ffef96d83d714",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "aaa15e5747ed87156489500b2921ca9c1aa908632e6daa6e7d9627d8e477d8e9",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "2ce3ad8^",
+      "upper": {
+        "kind": "commit",
+        "ref": "HEAD",
+        "commit": "384751e1f99e2f5044d1cde608dc4593b639912a"
+      },
+      "capture": {
+        "mode": "committed-range",
         "pathspecs": [
           "Dockerfile"
         ],
