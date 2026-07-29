@@ -56,6 +56,7 @@ Prerequisite: the tool-call assembler is the risky part. Four of the five April 
 | `copilot-pricing-cache` | Cache official Copilot pricing and expose versioned pricing metadata | applied | unknown |
 | `copilot-pricing-node-runtime` | Make pricing refresh Node-safe, catalog-scoped, and conditionally cacheable | applied | unknown |
 | `copilot-usage-preservation` | Preserve Copilot cost and cache metadata across compatibility translations | applied | unknown |
+| `docker-builder-ignore-scripts` | Prevent Docker builder installs from running development prepare hooks | applied | unknown |
 | `effort-model-suffix` | Effort-to-model-suffix upgrade: map output_config.effort to -high/-xhigh model variants for models that reject effort as a parameter (e.g. opus-4.7 base). Strip suffixes in model ID mapping. Normalize effort max→xhigh. | applied | unknown |
 | `embeddings-openai-compatibility` | Normalize Copilot embeddings to the OpenAI request, response, and error contract | applied | unknown |
 | `error-differentiation` | Improve error differentiation: AbortError from client disconnect vs HTTPError from upstream rejection both surface as the generic 'This operation was aborted' message. Add context to distinguish token expiry (401/403), upstream rejection (!response.ok), and client disconnect (signal.aborted) in forwardError. | applied | unknown |
