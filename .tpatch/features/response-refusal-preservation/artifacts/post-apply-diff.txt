@@ -1,0 +1,7 @@
+ .tpatch/POTENTIAL_FEATURES.md                   |  8 ++--
+ src/routes/messages/non-stream-translation.ts   |  6 ++-
+ src/routes/messages/stream-translation.ts       | 22 +++++++++++
+ src/routes/messages/utils.ts                    |  2 +-
+ src/services/copilot/create-chat-completions.ts |  2 +
+ src/services/copilot/create-responses.ts        | 51 +++++++++++++++++++++----
+ 6 files changed, 76 insertions(+), 15 deletions(-)

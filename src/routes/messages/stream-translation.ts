@@ -124,6 +124,28 @@ export function translateChunkToAnthropicEvents(
     })
   }
 
+  if (delta.refusal) {
+    if (streamState.contentBlockOpen) {
+      events.push({
+        type: "content_block_stop",
+        index: streamState.contentBlockIndex,
+      })
+      streamState.contentBlockIndex++
+      streamState.contentBlockOpen = false
+    }
+    events.push({
+      type: "content_block_start",
+      index: streamState.contentBlockIndex,
+      content_block: { type: "text", text: "" },
+    })
+    streamState.contentBlockOpen = true
+    events.push({
+      type: "content_block_delta",
+      index: streamState.contentBlockIndex,
+      delta: { type: "text_delta", text: delta.refusal },
+    })
+  }
+
   if (delta.tool_calls) {
     for (const toolCall of delta.tool_calls) {
       if (toolCall.id && toolCall.function?.name) {

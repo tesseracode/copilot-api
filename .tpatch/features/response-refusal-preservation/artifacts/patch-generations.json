@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "feature": "response-refusal-preservation",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_eeefd276467e",
+      "kind": "record",
+      "patch_sha256": "8877e9d77c27a6b32401a8aa70b625f5f3574d83b3a7a4ae95fa41730e93cb80",
+      "git_patch_id": "d54921778958d2a66918e9263a0f4d8aae3d4bd3",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "9a865cf5e8ebd7faa133575c3ea9b0f112053cd03ff1ec5e7e057bd7829e8b50",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "d916dda9ff5bbbf46dde570621978a4614d7b95d",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          ".tpatch/POTENTIAL_FEATURES.md",
+          "src/routes/messages/non-stream-translation.ts",
+          "src/routes/messages/stream-translation.ts",
+          "src/routes/messages/utils.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-responses.ts",
+          "tests/response-refusal-preservation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/routes/messages/non-stream-translation.ts",
+        "src/routes/messages/stream-translation.ts",
+        "src/routes/messages/utils.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-responses.ts",
+        "tests/response-refusal-preservation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "reasoning-block-preservation",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        },
+        {
+          "slug": "responses-stream-error-events",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        },
+        {
+          "slug": "stream-failure-visibility",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 2,
+          "parent_patch_sha256": "e0a91146fe0a771152488b190864c9cc414654adaaada7278c6ec62bb0bdf648",
+          "parent_recipe_sha256": "d4843a5f5f568cd84556d7648b39bbeb2452112eb5fa075d468d8637069f123a"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

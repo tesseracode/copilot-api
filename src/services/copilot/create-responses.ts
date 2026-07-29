@@ -221,6 +221,8 @@ export interface ResponsesResponse {
   object: string
   created_at?: number
   model: string
+  status?: string
+  incomplete_details?: { reason?: string }
   output: Array<ResponsesOutputItem>
   usage?: {
     input_tokens: number
@@ -228,7 +230,6 @@ export interface ResponsesResponse {
     total_tokens: number
   }
   copilot_usage?: RawCopilotUsage
-  status?: string
 }
 export type ResponsesOutputItem =
   | {
@@ -243,20 +244,24 @@ export type ResponsesOutputItem =
       summary?: Array<{ type: "summary_text"; text: string }>
       encrypted_content?: string | null
     }
-export interface ResponsesMessageContent {
-  type: "output_text"
-  text: string
-}
+export type ResponsesMessageContent =
+  | { type: "output_text"; text: string }
+  | { type: "refusal"; refusal: string }
+// eslint-disable-next-line complexity
 export function translateResponsesNonStreaming(
   resp: ResponsesResponse,
 ): ChatCompletionResponse {
   let textContent = ""
+  let refusalText = ""
   let reasoningText = ""
   const toolCalls: Array<ToolCall> = []
   for (const item of resp.output) {
     switch (item.type) {
       case "message": {
-        textContent += item.content.map((c) => c.text).join("")
+        for (const content of item.content) {
+          if (content.type === "output_text") textContent += content.text
+          else refusalText += content.refusal
+        }
         break
       }
       case "function_call": {
@@ -278,7 +283,12 @@ export function translateResponsesNonStreaming(
     }
     // Skip other unknown item types
   }
-  const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
+  let finishReason: "stop" | "length" | "tool_calls" | "content_filter" = "stop"
+  if (toolCalls.length > 0) finishReason = "tool_calls"
+  else if (refusalText || resp.incomplete_details?.reason === "content_filter")
+    finishReason = "content_filter"
+  else if (resp.incomplete_details?.reason === "max_output_tokens")
+    finishReason = "length"
   return {
     id: resp.id,
     object: "chat.completion",
@@ -290,6 +300,7 @@ export function translateResponsesNonStreaming(
         message: {
           role: "assistant",
           content: textContent || null,
+          ...(refusalText ? { refusal: refusalText } : {}),
           ...(reasoningText ? { reasoning_text: reasoningText } : {}),
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         },
@@ -316,6 +327,7 @@ export interface ResponsesStreamState {
   toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>
   fallbackId: string
   created: number
+  refusalSeen: boolean
 }
 export function createResponsesStreamState(): ResponsesStreamState {
   return {
@@ -326,6 +338,7 @@ export function createResponsesStreamState(): ResponsesStreamState {
     toolCallsByOutputIndex: {},
     fallbackId: `chatcmpl-${randomUUID()}`,
     created: Math.floor(Date.now() / 1000),
+    refusalSeen: false,
   }
 }
 interface ResponsesStreamToolCall {
@@ -571,6 +584,17 @@ function* handleOutputTextDeltaEvent(
     finishReason: null,
   })
 }
+function* handleRefusalDeltaEvent(
+  streamState: ResponsesStreamState,
+  data: ResponsesStreamEventData,
+): Generator<ChatCompletionChunk> {
+  streamState.refusalSeen = true
+  if (!data.delta) return
+  yield makeChunk(streamState, {
+    delta: { refusal: data.delta },
+    finishReason: null,
+  })
+}
 function* handleOutputItemAddedEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -675,9 +699,12 @@ function* handleCompletedEvent(
 ): Generator<ChatCompletionChunk> {
   syncResponseMetadata(streamState, data)
   const hasToolCalls = Object.keys(streamState.toolCallsByCallId).length > 0
+  let finishReason: "stop" | "tool_calls" | "content_filter" = "stop"
+  if (hasToolCalls) finishReason = "tool_calls"
+  else if (streamState.refusalSeen) finishReason = "content_filter"
   yield makeChunk(streamState, {
     delta: {},
-    finishReason: hasToolCalls ? "tool_calls" : "stop",
+    finishReason,
     usage: translateResponsesUsage(data.response?.usage),
   })
 }
@@ -762,6 +789,14 @@ export function* translateResponsesStreamEvent(
     }
     case "response.output_text.delta": {
       yield* handleOutputTextDeltaEvent(streamState, data)
+      break
+    }
+    case "response.refusal.delta": {
+      yield* handleRefusalDeltaEvent(streamState, data)
+      break
+    }
+    case "response.refusal.done": {
+      streamState.refusalSeen = true
       break
     }
     case "response.output_item.added": {

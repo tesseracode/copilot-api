@@ -46,11 +46,9 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 5. `mapOpenAIStopReasonToAnthropic` maps `content_filter` → `end_turn`
 
-- **Status**: cleanup / minor correctness
-- **File**: `src/routes/messages/utils.ts`
-- **Issue**: Anthropic does not have a `content_filter` stop reason, so the current mapping flattens it to `end_turn`. The Anthropic stream looks like a normal completion when the upstream actually rejected on a filter. Clients that distinguish "model declined" from "model finished" lose that signal. Surfaces during `responses-stream-error-events` `response.incomplete` with `reason: "content_filter"`.
-- **Possible solution**: emit an Anthropic `error` event with `error.type: "permission_error"` (or similar) for `content_filter`, instead of a normal `message_delta + message_stop`. Or add a non-standard `stop_reason: "content_filter"` and document the divergence.
-- **Trigger to file**: a real content-filter rejection observed in production, or a customer asking why filtered turns appear identical to clean completions.
+- **Status**: completed by `response-refusal-preservation`.
+- **Resolution**: Responses refusal text is preserved in Chat `refusal` fields and Anthropic text blocks; Chat `content_filter` maps to Anthropic's standard `stop_reason: "refusal"`. Streaming refusal delta/done events are preserved exactly once, partial ordinary content keeps order, and non-stream incomplete/refusal responses no longer become empty normal success.
+- **Historical note**: the original permission-error proposal was rejected after protocol research. Content filtering/refusal is model-output termination, not caller authorization failure.
 
 ---
 

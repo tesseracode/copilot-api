@@ -1,0 +1,8 @@
+{
+  "slug": "response-refusal-preservation",
+  "completed_at": "2026-07-29T23:37:03Z",
+  "base_commit": "d916dda9ff5bbbf46dde570621978a4614d7b95d",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/response-refusal-preservation.test.ts tests/responses-stream-error-events.test.ts tests/anthropic-response.test.ts tests/messages-handler.test.ts \u0026\u0026 bun run typecheck \u0026\u0026 bun run lint:all \u0026\u0026 bun run build"
+}
