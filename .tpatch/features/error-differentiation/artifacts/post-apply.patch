@@ -1,0 +1,608 @@
+diff --git a/src/lib/error.ts b/src/lib/error.ts
+index 09dd297..e1ea9bf 100644
+--- a/src/lib/error.ts
++++ b/src/lib/error.ts
+@@ -15,162 +15,272 @@ export class HTTPError extends Error {
+ export function badRequest(message: string): HTTPError {
+   return new HTTPError(
+     message,
+-    new Response(
+-      JSON.stringify({
+-        error: { type: "invalid_request_error", message },
+-      }),
+-      {
+-        status: 400,
+-        headers: { "content-type": "application/json" },
+-      },
++    Response.json(
++      { error: { type: "invalid_request_error", message } },
++      { status: 400 },
+     ),
+   )
+ }
+ 
+-function isUpstreamErrorEnvelope(
+-  value: unknown,
+-): value is { error: { message: string; type?: string; code?: string } } {
++interface ErrorEnvelope {
++  error: {
++    message: string
++    type?: string
++    code?: string | null
++    param?: string | null
++  }
++  [key: string]: unknown
++}
++
++interface AnthropicErrorEnvelope {
++  type: "error"
++  error: { type: string; message: string }
++  request_id?: string
++}
++
++interface NormalizedHTTPError {
++  status: ContentfulStatusCode
++  body: unknown
++  structured: ErrorEnvelope | AnthropicErrorEnvelope | undefined
++  requestId: string | undefined
++}
++
++const SAFE_ERROR_HEADERS = [
++  "x-copilot-service-request-id",
++  "x-github-request-id",
++  "x-request-id",
++  "retry-after",
++  "x-ratelimit-limit",
++  "x-ratelimit-remaining",
++  "x-ratelimit-reset",
++] as const
++
++const LOCAL_ERROR_MESSAGE = "An unexpected error occurred."
++const ABORT_ERROR_MESSAGE = "Client closed request."
++
++function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+   if (!value || typeof value !== "object") return false
+-  const inner = (value as { error?: unknown }).error
+-  if (!inner || typeof inner !== "object") return false
+-  const message = (inner as { message?: unknown }).message
+-  return typeof message === "string"
++  const nested = (value as { error?: unknown }).error
++  if (!nested || typeof nested !== "object") return false
++  return typeof (nested as { message?: unknown }).message === "string"
+ }
+ 
+-export async function forwardError(c: Context, error: unknown) {
+-  consola.error("Error occurred:", error)
++function isAnthropicEnvelope(value: unknown): value is AnthropicErrorEnvelope {
++  if (!value || typeof value !== "object") return false
++  const record = value as { type?: unknown; error?: unknown }
++  if (
++    record.type !== "error"
++    || !record.error
++    || typeof record.error !== "object"
++  ) {
++    return false
++  }
++  const nested = record.error as { type?: unknown; message?: unknown }
++  return typeof nested.type === "string" && typeof nested.message === "string"
++}
+ 
+-  if (error instanceof HTTPError) {
+-    const errorText = await error.response.text()
+-    let errorJson: unknown
+-    try {
+-      errorJson = JSON.parse(errorText)
+-    } catch {
+-      errorJson = errorText
+-    }
+-    consola.error("HTTP error:", errorJson)
++function typeForStatus(status: number): string {
++  if (status === 400) return "invalid_request_error"
++  if (status === 401) return "authentication_error"
++  if (status === 403) return "permission_error"
++  if (status === 404) return "not_found_error"
++  if (status === 409) return "conflict_error"
++  if (status === 429) return "rate_limit_error"
++  return "api_error"
++}
++
++function messageForStatus(status: number): string {
++  if (status === 400) return "Invalid request."
++  if (status === 401) return "Authentication failed."
++  if (status === 403) return "Permission denied."
++  if (status === 404) return "Resource not found."
++  if (status === 409) return "Request conflict."
++  if (status === 429) return "Rate limit exceeded."
++  return "An unexpected upstream error occurred."
++}
++
++function copySafeHeaders(c: Context, response: Response): void {
++  for (const name of SAFE_ERROR_HEADERS) {
++    const value = response.headers.get(name)
++    if (value) c.header(name, value)
++  }
++}
++
++function responseRequestId(response: Response): string | undefined {
++  return (
++    response.headers.get("x-copilot-service-request-id")
++    ?? response.headers.get("x-github-request-id")
++    ?? response.headers.get("x-request-id")
++    ?? undefined
++  )
++}
++
++async function normalizeHTTPError(
++  c: Context,
++  error: HTTPError,
++): Promise<NormalizedHTTPError> {
++  const response = error.response
++  copySafeHeaders(c, response)
++  let parsed: unknown
++  try {
++    parsed = JSON.parse(await response.clone().text())
++  } catch {
++    parsed = undefined
++  }
++  const structured =
++    isAnthropicEnvelope(parsed) || isErrorEnvelope(parsed) ? parsed : undefined
++  return {
++    status: response.status as ContentfulStatusCode,
++    body: structured,
++    structured,
++    requestId:
++      (isAnthropicEnvelope(structured) ? structured.request_id : undefined)
++      ?? responseRequestId(response),
++  }
++}
++
++function isAbortError(error: unknown): boolean {
++  return error instanceof Error && error.name === "AbortError"
++}
++
++function logUnexpected(error: unknown): void {
++  const kind = error instanceof Error ? error.name : typeof error
++  consola.error(`Unexpected non-stream error (${kind})`)
++}
+ 
+-    const status = error.response.status as ContentfulStatusCode
++function logHTTPFailure(
++  status: number,
++  requestId: string | undefined,
++  structured: ErrorEnvelope | AnthropicErrorEnvelope | undefined,
++): void {
++  const type =
++    isAnthropicEnvelope(structured) ?
++      structured.error.type
++    : (structured?.error.type ?? structured?.error.code)
++  consola.error(
++    `Upstream non-stream error (status=${status}${type ? `, type=${type}` : ""}${requestId ? `, request_id=${requestId}` : ""})`,
++  )
++}
+ 
+-    if (isUpstreamErrorEnvelope(errorJson)) {
+-      return c.json(errorJson, status)
++export async function forwardError(c: Context, error: unknown) {
++  if (error instanceof HTTPError) {
++    const normalized = await normalizeHTTPError(c, error)
++    logHTTPFailure(
++      normalized.status,
++      normalized.requestId,
++      normalized.structured,
++    )
++    if (isErrorEnvelope(normalized.structured)) {
++      return c.json(normalized.structured, normalized.status)
+     }
++    if (isAnthropicEnvelope(normalized.structured)) {
++      return c.json(
++        {
++          error: {
++            type: normalized.structured.error.type,
++            code: null,
++            message: normalized.structured.error.message,
++            param: null,
++          },
++        },
++        normalized.status,
++      )
++    }
++    return c.json(
++      {
++        error: {
++          type: "upstream_error",
++          code: "upstream_error",
++          message: messageForStatus(normalized.status),
++          param: null,
++        },
++      },
++      normalized.status,
++    )
++  }
+ 
++  if (isAbortError(error)) {
++    consola.debug("Non-stream request aborted by client")
+     return c.json(
+       {
+         error: {
+-          message: typeof errorJson === "string" ? errorJson : errorText,
+-          type: "error",
++          type: "request_aborted",
++          code: "request_aborted",
++          message: ABORT_ERROR_MESSAGE,
++          param: null,
+         },
+       },
+-      status,
++      499 as ContentfulStatusCode,
+     )
+   }
+ 
++  logUnexpected(error)
+   return c.json(
+     {
+       error: {
+-        message: (error as Error).message,
+-        type: "error",
++        type: "server_error",
++        code: "internal_error",
++        message: LOCAL_ERROR_MESSAGE,
++        param: null,
+       },
+     },
+     500,
+   )
+ }
+ 
+-/**
+- * Anthropic error types, keyed by the HTTP status that implies them.
+- *
+- * Used when the upstream body carries no usable type of its own — most often
+- * when it is not JSON at all, in which case a plain-text 401 would otherwise be
+- * indistinguishable from a rate limit.
+- */
+-const ANTHROPIC_ERROR_TYPE_BY_STATUS: Record<number, string> = {
+-  400: "invalid_request_error",
+-  401: "authentication_error",
+-  403: "permission_error",
+-  404: "not_found_error",
+-  413: "request_too_large",
+-  429: "rate_limit_error",
+-}
+-
+-function anthropicErrorType(status: number): string {
+-  return ANTHROPIC_ERROR_TYPE_BY_STATUS[status] ?? "api_error"
+-}
+-
+-/** An Anthropic error body already has a top-level `type: "error"`. */
+-function isAnthropicErrorEnvelope(
+-  value: unknown,
+-): value is { type: "error"; error: { type: string; message: string } } {
+-  if (!isUpstreamErrorEnvelope(value)) return false
+-  return (value as { type?: unknown }).type === "error"
+-}
+-
+-/**
+- * Forward an error to an Anthropic-shaped client.
+- *
+- * `/v1/messages` speaks the Anthropic contract, whose errors carry a top-level
+- * `type: "error"` alongside the nested error object — see `AnthropicErrorEvent`
+- * and `translateErrorToAnthropicErrorEvent`, which the streaming path on this
+- * same route already emits. `forwardError` produces the OpenAI envelope, so
+- * routing Anthropic errors through it made the endpoint return one shape for
+- * upstream rejections (passed through intact) and another for anything the
+- * proxy raised itself.
+- *
+- * An upstream body that is already Anthropic-shaped is forwarded untouched, so
+- * fields like `request_id` survive.
+- */
+ export async function forwardAnthropicError(c: Context, error: unknown) {
+-  consola.error("Error occurred:", error)
+-
+   if (error instanceof HTTPError) {
+-    const errorText = await error.response.text()
+-    let errorJson: unknown
+-    try {
+-      errorJson = JSON.parse(errorText)
+-    } catch {
+-      errorJson = errorText
+-    }
+-    consola.error("HTTP error:", errorJson)
+-
+-    const status = error.response.status as ContentfulStatusCode
+-
+-    if (isAnthropicErrorEnvelope(errorJson)) {
+-      return c.json(errorJson, status)
++    const normalized = await normalizeHTTPError(c, error)
++    logHTTPFailure(
++      normalized.status,
++      normalized.requestId,
++      normalized.structured,
++    )
++    if (isAnthropicEnvelope(normalized.structured)) {
++      return c.json(normalized.structured, normalized.status)
+     }
+-
+-    if (isUpstreamErrorEnvelope(errorJson)) {
++    if (isErrorEnvelope(normalized.structured)) {
+       return c.json(
+         {
+-          type: "error",
++          type: "error" as const,
+           error: {
+-            type: errorJson.error.type ?? anthropicErrorType(status),
+-            message: errorJson.error.message,
++            type:
++              normalized.structured.error.type
++              ?? typeForStatus(normalized.status),
++            message: normalized.structured.error.message,
+           },
+         },
+-        status,
++        normalized.status,
+       )
+     }
+-
+     return c.json(
+       {
+-        type: "error",
++        type: "error" as const,
+         error: {
+-          type: anthropicErrorType(status),
+-          message: typeof errorJson === "string" ? errorJson : errorText,
++          type: typeForStatus(normalized.status),
++          message: messageForStatus(normalized.status),
+         },
+       },
+-      status,
++      normalized.status,
+     )
+   }
+ 
++  if (isAbortError(error)) {
++    consola.debug("Anthropic non-stream request aborted by client")
++    return c.json(
++      {
++        type: "error" as const,
++        error: { type: "api_error", message: ABORT_ERROR_MESSAGE },
++      },
++      499 as ContentfulStatusCode,
++    )
++  }
++
++  logUnexpected(error)
+   return c.json(
+     {
+-      type: "error",
+-      error: {
+-        type: "api_error",
+-        message: (error as Error).message,
+-      },
++      type: "error" as const,
++      error: { type: "api_error", message: LOCAL_ERROR_MESSAGE },
+     },
+     500,
+   )
+diff --git a/tests/anthropic-error-envelope.test.ts b/tests/anthropic-error-envelope.test.ts
+index dd09cac..b05104e 100644
+--- a/tests/anthropic-error-envelope.test.ts
++++ b/tests/anthropic-error-envelope.test.ts
+@@ -186,7 +186,10 @@ describe("/v1/messages error envelope", () => {
+     expect(response.status).toBe(401)
+     expect(await response.json()).toEqual({
+       type: "error",
+-      error: { type: "authentication_error", message: "Unauthorized" },
++      error: {
++        type: "authentication_error",
++        message: "Authentication failed.",
++      },
+     })
+   })
+ 
+diff --git a/tests/messages-tool-result-validation.test.ts b/tests/messages-tool-result-validation.test.ts
+index 9f32c94..8e8bd5c 100644
+--- a/tests/messages-tool-result-validation.test.ts
++++ b/tests/messages-tool-result-validation.test.ts
+@@ -167,7 +167,7 @@ describe("forwardError envelope handling", () => {
+     expect(captured.calls[0]).toEqual({ body: upstreamBody, status: 429 })
+   })
+ 
+-  test("upstream plain text body is wrapped in our envelope", async () => {
++  test("upstream plain text body is replaced with a safe envelope", async () => {
+     const httpErr = new HTTPError(
+       "upstream",
+       new Response("not json", { status: 502 }),
+@@ -176,7 +176,14 @@ describe("forwardError envelope handling", () => {
+     await forwardError(c, httpErr)
+     expect(captured.calls).toHaveLength(1)
+     expect(captured.calls[0]).toEqual({
+-      body: { error: { message: "not json", type: "error" } },
++      body: {
++        error: {
++          type: "upstream_error",
++          code: "upstream_error",
++          message: "An unexpected upstream error occurred.",
++          param: null,
++        },
++      },
+       status: 502,
+     })
+   })
+@@ -186,7 +193,14 @@ describe("forwardError envelope handling", () => {
+     await forwardError(c, new Error("boom"))
+     expect(captured.calls).toHaveLength(1)
+     expect(captured.calls[0]).toEqual({
+-      body: { error: { message: "boom", type: "error" } },
++      body: {
++        error: {
++          type: "server_error",
++          code: "internal_error",
++          message: "An unexpected error occurred.",
++          param: null,
++        },
++      },
+       status: 500,
+     })
+   })
+diff --git a/tests/non-stream-error-normalization.test.ts b/tests/non-stream-error-normalization.test.ts
+new file mode 100644
+index 0000000..8a0201b
+--- /dev/null
++++ b/tests/non-stream-error-normalization.test.ts
+@@ -0,0 +1,157 @@
++import { describe, expect, it, spyOn } from "bun:test"
++import consola from "consola"
++import { Hono } from "hono"
++import { inspect } from "node:util"
++
++import { forwardAnthropicError, forwardError, HTTPError } from "~/lib/error"
++
++const SECRET = "SECRET_SENTINEL_7f3c9a"
++
++async function call(
++  protocol: "openai" | "anthropic",
++  error: unknown,
++): Promise<{ response: Response; logs: string }> {
++  const app = new Hono()
++  const logs: Array<Array<unknown>> = []
++  const log = spyOn(consola, "error")
++  const capture = ((...args: Array<unknown>) => {
++    logs.push(args)
++  }) as typeof consola.error
++  log.mockImplementation(capture)
++  app.get("/", (c) =>
++    protocol === "openai" ?
++      forwardError(c, error)
++    : forwardAnthropicError(c, error),
++  )
++  const response = await app.request("/")
++  log.mockRestore()
++  return { response, logs: inspect(logs, { depth: 8 }) }
++}
++
++function httpError(
++  status: number,
++  body: string,
++  headers: Record<string, string> = {},
++): HTTPError {
++  return new HTTPError("upstream", new Response(body, { status, headers }))
++}
++
++describe.each(["openai", "anthropic"] as const)(
++  "%s non-stream error normalization",
++  (protocol) => {
++    it("redacts local Error and object messages from response and logs", async () => {
++      for (const error of [
++        new Error(`internal ${SECRET}`),
++        { message: `object ${SECRET}`, secret: SECRET },
++      ]) {
++        const { response, logs } = await call(protocol, error)
++        const text = await response.text()
++        expect(response.status).toBe(500)
++        expect(text).not.toContain(SECRET)
++        expect(text).toContain("An unexpected error occurred.")
++        expect(logs).not.toContain(SECRET)
++      }
++    })
++
++    it("normalizes arbitrary thrown values to a non-empty message", async () => {
++      for (const error of [`string ${SECRET}`, { secret: SECRET }]) {
++        const { response, logs } = await call(protocol, error)
++        const body = (await response.json()) as Record<string, unknown>
++        const outer = body.error as Record<string, unknown>
++        const nested =
++          outer.error && typeof outer.error === "object" ?
++            (outer.error as Record<string, unknown>)
++          : outer
++        expect(nested.message).toBe("An unexpected error occurred.")
++        expect(logs).not.toContain(SECRET)
++      }
++    })
++
++    it("redacts unrecognized upstream bodies", async () => {
++      const { response, logs } = await call(
++        protocol,
++        httpError(500, `provider ${SECRET}`),
++      )
++      const text = await response.text()
++      expect(response.status).toBe(500)
++      expect(text).not.toContain(SECRET)
++      expect(text).toContain("An unexpected upstream error occurred.")
++      expect(logs).not.toContain(SECRET)
++    })
++
++    it("maps a local AbortError to a redacted 499 fallback", async () => {
++      const error = new Error("This operation was aborted")
++      error.name = "AbortError"
++      const { response } = await call(protocol, error)
++      const text = await response.text()
++      expect(response.status).toBe(499)
++      expect(text).toContain("Client closed request.")
++      expect(text).not.toContain("This operation was aborted")
++    })
++
++    it("preserves safe provider metadata headers", async () => {
++      const { response } = await call(
++        protocol,
++        httpError(429, "Too Many Requests", {
++          "x-copilot-service-request-id": "copilot-request",
++          "x-github-request-id": "github-request",
++          "x-request-id": "generic-request",
++          "retry-after": "30",
++          "x-ratelimit-limit": "100",
++          "x-ratelimit-remaining": "0",
++          "x-ratelimit-reset": "999",
++          authorization: SECRET,
++        }),
++      )
++
++      expect(response.status).toBe(429)
++      expect(response.headers.get("x-copilot-service-request-id")).toBe(
++        "copilot-request",
++      )
++      expect(response.headers.get("x-github-request-id")).toBe("github-request")
++      expect(response.headers.get("x-request-id")).toBe("generic-request")
++      expect(response.headers.get("retry-after")).toBe("30")
++      expect(response.headers.get("x-ratelimit-limit")).toBe("100")
++      expect(response.headers.get("x-ratelimit-remaining")).toBe("0")
++      expect(response.headers.get("x-ratelimit-reset")).toBe("999")
++      expect(response.headers.get("authorization")).toBeNull()
++    })
++  },
++)
++
++describe("recognized error envelope preservation", () => {
++  it("preserves a structured OpenAI error", async () => {
++    const envelope = {
++      error: {
++        type: "invalid_request_error",
++        code: "bad_input",
++        message: "Invalid field",
++        param: "model",
++      },
++    }
++    const { response } = await call(
++      "openai",
++      httpError(400, JSON.stringify(envelope), {
++        "content-type": "application/json",
++      }),
++    )
++    expect(response.status).toBe(400)
++    expect(await response.json()).toEqual(envelope)
++  })
++
++  it("preserves a native Anthropic error and request_id", async () => {
++    const envelope = {
++      type: "error",
++      error: { type: "authentication_error", message: "Token expired" },
++      request_id: "req_123",
++    }
++    const { response } = await call(
++      "anthropic",
++      httpError(401, JSON.stringify(envelope), {
++        "content-type": "application/json",
++      }),
++    )
++    expect(response.status).toBe(401)
++    expect(await response.json()).toEqual(envelope)
++  })
++})

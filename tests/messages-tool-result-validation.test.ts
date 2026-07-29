@@ -167,7 +167,7 @@ describe("forwardError envelope handling", () => {
     expect(captured.calls[0]).toEqual({ body: upstreamBody, status: 429 })
   })
 
-  test("upstream plain text body is wrapped in our envelope", async () => {
+  test("upstream plain text body is replaced with a safe envelope", async () => {
     const httpErr = new HTTPError(
       "upstream",
       new Response("not json", { status: 502 }),
@@ -176,7 +176,14 @@ describe("forwardError envelope handling", () => {
     await forwardError(c, httpErr)
     expect(captured.calls).toHaveLength(1)
     expect(captured.calls[0]).toEqual({
-      body: { error: { message: "not json", type: "error" } },
+      body: {
+        error: {
+          type: "upstream_error",
+          code: "upstream_error",
+          message: "An unexpected upstream error occurred.",
+          param: null,
+        },
+      },
       status: 502,
     })
   })
@@ -186,7 +193,14 @@ describe("forwardError envelope handling", () => {
     await forwardError(c, new Error("boom"))
     expect(captured.calls).toHaveLength(1)
     expect(captured.calls[0]).toEqual({
-      body: { error: { message: "boom", type: "error" } },
+      body: {
+        error: {
+          type: "server_error",
+          code: "internal_error",
+          message: "An unexpected error occurred.",
+          param: null,
+        },
+      },
       status: 500,
     })
   })
