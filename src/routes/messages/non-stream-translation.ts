@@ -289,6 +289,7 @@ function getThinkingBlocks(
   return [{ type: "thinking", thinking: reasoningText }]
 }
 
+// eslint-disable-next-line complexity
 export function translateToAnthropic(
   response: ChatCompletionResponse,
 ): AnthropicResponse {
@@ -303,13 +304,16 @@ export function translateToAnthropic(
   // Process all choices to extract text and tool use blocks
   for (const choice of response.choices) {
     const textBlocks = getAnthropicTextBlocks(choice.message.content)
+    const refusalBlocks = getAnthropicTextBlocks(choice.message.refusal ?? null)
     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)
 
     // Map reasoning_text from GPT-5.x /responses to Anthropic thinking blocks
     allThinkingBlocks.push(...getThinkingBlocks(choice.message.reasoning_text))
 
-    allTextBlocks.push(...textBlocks)
+    allTextBlocks.push(...textBlocks, ...refusalBlocks)
     allToolUseBlocks.push(...toolUseBlocks)
+
+    if (choice.message.refusal) stopReason = "content_filter"
 
     // Use the finish_reason from the first choice, or prioritize tool_calls
     if (choice.finish_reason === "tool_calls" || stopReason === "stop") {

@@ -1,0 +1,410 @@
+diff --git a/src/routes/messages/non-stream-translation.ts b/src/routes/messages/non-stream-translation.ts
+index e02346a..77e00e5 100644
+--- a/src/routes/messages/non-stream-translation.ts
++++ b/src/routes/messages/non-stream-translation.ts
+@@ -289,6 +289,7 @@ function getThinkingBlocks(
+   return [{ type: "thinking", thinking: reasoningText }]
+ }
+ 
++// eslint-disable-next-line complexity
+ export function translateToAnthropic(
+   response: ChatCompletionResponse,
+ ): AnthropicResponse {
+@@ -303,14 +304,17 @@ export function translateToAnthropic(
+   // Process all choices to extract text and tool use blocks
+   for (const choice of response.choices) {
+     const textBlocks = getAnthropicTextBlocks(choice.message.content)
++    const refusalBlocks = getAnthropicTextBlocks(choice.message.refusal ?? null)
+     const toolUseBlocks = getAnthropicToolUseBlocks(choice.message.tool_calls)
+ 
+     // Map reasoning_text from GPT-5.x /responses to Anthropic thinking blocks
+     allThinkingBlocks.push(...getThinkingBlocks(choice.message.reasoning_text))
+ 
+-    allTextBlocks.push(...textBlocks)
++    allTextBlocks.push(...textBlocks, ...refusalBlocks)
+     allToolUseBlocks.push(...toolUseBlocks)
+ 
++    if (choice.message.refusal) stopReason = "content_filter"
++
+     // Use the finish_reason from the first choice, or prioritize tool_calls
+     if (choice.finish_reason === "tool_calls" || stopReason === "stop") {
+       stopReason = choice.finish_reason
+diff --git a/src/routes/messages/stream-translation.ts b/src/routes/messages/stream-translation.ts
+index c4a5f8e..19ee05f 100644
+--- a/src/routes/messages/stream-translation.ts
++++ b/src/routes/messages/stream-translation.ts
+@@ -124,6 +124,28 @@ export function translateChunkToAnthropicEvents(
+     })
+   }
+ 
++  if (delta.refusal) {
++    if (streamState.contentBlockOpen) {
++      events.push({
++        type: "content_block_stop",
++        index: streamState.contentBlockIndex,
++      })
++      streamState.contentBlockIndex++
++      streamState.contentBlockOpen = false
++    }
++    events.push({
++      type: "content_block_start",
++      index: streamState.contentBlockIndex,
++      content_block: { type: "text", text: "" },
++    })
++    streamState.contentBlockOpen = true
++    events.push({
++      type: "content_block_delta",
++      index: streamState.contentBlockIndex,
++      delta: { type: "text_delta", text: delta.refusal },
++    })
++  }
++
+   if (delta.tool_calls) {
+     for (const toolCall of delta.tool_calls) {
+       if (toolCall.id && toolCall.function?.name) {
+diff --git a/src/routes/messages/utils.ts b/src/routes/messages/utils.ts
+index d0febfc..d8ed4c0 100644
+--- a/src/routes/messages/utils.ts
++++ b/src/routes/messages/utils.ts
+@@ -10,7 +10,7 @@ export function mapOpenAIStopReasonToAnthropic(
+     stop: "end_turn",
+     length: "max_tokens",
+     tool_calls: "tool_use",
+-    content_filter: "end_turn",
++    content_filter: "refusal",
+   } as const
+   return stopReasonMap[finishReason]
+ }
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 76a3755..65e07bc 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -94,6 +94,7 @@ export interface ChatCompletionChunk {
+ 
+ interface Delta {
+   content?: string | null
++  refusal?: string | null
+   role?: "user" | "assistant" | "system" | "tool"
+   tool_calls?: Array<{
+     index: number
+@@ -136,6 +137,7 @@ export interface ChatCompletionResponse {
+ interface ResponseMessage {
+   role: "assistant"
+   content: string | null
++  refusal?: string | null
+   reasoning_text?: string | null
+   tool_calls?: Array<ToolCall>
+ }
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index 119d6b9..c57dcc7 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -221,6 +221,8 @@ export interface ResponsesResponse {
+   object: string
+   created_at?: number
+   model: string
++  status?: string
++  incomplete_details?: { reason?: string }
+   output: Array<ResponsesOutputItem>
+   usage?: {
+     input_tokens: number
+@@ -228,7 +230,6 @@ export interface ResponsesResponse {
+     total_tokens: number
+   }
+   copilot_usage?: RawCopilotUsage
+-  status?: string
+ }
+ export type ResponsesOutputItem =
+   | {
+@@ -243,20 +244,24 @@ export type ResponsesOutputItem =
+       summary?: Array<{ type: "summary_text"; text: string }>
+       encrypted_content?: string | null
+     }
+-export interface ResponsesMessageContent {
+-  type: "output_text"
+-  text: string
+-}
++export type ResponsesMessageContent =
++  | { type: "output_text"; text: string }
++  | { type: "refusal"; refusal: string }
++// eslint-disable-next-line complexity
+ export function translateResponsesNonStreaming(
+   resp: ResponsesResponse,
+ ): ChatCompletionResponse {
+   let textContent = ""
++  let refusalText = ""
+   let reasoningText = ""
+   const toolCalls: Array<ToolCall> = []
+   for (const item of resp.output) {
+     switch (item.type) {
+       case "message": {
+-        textContent += item.content.map((c) => c.text).join("")
++        for (const content of item.content) {
++          if (content.type === "output_text") textContent += content.text
++          else refusalText += content.refusal
++        }
+         break
+       }
+       case "function_call": {
+@@ -278,7 +283,12 @@ export function translateResponsesNonStreaming(
+     }
+     // Skip other unknown item types
+   }
+-  const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop"
++  let finishReason: "stop" | "length" | "tool_calls" | "content_filter" = "stop"
++  if (toolCalls.length > 0) finishReason = "tool_calls"
++  else if (refusalText || resp.incomplete_details?.reason === "content_filter")
++    finishReason = "content_filter"
++  else if (resp.incomplete_details?.reason === "max_output_tokens")
++    finishReason = "length"
+   return {
+     id: resp.id,
+     object: "chat.completion",
+@@ -290,6 +300,7 @@ export function translateResponsesNonStreaming(
+         message: {
+           role: "assistant",
+           content: textContent || null,
++          ...(refusalText ? { refusal: refusalText } : {}),
+           ...(reasoningText ? { reasoning_text: reasoningText } : {}),
+           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+         },
+@@ -316,6 +327,7 @@ export interface ResponsesStreamState {
+   toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>
+   fallbackId: string
+   created: number
++  refusalSeen: boolean
+ }
+ export function createResponsesStreamState(): ResponsesStreamState {
+   return {
+@@ -326,6 +338,7 @@ export function createResponsesStreamState(): ResponsesStreamState {
+     toolCallsByOutputIndex: {},
+     fallbackId: `chatcmpl-${randomUUID()}`,
+     created: Math.floor(Date.now() / 1000),
++    refusalSeen: false,
+   }
+ }
+ interface ResponsesStreamToolCall {
+@@ -571,6 +584,17 @@ function* handleOutputTextDeltaEvent(
+     finishReason: null,
+   })
+ }
++function* handleRefusalDeltaEvent(
++  streamState: ResponsesStreamState,
++  data: ResponsesStreamEventData,
++): Generator<ChatCompletionChunk> {
++  streamState.refusalSeen = true
++  if (!data.delta) return
++  yield makeChunk(streamState, {
++    delta: { refusal: data.delta },
++    finishReason: null,
++  })
++}
+ function* handleOutputItemAddedEvent(
+   streamState: ResponsesStreamState,
+   data: ResponsesStreamEventData,
+@@ -675,9 +699,12 @@ function* handleCompletedEvent(
+ ): Generator<ChatCompletionChunk> {
+   syncResponseMetadata(streamState, data)
+   const hasToolCalls = Object.keys(streamState.toolCallsByCallId).length > 0
++  let finishReason: "stop" | "tool_calls" | "content_filter" = "stop"
++  if (hasToolCalls) finishReason = "tool_calls"
++  else if (streamState.refusalSeen) finishReason = "content_filter"
+   yield makeChunk(streamState, {
+     delta: {},
+-    finishReason: hasToolCalls ? "tool_calls" : "stop",
++    finishReason,
+     usage: translateResponsesUsage(data.response?.usage),
+   })
+ }
+@@ -764,6 +791,14 @@ export function* translateResponsesStreamEvent(
+       yield* handleOutputTextDeltaEvent(streamState, data)
+       break
+     }
++    case "response.refusal.delta": {
++      yield* handleRefusalDeltaEvent(streamState, data)
++      break
++    }
++    case "response.refusal.done": {
++      streamState.refusalSeen = true
++      break
++    }
+     case "response.output_item.added": {
+       yield* handleOutputItemAddedEvent(streamState, data)
+       break
+diff --git a/tests/response-refusal-preservation.test.ts b/tests/response-refusal-preservation.test.ts
+new file mode 100644
+index 0000000..68bc590
+--- /dev/null
++++ b/tests/response-refusal-preservation.test.ts
+@@ -0,0 +1,171 @@
++import { describe, expect, it } from "bun:test"
++
++import { createAnthropicStreamState } from "~/routes/messages/anthropic-types"
++import { translateToAnthropic } from "~/routes/messages/non-stream-translation"
++import { translateChunkToAnthropicEvents } from "~/routes/messages/stream-translation"
++import {
++  createResponsesStreamState,
++  translateResponsesNonStreaming,
++  translateResponsesStreamEvent,
++  type ResponsesResponse,
++} from "~/services/copilot/create-responses"
++
++function stream(
++  events: Array<{ event: string; data: Record<string, unknown> }>,
++) {
++  const responsesState = createResponsesStreamState()
++  const anthropicState = createAnthropicStreamState()
++  const chunks = events.flatMap((event) => [
++    ...translateResponsesStreamEvent(event, responsesState),
++  ])
++  const anthropic = chunks.flatMap((chunk) =>
++    translateChunkToAnthropicEvents(chunk, anthropicState),
++  )
++  return { chunks, anthropic }
++}
++
++function incomplete(reason: string) {
++  return {
++    event: "response.incomplete",
++    data: {
++      type: "response.incomplete",
++      response: {
++        id: "resp_filter",
++        model: "gpt-test",
++        incomplete_details: { reason },
++        usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
++      },
++    },
++  }
++}
++
++describe("response refusal preservation", () => {
++  it("maps streaming content_filter to Anthropic refusal", () => {
++    const result = stream([incomplete("content_filter")])
++    expect(result.chunks.at(-1)?.choices[0].finish_reason).toBe(
++      "content_filter",
++    )
++    expect(result.anthropic).toContainEqual({
++      type: "message_delta",
++      delta: { stop_reason: "refusal", stop_sequence: null },
++      usage: { input_tokens: 10, output_tokens: 1 },
++    })
++    expect(result.anthropic.some((event) => event.type === "error")).toBe(false)
++  })
++
++  it("preserves partial text before a refusal terminal reason", () => {
++    const result = stream([
++      {
++        event: "response.output_text.delta",
++        data: { type: "response.output_text.delta", delta: "partial" },
++      },
++      incomplete("content_filter"),
++    ])
++    expect(result.anthropic).toContainEqual({
++      type: "content_block_delta",
++      index: 0,
++      delta: { type: "text_delta", text: "partial" },
++    })
++    expect(result.anthropic).toContainEqual({
++      type: "message_delta",
++      delta: { stop_reason: "refusal", stop_sequence: null },
++      usage: { input_tokens: 10, output_tokens: 1 },
++    })
++  })
++
++  it("preserves streaming refusal text exactly once", () => {
++    const result = stream([
++      {
++        event: "response.refusal.delta",
++        data: { type: "response.refusal.delta", delta: "I cannot help" },
++      },
++      {
++        event: "response.refusal.done",
++        data: { type: "response.refusal.done", refusal: "I cannot help" },
++      },
++      {
++        event: "response.completed",
++        data: {
++          type: "response.completed",
++          response: { id: "resp_refusal", model: "gpt-test" },
++        },
++      },
++    ])
++    const refusalText = result.chunks
++      .map((chunk) => chunk.choices[0].delta.refusal ?? "")
++      .join("")
++    expect(refusalText).toBe("I cannot help")
++    expect(result.chunks.at(-1)?.choices[0].finish_reason).toBe(
++      "content_filter",
++    )
++    expect(result.anthropic).toContainEqual({
++      type: "content_block_delta",
++      index: 0,
++      delta: { type: "text_delta", text: "I cannot help" },
++    })
++    expect(result.anthropic).toContainEqual({
++      type: "message_delta",
++      delta: { stop_reason: "refusal", stop_sequence: null },
++      usage: { input_tokens: 0, output_tokens: 0 },
++    })
++  })
++
++  it("preserves non-stream incomplete content_filter", () => {
++    const chat = translateResponsesNonStreaming({
++      id: "resp_filter",
++      object: "response",
++      model: "gpt-test",
++      status: "incomplete",
++      incomplete_details: { reason: "content_filter" },
++      output: [],
++    } as ResponsesResponse)
++    expect(chat.choices[0].finish_reason).toBe("content_filter")
++    expect(translateToAnthropic(chat).stop_reason).toBe("refusal")
++  })
++
++  it("preserves non-stream refusal text", () => {
++    const chat = translateResponsesNonStreaming({
++      id: "resp_refusal",
++      object: "response",
++      model: "gpt-test",
++      output: [
++        {
++          type: "message",
++          role: "assistant",
++          content: [{ type: "refusal", refusal: "I cannot help" }],
++        },
++      ],
++    } as unknown as ResponsesResponse)
++    expect(chat.choices[0].message.refusal).toBe("I cannot help")
++    expect(chat.choices[0].finish_reason).toBe("content_filter")
++    const anthropic = translateToAnthropic(chat)
++    expect(anthropic.content).toEqual([{ type: "text", text: "I cannot help" }])
++    expect(anthropic.stop_reason).toBe("refusal")
++  })
++
++  it("preserves ordinary text before refusal text", () => {
++    const chat = translateResponsesNonStreaming({
++      id: "resp_mixed",
++      object: "response",
++      model: "gpt-test",
++      output: [
++        {
++          type: "message",
++          role: "assistant",
++          content: [
++            { type: "output_text", text: "ordinary" },
++            { type: "refusal", refusal: "cannot continue" },
++          ],
++        },
++      ],
++    } as unknown as ResponsesResponse)
++    expect(chat.choices[0].message).toMatchObject({
++      content: "ordinary",
++      refusal: "cannot continue",
++    })
++    expect(translateToAnthropic(chat).content).toEqual([
++      { type: "text", text: "ordinary" },
++      { type: "text", text: "cannot continue" },
++    ])
++  })
++})

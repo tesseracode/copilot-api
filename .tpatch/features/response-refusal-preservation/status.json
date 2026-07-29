@@ -1,0 +1,31 @@
+{
+  "id": "response-refusal-preservation",
+  "slug": "response-refusal-preservation",
+  "title": "Preserve Responses refusals and content-filter termination across Chat and Anthropic compatibility",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-29T23:12:37Z",
+  "updated_at": "2026-07-29T23:36:55Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-29T23:37:03Z",
+    "base_commit": "d916dda9ff5bbbf46dde570621978a4614d7b95d",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "responses-stream-error-events",
+      "kind": "soft"
+    },
+    {
+      "slug": "reasoning-block-preservation",
+      "kind": "soft"
+    },
+    {
+      "slug": "stream-failure-visibility",
+      "kind": "soft"
+    }
+  ]
+}

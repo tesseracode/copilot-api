@@ -94,6 +94,7 @@ export interface ChatCompletionChunk {
 
 interface Delta {
   content?: string | null
+  refusal?: string | null
   role?: "user" | "assistant" | "system" | "tool"
   tool_calls?: Array<{
     index: number
@@ -136,6 +137,7 @@ export interface ChatCompletionResponse {
 interface ResponseMessage {
   role: "assistant"
   content: string | null
+  refusal?: string | null
   reasoning_text?: string | null
   tool_calls?: Array<ToolCall>
 }
