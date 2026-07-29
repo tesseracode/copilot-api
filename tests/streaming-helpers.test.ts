@@ -1,14 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import {
-  isClientAbort,
-  isNonStreaming,
-  STREAM_TRANSPORT_ERROR,
-} from "~/lib/streaming"
-
-async function* oneValue() {
-  yield await Promise.resolve(1)
-}
+import { isClientAbort, STREAM_TRANSPORT_ERROR } from "~/lib/streaming"
 
 describe("isClientAbort", () => {
   it("is true when the request signal is already aborted", () => {
@@ -34,20 +26,6 @@ describe("isClientAbort", () => {
     expect(isClientAbort(new Error("upstream exploded"))).toBe(false)
     expect(isClientAbort("just a string")).toBe(false)
     expect(isClientAbort(undefined)).toBe(false)
-  })
-})
-
-describe("isNonStreaming", () => {
-  it("treats a plain response object as non-streaming", () => {
-    expect(isNonStreaming({ id: "c1", choices: [] })).toBe(true)
-    expect(isNonStreaming({ id: "resp_1", output: [] })).toBe(true)
-  })
-
-  it("treats async iterables as streaming regardless of choices", () => {
-    expect(isNonStreaming(oneValue())).toBe(false)
-    expect(
-      isNonStreaming({ choices: [], [Symbol.asyncIterator]: oneValue }),
-    ).toBe(false)
   })
 })
 

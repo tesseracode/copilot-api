@@ -298,9 +298,7 @@ describe("/v1/messages → /chat/completions (legacy)", () => {
 
     expect(response.status).toBe(200)
     expect(calls[0].url).toEndWith("/chat/completions")
-    // Pins the isNonStreaming duck-type discriminator
-    // (POTENTIAL_FEATURES.md #3): a body carrying `choices` is treated as
-    // non-streaming.
+    // The explicit object result variant follows the non-streaming path.
     expect(await response.json()).toMatchObject({
       type: "message",
       role: "assistant",

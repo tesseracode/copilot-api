@@ -9,11 +9,7 @@ import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { anthropicToCopilotModelId } from "~/lib/model-mapping"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
-import {
-  isNonStreaming,
-  STREAM_TRANSPORT_ERROR,
-  streamSSEWithAbort,
-} from "~/lib/streaming"
+import { STREAM_TRANSPORT_ERROR, streamSSEWithAbort } from "~/lib/streaming"
 import {
   createChatCompletions,
   type ChatCompletionChunk,
@@ -122,20 +118,21 @@ export async function handleCompletion(c: Context) {
     requested: anthropicPayload.output_config?.effort,
     cachedModels: state.models,
   })
-  const response = await createChatCompletions(openAIPayload, signal)
+  const result = await createChatCompletions(openAIPayload, signal)
 
-  if (isNonStreaming(response)) {
+  if (result.kind === "object") {
     consola.debug(
       "Non-streaming response from Copilot:",
-      JSON.stringify(response).slice(-400),
+      JSON.stringify(result.body).slice(-400),
     )
-    const anthropicResponse = translateToAnthropic(response)
+    const anthropicResponse = translateToAnthropic(result.body)
     consola.debug(
       "Translated Anthropic response:",
       JSON.stringify(anthropicResponse),
     )
     return c.json(anthropicResponse)
   }
+  const response = result.stream
 
   consola.debug("Streaming response from Copilot")
   let terminalErrorSeen = false
@@ -234,12 +231,13 @@ async function handleResponsesViaAnthropic({
   effort,
   signal,
 }: ResponsesViaAnthropicOptions) {
-  const response = await createResponses(openAIPayload, effort, signal)
+  const result = await createResponses(openAIPayload, effort, signal)
 
-  if (isNonStreaming(response)) {
-    const anthropicResponse = translateToAnthropic(response)
+  if (result.kind === "object") {
+    const anthropicResponse = translateToAnthropic(result.body)
     return context.json(anthropicResponse)
   }
+  const response = result.stream
 
   let terminalErrorSeen = false
   return streamSSEWithAbort(

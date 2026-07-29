@@ -8,11 +8,7 @@ import { resolveEffort } from "~/lib/effort"
 import { resolveEndpoint } from "~/lib/endpoint-routing"
 import { checkRateLimit } from "~/lib/rate-limit"
 import { state } from "~/lib/state"
-import {
-  isNonStreaming,
-  streamSSEWithAbort,
-  writeOpenAIStreamError,
-} from "~/lib/streaming"
+import { streamSSEWithAbort, writeOpenAIStreamError } from "~/lib/streaming"
 import { getTokenCount } from "~/lib/tokenizer"
 import { isNullish } from "~/lib/utils"
 import {
@@ -75,12 +71,13 @@ export async function handleCompletion(c: Context) {
   })
 
   // Existing /chat/completions path
-  const response = await createChatCompletions(payload, signal)
+  const result = await createChatCompletions(payload, signal)
 
-  if (isNonStreaming(response)) {
-    consola.debug("Non-streaming response:", JSON.stringify(response))
-    return c.json(response)
+  if (result.kind === "object") {
+    consola.debug("Non-streaming response:", JSON.stringify(result.body))
+    return c.json(result.body)
   }
+  const response = result.stream
 
   consola.debug("Streaming response")
   let terminalErrorSeen = false
@@ -113,12 +110,16 @@ async function handleResponsesEndpoint(
     cachedModels: state.models,
     defaultEffort: "medium",
   })
-  const response = await createResponses(payload, effort, signal)
+  const result = await createResponses(payload, effort, signal)
 
-  if (isNonStreaming(response)) {
-    consola.debug("Non-streaming /responses result:", JSON.stringify(response))
-    return c.json(response)
+  if (result.kind === "object") {
+    consola.debug(
+      "Non-streaming /responses result:",
+      JSON.stringify(result.body),
+    )
+    return c.json(result.body)
   }
+  const response = result.stream
 
   consola.debug("Streaming /responses response")
   let terminalErrorSeen = false

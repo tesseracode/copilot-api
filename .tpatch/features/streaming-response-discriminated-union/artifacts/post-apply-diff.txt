@@ -1,0 +1,10 @@
+ .tpatch/POTENTIAL_FEATURES.md                    | 10 +++-----
+ src/lib/streaming.ts                             | 15 ------------
+ src/routes/chat-completions/handler.ts           | 29 ++++++++++++------------
+ src/routes/messages/handler.ts                   | 22 ++++++++----------
+ src/services/copilot/create-chat-completions.ts  | 14 +++++++++---
+ src/services/copilot/create-responses.ts         | 15 +++++++++---
+ tests/messages-handler.test.ts                   |  4 +---
+ tests/responses-stream-abort-propagation.test.ts |  6 ++---
+ tests/streaming-helpers.test.ts                  | 24 +-------------------
+ 9 files changed, 55 insertions(+), 84 deletions(-)

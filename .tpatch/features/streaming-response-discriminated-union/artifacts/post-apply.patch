@@ -1,0 +1,421 @@
+diff --git a/src/lib/streaming.ts b/src/lib/streaming.ts
+index a97ddf0..283708a 100644
+--- a/src/lib/streaming.ts
++++ b/src/lib/streaming.ts
+@@ -4,21 +4,6 @@ import type { SSEStreamingApi } from "hono/streaming"
+ import consola from "consola"
+ import { streamSSE } from "hono/streaming"
+ 
+-/**
+- * Narrow a service result to its non-streaming form.
+- *
+- * Streaming services return an async iterable; non-streaming ones return a
+- * plain response object. Test the property that actually defines the
+- * distinction rather than a proxy for it: an earlier version checked for an own
+- * `choices` property, which happened to work only because the iterator returned
+- * by `events()` does not expose one (see POTENTIAL_FEATURES.md #3).
+- */
+-export function isNonStreaming<T>(
+-  response: T,
+-): response is Exclude<T, AsyncIterable<unknown>> {
+-  return !(Symbol.asyncIterator in Object(response))
+-}
+-
+ export interface StreamSSEOptions {
+   /** Request signal; an abort on it means the client went away. */
+   signal?: AbortSignal
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index a6bb097..bbcf94b 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -8,11 +8,7 @@ import { resolveEffort } from "~/lib/effort"
+ import { resolveEndpoint } from "~/lib/endpoint-routing"
+ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
+-import {
+-  isNonStreaming,
+-  streamSSEWithAbort,
+-  writeOpenAIStreamError,
+-} from "~/lib/streaming"
++import { streamSSEWithAbort, writeOpenAIStreamError } from "~/lib/streaming"
+ import { getTokenCount } from "~/lib/tokenizer"
+ import { isNullish } from "~/lib/utils"
+ import {
+@@ -75,12 +71,13 @@ export async function handleCompletion(c: Context) {
+   })
+ 
+   // Existing /chat/completions path
+-  const response = await createChatCompletions(payload, signal)
++  const result = await createChatCompletions(payload, signal)
+ 
+-  if (isNonStreaming(response)) {
+-    consola.debug("Non-streaming response:", JSON.stringify(response))
+-    return c.json(response)
++  if (result.kind === "object") {
++    consola.debug("Non-streaming response:", JSON.stringify(result.body))
++    return c.json(result.body)
+   }
++  const response = result.stream
+ 
+   consola.debug("Streaming response")
+   let terminalErrorSeen = false
+@@ -113,12 +110,16 @@ async function handleResponsesEndpoint(
+     cachedModels: state.models,
+     defaultEffort: "medium",
+   })
+-  const response = await createResponses(payload, effort, signal)
+-
+-  if (isNonStreaming(response)) {
+-    consola.debug("Non-streaming /responses result:", JSON.stringify(response))
+-    return c.json(response)
++  const result = await createResponses(payload, effort, signal)
++
++  if (result.kind === "object") {
++    consola.debug(
++      "Non-streaming /responses result:",
++      JSON.stringify(result.body),
++    )
++    return c.json(result.body)
+   }
++  const response = result.stream
+ 
+   consola.debug("Streaming /responses response")
+   let terminalErrorSeen = false
+diff --git a/src/routes/messages/handler.ts b/src/routes/messages/handler.ts
+index a077fbe..0fb1f7d 100644
+--- a/src/routes/messages/handler.ts
++++ b/src/routes/messages/handler.ts
+@@ -9,11 +9,7 @@ import { resolveEndpoint } from "~/lib/endpoint-routing"
+ import { anthropicToCopilotModelId } from "~/lib/model-mapping"
+ import { checkRateLimit } from "~/lib/rate-limit"
+ import { state } from "~/lib/state"
+-import {
+-  isNonStreaming,
+-  STREAM_TRANSPORT_ERROR,
+-  streamSSEWithAbort,
+-} from "~/lib/streaming"
++import { STREAM_TRANSPORT_ERROR, streamSSEWithAbort } from "~/lib/streaming"
+ import {
+   createChatCompletions,
+   type ChatCompletionChunk,
+@@ -122,20 +118,21 @@ export async function handleCompletion(c: Context) {
+     requested: anthropicPayload.output_config?.effort,
+     cachedModels: state.models,
+   })
+-  const response = await createChatCompletions(openAIPayload, signal)
++  const result = await createChatCompletions(openAIPayload, signal)
+ 
+-  if (isNonStreaming(response)) {
++  if (result.kind === "object") {
+     consola.debug(
+       "Non-streaming response from Copilot:",
+-      JSON.stringify(response).slice(-400),
++      JSON.stringify(result.body).slice(-400),
+     )
+-    const anthropicResponse = translateToAnthropic(response)
++    const anthropicResponse = translateToAnthropic(result.body)
+     consola.debug(
+       "Translated Anthropic response:",
+       JSON.stringify(anthropicResponse),
+     )
+     return c.json(anthropicResponse)
+   }
++  const response = result.stream
+ 
+   consola.debug("Streaming response from Copilot")
+   let terminalErrorSeen = false
+@@ -234,12 +231,13 @@ async function handleResponsesViaAnthropic({
+   effort,
+   signal,
+ }: ResponsesViaAnthropicOptions) {
+-  const response = await createResponses(openAIPayload, effort, signal)
++  const result = await createResponses(openAIPayload, effort, signal)
+ 
+-  if (isNonStreaming(response)) {
+-    const anthropicResponse = translateToAnthropic(response)
++  if (result.kind === "object") {
++    const anthropicResponse = translateToAnthropic(result.body)
+     return context.json(anthropicResponse)
+   }
++  const response = result.stream
+ 
+   let terminalErrorSeen = false
+   return streamSSEWithAbort(
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 876b20a..76a3755 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -10,10 +10,18 @@ import { normalizeCopilotUsage } from "~/lib/copilot-usage"
+ import { HTTPError } from "~/lib/error"
+ import { state } from "~/lib/state"
+ 
++import {
++  objectResult,
++  type ServiceResult,
++  streamResult,
++} from "./service-result"
++
++export type ChatCompletionStream = ReturnType<typeof events>
++
+ export const createChatCompletions = async (
+   payload: ChatCompletionsPayload,
+   signal?: AbortSignal,
+-) => {
++): Promise<ServiceResult<ChatCompletionResponse, ChatCompletionStream>> => {
+   if (!state.copilotToken) throw new Error("Copilot token not found")
+ 
+   const enableVision = payload.messages.some(
+@@ -46,14 +54,14 @@ export const createChatCompletions = async (
+   }
+ 
+   if (payload.stream) {
+-    return events(response)
++    return streamResult(events(response))
+   }
+ 
+   const result = (await response.json()) as ChatCompletionResponse & {
+     copilot_usage?: RawCopilotUsage
+   }
+   result.copilot_usage = normalizeCopilotUsage(result.copilot_usage)
+-  return result
++  return objectResult(result)
+ }
+ 
+ // Streaming types
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index fd2f566..119d6b9 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -18,6 +18,15 @@ import type {
+   ChatCompletionsPayload,
+   ToolCall,
+ } from "./create-chat-completions"
++
++import {
++  objectResult,
++  type ServiceResult,
++  streamResult,
++} from "./service-result"
++
++export type ResponsesStream = ReturnType<typeof events>
++
+ interface ResponsesPayload {
+   model: string
+   input: Array<ResponsesInput>
+@@ -796,7 +805,7 @@ export async function createResponses(
+   payload: ChatCompletionsPayload,
+   effort?: string,
+   signal?: AbortSignal,
+-) {
++): Promise<ServiceResult<ChatCompletionResponse, ResponsesStream>> {
+   if (!state.copilotToken) throw new Error("Copilot token not found")
+   const responsesPayload = translateRequestToResponses(payload, effort)
+   const url = `${copilotBaseUrl(state)}/responses`
+@@ -811,8 +820,8 @@ export async function createResponses(
+     throw new HTTPError("Failed to create responses", response)
+   }
+   if (payload.stream) {
+-    return events(response)
++    return streamResult(events(response))
+   }
+   const rawResponse = (await response.json()) as ResponsesResponse
+-  return translateResponsesNonStreaming(rawResponse)
++  return objectResult(translateResponsesNonStreaming(rawResponse))
+ }
+diff --git a/src/services/copilot/service-result.ts b/src/services/copilot/service-result.ts
+new file mode 100644
+index 0000000..a8c8b51
+--- /dev/null
++++ b/src/services/copilot/service-result.ts
+@@ -0,0 +1,7 @@
++export type ServiceResult<TBody, TStream> =
++  | { kind: "object"; body: TBody }
++  | { kind: "stream"; stream: TStream }
++
++export const objectResult = <T>(body: T) => ({ kind: "object", body }) as const
++export const streamResult = <T>(stream: T) =>
++  ({ kind: "stream", stream }) as const
+diff --git a/tests/messages-handler.test.ts b/tests/messages-handler.test.ts
+index 2c61de1..2e25bd1 100644
+--- a/tests/messages-handler.test.ts
++++ b/tests/messages-handler.test.ts
+@@ -298,9 +298,7 @@ describe("/v1/messages → /chat/completions (legacy)", () => {
+ 
+     expect(response.status).toBe(200)
+     expect(calls[0].url).toEndWith("/chat/completions")
+-    // Pins the isNonStreaming duck-type discriminator
+-    // (POTENTIAL_FEATURES.md #3): a body carrying `choices` is treated as
+-    // non-streaming.
++    // The explicit object result variant follows the non-streaming path.
+     expect(await response.json()).toMatchObject({
+       type: "message",
+       role: "assistant",
+diff --git a/tests/responses-stream-abort-propagation.test.ts b/tests/responses-stream-abort-propagation.test.ts
+index 511c4d0..17d2cdc 100644
+--- a/tests/responses-stream-abort-propagation.test.ts
++++ b/tests/responses-stream-abort-propagation.test.ts
+@@ -122,10 +122,8 @@ describe("AbortSignal propagation to upstream fetch", () => {
+         controller.signal,
+       )
+       // Drain to ensure the iterator runs.
+-      if (Symbol.asyncIterator in (result as object)) {
+-        for await (const _ of result as AsyncIterable<unknown>) {
+-          void _
+-        }
++      if (result.kind === "stream") {
++        for await (const _ of result.stream) void _
+       }
+       expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
+     } finally {
+diff --git a/tests/streaming-helpers.test.ts b/tests/streaming-helpers.test.ts
+index bf5dd8e..5615701 100644
+--- a/tests/streaming-helpers.test.ts
++++ b/tests/streaming-helpers.test.ts
+@@ -1,14 +1,6 @@
+ import { describe, expect, it } from "bun:test"
+ 
+-import {
+-  isClientAbort,
+-  isNonStreaming,
+-  STREAM_TRANSPORT_ERROR,
+-} from "~/lib/streaming"
+-
+-async function* oneValue() {
+-  yield await Promise.resolve(1)
+-}
++import { isClientAbort, STREAM_TRANSPORT_ERROR } from "~/lib/streaming"
+ 
+ describe("isClientAbort", () => {
+   it("is true when the request signal is already aborted", () => {
+@@ -37,20 +29,6 @@ describe("isClientAbort", () => {
+   })
+ })
+ 
+-describe("isNonStreaming", () => {
+-  it("treats a plain response object as non-streaming", () => {
+-    expect(isNonStreaming({ id: "c1", choices: [] })).toBe(true)
+-    expect(isNonStreaming({ id: "resp_1", output: [] })).toBe(true)
+-  })
+-
+-  it("treats async iterables as streaming regardless of choices", () => {
+-    expect(isNonStreaming(oneValue())).toBe(false)
+-    expect(
+-      isNonStreaming({ choices: [], [Symbol.asyncIterator]: oneValue }),
+-    ).toBe(false)
+-  })
+-})
+-
+ describe("terminal stream error contract", () => {
+   it("uses a stable client-safe error instead of exposing exceptions", () => {
+     expect(STREAM_TRANSPORT_ERROR).toEqual({
+diff --git a/tests/streaming-response-discriminated-union.test.ts b/tests/streaming-response-discriminated-union.test.ts
+new file mode 100644
+index 0000000..2504790
+--- /dev/null
++++ b/tests/streaming-response-discriminated-union.test.ts
+@@ -0,0 +1,105 @@
++import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
++
++import { state } from "~/lib/state"
++import {
++  createChatCompletions,
++  type ChatCompletionsPayload,
++} from "~/services/copilot/create-chat-completions"
++import { createResponses } from "~/services/copilot/create-responses"
++import { streamResult } from "~/services/copilot/service-result"
++
++const originalFetch = globalThis.fetch
++const payload: ChatCompletionsPayload = {
++  model: "gpt-test",
++  messages: [{ role: "user", content: "hello" }],
++}
++
++beforeEach(() => {
++  state.copilotToken = "test-token"
++})
++
++afterEach(() => {
++  globalThis.fetch = originalFetch
++})
++
++function mockJson(body: unknown): void {
++  globalThis.fetch = mock(() =>
++    Promise.resolve(Response.json(body)),
++  ) as unknown as typeof fetch
++}
++
++function mockSSE(): void {
++  globalThis.fetch = mock(() =>
++    Promise.resolve(
++      new Response("data: [DONE]\n\n", {
++        headers: { "content-type": "text/event-stream" },
++      }),
++    ),
++  ) as unknown as typeof fetch
++}
++
++describe("discriminated service results", () => {
++  it("dispatches streams by kind even when they expose choices", () => {
++    const misleadingStream = {
++      choices: [],
++      async *[Symbol.asyncIterator]() {
++        yield await Promise.resolve("event")
++      },
++    }
++    const result = streamResult(misleadingStream)
++
++    expect(result.kind).toBe("stream")
++    expect(result.stream.choices).toEqual([])
++  })
++
++  it("wraps Chat non-stream responses as object results", async () => {
++    mockJson({
++      id: "chat_1",
++      object: "chat.completion",
++      created: 0,
++      model: "gpt-test",
++      choices: [],
++    })
++
++    const result = await createChatCompletions({ ...payload, stream: false })
++
++    expect(result).toMatchObject({
++      kind: "object",
++      body: { id: "chat_1", object: "chat.completion" },
++    })
++  })
++
++  it("wraps Chat streams as stream results", async () => {
++    mockSSE()
++
++    const result = await createChatCompletions({ ...payload, stream: true })
++
++    expect(result.kind).toBe("stream")
++    expect(result).toHaveProperty("stream")
++  })
++
++  it("wraps Responses non-stream responses as object results", async () => {
++    mockJson({
++      id: "resp_1",
++      object: "response",
++      model: "gpt-test",
++      output: [],
++    })
++
++    const result = await createResponses({ ...payload, stream: false })
++
++    expect(result).toMatchObject({
++      kind: "object",
++      body: { id: "resp_1", object: "chat.completion" },
++    })
++  })
++
++  it("wraps Responses streams as stream results", async () => {
++    mockSSE()
++
++    const result = await createResponses({ ...payload, stream: true })
++
++    expect(result.kind).toBe("stream")
++    expect(result).toHaveProperty("stream")
++  })
++})
