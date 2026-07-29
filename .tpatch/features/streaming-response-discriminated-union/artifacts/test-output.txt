@@ -1,0 +1,29 @@
+# Test run — 2026-07-29T14:22:44Z
+# Command: bun test tests/streaming-response-discriminated-union.test.ts tests/messages-handler.test.ts tests/streaming-abort-handling.test.ts tests/responses-stream-abort-propagation.test.ts tests/responses-stream-error-events.test.ts && bun run typecheck && bun run lint:all && bun run build
+# Directory: /Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api
+
+bun test v1.3.11 (af24e281)
+[error] chat-completions stream failed (Error)
+[error] /v1/messages native passthrough stream failed (Error)
+[error] Upstream non-stream error (status=403)
+
+ 35 pass
+ 0 fail
+ 88 expect() calls
+Ran 35 tests across 5 files. [1169.00ms]
+$ tsc
+$ eslint --cache .
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+$ tsdown
+[34mℹ[39m tsdown [2mv0.15.6[22m powered by rolldown [2mv1.0.0-beta.41[22m
+[34mℹ[39m Using tsdown config: [4m/Users/jbencardino/Documents/Proyectos/tesserabox/copilot-api/tsdown.config.ts[24m
+[34mℹ[39m entry: [34msrc/main.ts[39m
+[34mℹ[39m target: [34mes2022[39m
+[34mℹ[39m tsconfig: [34mtsconfig.json[39m
+[34mℹ[39m Build start
+[34mℹ[39m Cleaning 2 files
+[34mℹ[39m Granting execute permission to [4mdist/main.js[24m
+[34mℹ[39m [2mdist/[22m[1mmain.js[22m      [2m112.69 kB[22m [2m│ gzip: 28.85 kB[22m
+[34mℹ[39m [2mdist/[22mmain.js.map  [2m251.92 kB[22m [2m│ gzip: 61.59 kB[22m
+[34mℹ[39m 2 files, total: 364.61 kB
+[32m✔[39m Build complete in [32m86ms[39m

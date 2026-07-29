@@ -4,21 +4,6 @@ import type { SSEStreamingApi } from "hono/streaming"
 import consola from "consola"
 import { streamSSE } from "hono/streaming"
 
-/**
- * Narrow a service result to its non-streaming form.
- *
- * Streaming services return an async iterable; non-streaming ones return a
- * plain response object. Test the property that actually defines the
- * distinction rather than a proxy for it: an earlier version checked for an own
- * `choices` property, which happened to work only because the iterator returned
- * by `events()` does not expose one (see POTENTIAL_FEATURES.md #3).
- */
-export function isNonStreaming<T>(
-  response: T,
-): response is Exclude<T, AsyncIterable<unknown>> {
-  return !(Symbol.asyncIterator in Object(response))
-}
-
 export interface StreamSSEOptions {
   /** Request signal; an abort on it means the client went away. */
   signal?: AbortSignal

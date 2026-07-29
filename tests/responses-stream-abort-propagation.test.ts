@@ -122,10 +122,8 @@ describe("AbortSignal propagation to upstream fetch", () => {
         controller.signal,
       )
       // Drain to ensure the iterator runs.
-      if (Symbol.asyncIterator in (result as object)) {
-        for await (const _ of result as AsyncIterable<unknown>) {
-          void _
-        }
+      if (result.kind === "stream") {
+        for await (const _ of result.stream) void _
       }
       expect(lastFetchInit(fetchSpy)?.signal).toBe(controller.signal)
     } finally {

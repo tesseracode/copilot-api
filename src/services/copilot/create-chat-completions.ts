@@ -10,10 +10,18 @@ import { normalizeCopilotUsage } from "~/lib/copilot-usage"
 import { HTTPError } from "~/lib/error"
 import { state } from "~/lib/state"
 
+import {
+  objectResult,
+  type ServiceResult,
+  streamResult,
+} from "./service-result"
+
+export type ChatCompletionStream = ReturnType<typeof events>
+
 export const createChatCompletions = async (
   payload: ChatCompletionsPayload,
   signal?: AbortSignal,
-) => {
+): Promise<ServiceResult<ChatCompletionResponse, ChatCompletionStream>> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
   const enableVision = payload.messages.some(
@@ -46,14 +54,14 @@ export const createChatCompletions = async (
   }
 
   if (payload.stream) {
-    return events(response)
+    return streamResult(events(response))
   }
 
   const result = (await response.json()) as ChatCompletionResponse & {
     copilot_usage?: RawCopilotUsage
   }
   result.copilot_usage = normalizeCopilotUsage(result.copilot_usage)
-  return result
+  return objectResult(result)
 }
 
 // Streaming types

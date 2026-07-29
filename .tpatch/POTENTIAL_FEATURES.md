@@ -28,13 +28,9 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 3. Fragile `isNonStreaming` discriminator
 
-- **Status**: cleanup
-- **Files**:
-  - `src/routes/messages/handler.ts:155-157`
-  - `src/routes/chat-completions/handler.ts:118-120`
-- **Issue**: `isNonStreaming` distinguishes between an async iterator (streaming) and a plain `ChatCompletionResponse` (non-streaming) via `Object.hasOwn(response, "choices")`. Works because the iterator returned by `events()` doesn't expose a `choices` own-property. If a future `events()` implementation, a wrapped iterator, or an error-shaped response ever does, the type narrowing lies.
-- **Possible solution**: change `createChatCompletions` / `createResponses` to return a discriminated union — e.g. `{ kind: "stream", stream } | { kind: "object", body }` — so the caller switches on a stable tag instead of duck-typing.
-- **Trigger to file**: a `events()` upgrade, a TypeScript flag tightening, or any incident where a streaming response was misidentified as non-streaming or vice versa.
+- **Status**: completed by `streaming-response-discriminated-union`.
+- **Resolution**: `createChatCompletions` and `createResponses` now return `{ kind: "stream", stream } | { kind: "object", body }`; all callers dispatch on the explicit tag and the `isNonStreaming` predicate was removed.
+- **Historical note**: the predicate was improved from `choices` checking to `Symbol.asyncIterator` before removal, so no production incident occurred. Mutation tests now pin the explicit service contract and exhaustive caller handling.
 
 ---
 

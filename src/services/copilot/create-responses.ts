@@ -18,6 +18,15 @@ import type {
   ChatCompletionsPayload,
   ToolCall,
 } from "./create-chat-completions"
+
+import {
+  objectResult,
+  type ServiceResult,
+  streamResult,
+} from "./service-result"
+
+export type ResponsesStream = ReturnType<typeof events>
+
 interface ResponsesPayload {
   model: string
   input: Array<ResponsesInput>
@@ -796,7 +805,7 @@ export async function createResponses(
   payload: ChatCompletionsPayload,
   effort?: string,
   signal?: AbortSignal,
-) {
+): Promise<ServiceResult<ChatCompletionResponse, ResponsesStream>> {
   if (!state.copilotToken) throw new Error("Copilot token not found")
   const responsesPayload = translateRequestToResponses(payload, effort)
   const url = `${copilotBaseUrl(state)}/responses`
@@ -811,8 +820,8 @@ export async function createResponses(
     throw new HTTPError("Failed to create responses", response)
   }
   if (payload.stream) {
-    return events(response)
+    return streamResult(events(response))
   }
   const rawResponse = (await response.json()) as ResponsesResponse
-  return translateResponsesNonStreaming(rawResponse)
+  return objectResult(translateResponsesNonStreaming(rawResponse))
 }

@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "feature": "streaming-response-discriminated-union",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_83cbade33231",
+      "kind": "record",
+      "patch_sha256": "b0ada2b960b0f99fe7bc0642b84fe54df4f44fa3dcdd60730f9980db90696ab3",
+      "git_patch_id": "a74546d131dfd78482bedadd5f01ba6211e580e1",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "705f5ab4759b56ab0722056045f0469284d690a97f1647ce25e1ab0ef93ea8f8",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "d9ef14c47c5be84f2c6ff29c94466c22764eda63",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          ".tpatch/POTENTIAL_FEATURES.md",
+          "src/lib/streaming.ts",
+          "src/routes/chat-completions/handler.ts",
+          "src/routes/messages/handler.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "src/services/copilot/create-responses.ts",
+          "src/services/copilot/service-result.ts",
+          "tests/messages-handler.test.ts",
+          "tests/responses-stream-abort-propagation.test.ts",
+          "tests/streaming-helpers.test.ts",
+          "tests/streaming-response-discriminated-union.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/streaming.ts",
+        "src/routes/chat-completions/handler.ts",
+        "src/routes/messages/handler.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "src/services/copilot/create-responses.ts",
+        "src/services/copilot/service-result.ts",
+        "tests/messages-handler.test.ts",
+        "tests/responses-stream-abort-propagation.test.ts",
+        "tests/streaming-helpers.test.ts",
+        "tests/streaming-response-discriminated-union.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "sse-pump-consolidation",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "f1b24e533fb379b4994c05e9e3d25cc91100e2f1110312e720cfd7845b9013e6",
+          "parent_recipe_sha256": "a6e48f6297736eb1045107cc3c0a90b5832ce7e31d65c6754511deb39c4df0f1"
+        },
+        {
+          "slug": "stream-failure-visibility",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 2,
+          "parent_patch_sha256": "e0a91146fe0a771152488b190864c9cc414654adaaada7278c6ec62bb0bdf648",
+          "parent_recipe_sha256": "d4843a5f5f568cd84556d7648b39bbeb2452112eb5fa075d468d8637069f123a"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

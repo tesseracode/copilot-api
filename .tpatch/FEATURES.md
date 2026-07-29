@@ -144,7 +144,7 @@ Both services return either an async iterable (streaming) or a plain response ob
 
 If built, change both services to return a tagged union - for example { kind: 'stream', stream } | { kind: 'object', body } - and have callers switch on the tag. Blast radius measured at the time of filing: four production call sites (src/routes/messages/handler.ts and src/routes/chat-completions/handler.ts, two each) and roughly two test sites, one of which (tests/responses-stream-abort-propagation.test.ts) probes Symbol.asyncIterator directly to decide whether to drain. All four production sites are now covered end to end by tests/messages-handler.test.ts and tests/claude-chat-passthrough.test.ts, so the change is verifiable.
 
-Low priority. The sound predicate removed the actual hazard; this is a clarity and type-safety improvement, not a bug fix. | requested | unknown |
+Low priority. The sound predicate removed the actual hazard; this is a clarity and type-safety improvement, not a bug fix. | applied | unknown |
 | `three-tier-routing` | Three-tier endpoint routing: native /v1/messages passthrough for Claude, /responses API for GPT-5.x, /chat/completions fallback for legacy models | applied | unknown |
 | `three-tier-routing-tests` | Unit and e2e test suite for three-tier endpoint routing: endpoint resolution, /v1/messages payload sanitization, Responses API translation, model mapping, plus live API e2e matrix across all three tiers | applied | unknown |
 | `token-refresh-resilience` | Token refresh resilience: if the setInterval copilot token refresh throws, the interval dies silently and the token stays stale forever. Should retry with backoff, or at minimum log a prominent warning that all future requests will fail until restart. | applied | unknown |
