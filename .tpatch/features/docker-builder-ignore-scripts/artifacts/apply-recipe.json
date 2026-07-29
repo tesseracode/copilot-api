@@ -1,0 +1,12 @@
+{
+  "feature": "docker-builder-ignore-scripts",
+  "operations": [
+    {
+      "type": "write-file",
+      "path": "Dockerfile",
+      "content": "FROM oven/bun:1.2.19-alpine AS builder\nWORKDIR /app\n\nCOPY ./package.json ./bun.lock ./\nRUN bun install --frozen-lockfile --ignore-scripts\n\nCOPY . .\nRUN bun run build\n\nFROM oven/bun:1.2.19-alpine AS runner\nWORKDIR /app\n\nCOPY ./package.json ./bun.lock ./\nRUN bun install --frozen-lockfile --production --ignore-scripts --no-cache\n\nCOPY --from=builder /app/dist ./dist\n\nEXPOSE 4141\n\nHEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\\n  CMD wget --spider -q http://localhost:4141/ || exit 1\n\nCOPY entrypoint.sh /entrypoint.sh\nRUN chmod +x /entrypoint.sh\nENTRYPOINT [\"/entrypoint.sh\"]\n",
+      "search": "",
+      "replace": ""
+    }
+  ]
+}

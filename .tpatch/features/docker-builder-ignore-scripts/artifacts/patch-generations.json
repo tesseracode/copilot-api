@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "feature": "docker-builder-ignore-scripts",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_2926a48c58a5",
+      "kind": "record",
+      "patch_sha256": "fc4cb9d682d654a2893ddeaf507c2a2d638fdcb07242d394e10d0e15c5a17c3c",
+      "git_patch_id": "65ce4198f79da1cee75ede9e67521007286e8f78",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "aaa15e5747ed87156489500b2921ca9c1aa908632e6daa6e7d9627d8e477d8e9",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "33d81be3c38fe03c7cc8c282dd04c3cf3845197e",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "Dockerfile"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "Dockerfile"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

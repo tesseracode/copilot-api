@@ -1,0 +1,17 @@
+{
+  "id": "docker-builder-ignore-scripts",
+  "slug": "docker-builder-ignore-scripts",
+  "title": "Prevent Docker builder installs from running development prepare hooks",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-29T22:02:15Z",
+  "updated_at": "2026-07-29T22:06:09Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-29T22:06:17Z",
+    "base_commit": "33d81be3c38fe03c7cc8c282dd04c3cf3845197e",
+    "has_patch": true
+  },
+  "reconcile": {}
+}
