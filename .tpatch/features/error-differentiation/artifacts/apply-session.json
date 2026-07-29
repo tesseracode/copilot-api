@@ -1,0 +1,8 @@
+{
+  "slug": "error-differentiation",
+  "completed_at": "2026-07-29T05:24:44Z",
+  "base_commit": "aa8601b65c43cfd64cfdd1c9eb35112ade0020bf",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "tpatch test — command: bun test tests/non-stream-error-normalization.test.ts tests/anthropic-error-envelope.test.ts tests/messages-tool-result-validation.test.ts \u0026\u0026 bun run typecheck \u0026\u0026 bun run lint:all \u0026\u0026 bun run build"
+}

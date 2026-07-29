@@ -186,7 +186,10 @@ describe("/v1/messages error envelope", () => {
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({
       type: "error",
-      error: { type: "authentication_error", message: "Unauthorized" },
+      error: {
+        type: "authentication_error",
+        message: "Authentication failed.",
+      },
     })
   })
 

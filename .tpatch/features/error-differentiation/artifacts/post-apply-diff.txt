@@ -1,0 +1,4 @@
+ src/lib/error.ts                              | 324 +++++++++++++++++---------
+ tests/anthropic-error-envelope.test.ts        |   5 +-
+ tests/messages-tool-result-validation.test.ts |  20 +-
+ 3 files changed, 238 insertions(+), 111 deletions(-)

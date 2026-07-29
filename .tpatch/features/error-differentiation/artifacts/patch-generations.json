@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "feature": "error-differentiation",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_4e84f8c753b6",
+      "kind": "record",
+      "patch_sha256": "454f21c44d1e794eb4c77f1ee93099a5cfac932975bc1f5305de235595f40f12",
+      "git_patch_id": "7e24aa9fe0757f4698abe109ace1edffc1185c72",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "3fa46fb32cba4a975c2e8cbdc3043bf4af22a3ebc85952c74228f32b015417b3",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "aa8601b65c43cfd64cfdd1c9eb35112ade0020bf",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/error.ts",
+          "tests/anthropic-error-envelope.test.ts",
+          "tests/messages-tool-result-validation.test.ts",
+          "tests/non-stream-error-normalization.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/error.ts",
+        "tests/anthropic-error-envelope.test.ts",
+        "tests/messages-tool-result-validation.test.ts",
+        "tests/non-stream-error-normalization.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "anthropic-error-envelope",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "1a930329ff824e415cbae10fc79bf5cd91c51b1d69ea95730b4329563b7a6f43",
+          "parent_recipe_sha256": "2d993443fa72460ab5be9204ded878fb48d4fd44bd4909abf5973a5c5477c476"
+        },
+        {
+          "slug": "stream-failure-visibility",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 2,
+          "parent_patch_sha256": "e0a91146fe0a771152488b190864c9cc414654adaaada7278c6ec62bb0bdf648",
+          "parent_recipe_sha256": "d4843a5f5f568cd84556d7648b39bbeb2452112eb5fa075d468d8637069f123a"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

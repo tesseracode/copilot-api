@@ -2,11 +2,26 @@
   "id": "error-differentiation",
   "slug": "error-differentiation",
   "title": "Improve error differentiation: AbortError from client disconnect vs HTTPError from upstream rejection both surface as the generic 'This operation was aborted' message. Add context to distinguish token expiry (401/403), upstream rejection (!response.ok), and client disconnect (signal.aborted) in forwardError.",
-  "state": "requested",
+  "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-05-01T07:43:54Z",
-  "updated_at": "2026-05-01T07:43:54Z",
-  "last_command": "add",
-  "apply": {},
-  "reconcile": {}
+  "updated_at": "2026-07-29T05:24:27Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-29T05:24:44Z",
+    "base_commit": "aa8601b65c43cfd64cfdd1c9eb35112ade0020bf",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "anthropic-error-envelope",
+      "kind": "soft"
+    },
+    {
+      "slug": "stream-failure-visibility",
+      "kind": "soft"
+    }
+  ]
 }
