@@ -1,0 +1,12 @@
+{
+  "id": "claude-developer-instruction-preservation",
+  "slug": "claude-developer-instruction-preservation",
+  "title": "Preserve OpenAI developer instructions when converting Chat requests to Claude Messages",
+  "state": "requested",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-30T04:37:22Z",
+  "updated_at": "2026-07-30T04:37:22Z",
+  "last_command": "add",
+  "apply": {},
+  "reconcile": {}
+}

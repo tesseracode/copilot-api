@@ -39,7 +39,7 @@ interface ResponsesPayload {
 type ResponsesInput =
   | {
       type: "message"
-      role: "developer" | "user" | "assistant"
+      role: "system" | "developer" | "user" | "assistant"
       content: string | Array<ResponsesContentPart>
     }
   | { type: "function_call"; name: string; arguments: string; call_id: string }
@@ -123,7 +123,7 @@ function translateMessages(
       case "developer": {
         input.push({
           type: "message",
-          role: "developer",
+          role: msg.role,
           content: translateMessageContent(msg.content ?? ""),
         })
         break

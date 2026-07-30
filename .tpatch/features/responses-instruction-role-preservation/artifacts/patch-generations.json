@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "feature": "responses-instruction-role-preservation",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_6e087d8f2bba",
+      "kind": "record",
+      "patch_sha256": "65adfbeb10b6556460e187fad21df02062a463f77af7d78fb10f2cd5c9dd0880",
+      "git_patch_id": "dfe991d57d4c1904e2dbbfa948e4f6839b49f745",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "32d824d0eee72e9e1e47ad9e57ecfc940dbccbb8a1af33bf0e3cb8c5318d6dd5",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/001-record.patch",
+      "base_commit": "f410ac08471b26572517495ac7c95c9f4be361f8",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          ".tpatch/POTENTIAL_FEATURES.md",
+          "src/services/copilot/create-responses.ts",
+          "tests/responses-instruction-role-preservation.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/services/copilot/create-responses.ts",
+        "tests/responses-instruction-role-preservation.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "streaming-response-discriminated-union",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "b0ada2b960b0f99fe7bc0642b84fe54df4f44fa3dcdd60730f9980db90696ab3",
+          "parent_recipe_sha256": "705f5ab4759b56ab0722056045f0469284d690a97f1647ce25e1ab0ef93ea8f8"
+        },
+        {
+          "slug": "three-tier-routing",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 0,
+          "parent_patch_sha256": ""
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

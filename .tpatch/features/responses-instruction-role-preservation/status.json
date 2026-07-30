@@ -1,0 +1,27 @@
+{
+  "id": "responses-instruction-role-preservation",
+  "slug": "responses-instruction-role-preservation",
+  "title": "Preserve system and developer role identity in Chat-to-Responses translation",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-07-30T04:28:29Z",
+  "updated_at": "2026-07-30T04:50:49Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-07-30T04:52:04Z",
+    "base_commit": "f410ac08471b26572517495ac7c95c9f4be361f8",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "three-tier-routing",
+      "kind": "soft"
+    },
+    {
+      "slug": "streaming-response-discriminated-union",
+      "kind": "soft"
+    }
+  ]
+}

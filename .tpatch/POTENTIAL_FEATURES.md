@@ -54,11 +54,9 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 6. `translateMessages` collapses `system` and `developer` into `developer`
 
-- **Status**: cleanup / semantic loss
-- **File**: `src/services/copilot/create-responses.ts` (`translateMessages`, around lines 81-90)
-- **Issue**: Both `system` and `developer` roles in the OpenAI Chat Completions payload are emitted as `role: "developer"` on the /responses side. Functionally equivalent on Copilot today, but the system/developer distinction is meaningful in newer OpenAI runtimes (developer = always-on instructions vs. system = single-shot priming).
-- **Possible solution**: pass `role` through verbatim if the /responses API recognises both. Verify against the upstream schema; if it only accepts `developer`, document the collapse with a comment instead of leaving it implicit.
-- **Trigger to file**: a /responses schema update that distinguishes the roles, or a customer noticing system-vs-developer differences in behaviour.
+- **Status**: completed by `responses-instruction-role-preservation`.
+- **Resolution**: Chat-to-Responses translation now preserves `system` and `developer` role identity and order exactly. Live GPT-5.6 conflict probes showed order-based behavior; GPT-5 mini and Microsoft MAI accepted both roles. Chat-routed Gemini/legacy models bypass this translator.
+- **Boundary note**: Claude Messages has top-level system instructions and no developer message role. Live probing found a separate Chat-to-Claude developer-instruction gap, tracked as `claude-developer-instruction-preservation` rather than hidden inside this Responses feature.
 
 ---
 
