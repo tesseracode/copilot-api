@@ -1,8 +1,1 @@
-# Feature Request: Preserve OpenAI developer instructions when converting Chat requests to Claude Messages
-
-**Slug**: `claude-developer-instruction-preservation`
-**Created**: 2026-07-30T04:37:22Z
-
-## Description
-
-Preserve OpenAI developer instructions when converting Chat requests to Claude Messages
+REJECTED after live measurement: Claude Chat passthrough already preserves developer instructions across Sonnet 4.6, Opus 4.8, and Haiku 4.5. Keep the evidence and revisit only on an upstream regression or if native Messages rerouting returns.
