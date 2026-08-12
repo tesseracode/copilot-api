@@ -8,5 +8,11 @@
   "updated_at": "2026-04-28T23:59:19Z",
   "last_command": "add",
   "apply": {},
-  "reconcile": {}
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "responses-via-messages",
+      "kind": "hard"
+    }
+  ]
 }

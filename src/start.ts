@@ -137,10 +137,16 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     `🌐 Usage Viewer: https://ericc-ch.github.io/copilot-api?endpoint=${serverUrl}/usage`,
   )
 
-  serve({
+  const instance = serve({
     fetch: server.fetch as ServerHandler,
     port: options.port,
   })
+  if (process.env.NODE_ENV !== "production") {
+    process.once("SIGINT", async () => {
+      await instance.close(true)
+      process.exit(0)
+    })
+  }
 }
 
 export const start = defineCommand({
