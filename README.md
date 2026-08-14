@@ -272,6 +272,33 @@ variable when a compatibility canary changes. Upstream publishes no catalog
 version, generation or ETag, so the catalog fingerprint is computed locally and
 no consumer could derive it independently.
 
+### Responses State Contract (Stateless)
+
+The Copilot Responses API this proxy forwards to is **stateless**. Upstream
+rejects `store: true` with HTTP 400, so response storage, `previous_response_id`
+continuation, conversations, and background responses cannot be honoured.
+
+Clients must therefore:
+
+- send `store: false` (or omit `store` entirely), and
+- replay the **complete conversation history** on every turn.
+
+The proxy forwards `store` and `previous_response_id` **verbatim** and never
+rewrites them. This is deliberate: silently coercing `store: true` to `false`
+would let a client believe the provider retained state and then send only a
+`previous_response_id` with truncated history, producing a silently wrong
+conversation instead of a loud, actionable rejection.
+
+Certified client configuration:
+
+| Client                                | Requirement                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| VS Code 1.133.0 + Copilot Chat 0.61.0 | Set `zeroDataRetentionEnabled: true` so the client sends `store: false`.      |
+| Hermes Agent                          | Send `store: false`, omit lifecycle continuation fields, replay full history. |
+
+Upstream response storage is unrelated to this proxy's usage accounting: the
+`copilot_usage` metadata is reported regardless of `store`.
+
 ## Example Usage
 
 Using with npx:
