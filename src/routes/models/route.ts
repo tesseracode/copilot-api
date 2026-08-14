@@ -1,5 +1,10 @@
 import { Hono } from "hono"
 
+import {
+  BUILD_IDENTITY,
+  TRANSLATION_CONTRACT,
+  UNKNOWN_MARKER,
+} from "~/lib/build-info"
 import { pricingForModel, readCopilotPricing } from "~/lib/copilot-pricing"
 import { forwardError } from "~/lib/error"
 import { filterModels } from "~/lib/filter-models"
@@ -47,6 +52,16 @@ modelRoutes.get("/", async (c) => {
       allModels,
       state.hideInternal,
       state.modelFilter,
+    )
+
+    // Provenance markers identify the proxy translation code and the catalog
+    // snapshot it routed on. They are not a guarantee of identical responses.
+    c.header("X-Copilot-API-Translation-Contract", TRANSLATION_CONTRACT)
+    c.header("X-Copilot-API-Build", BUILD_IDENTITY)
+    c.header("X-Copilot-API-Catalog", state.modelsFingerprint ?? UNKNOWN_MARKER)
+    c.header(
+      "X-Copilot-API-Catalog-Observed-At",
+      state.modelsObservedAt ?? UNKNOWN_MARKER,
     )
 
     return c.json({
