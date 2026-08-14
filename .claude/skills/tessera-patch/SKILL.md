@@ -1,3 +1,8 @@
+---
+name: tessera-patch
+description: Customize open-source projects through natural-language patches while maintaining upstream compatibility.
+---
+
 # Tessera Patch — Claude Code Skill
 
 ## What This Is
@@ -39,74 +44,39 @@ requested    → tpatch analyze    → analyzed
 analyzed     → tpatch define     → defined
 defined      → tpatch explore    → defined (exploration.md enriched)
 defined      → tpatch implement  → implementing (apply-recipe.json ready)
-implementing → tpatch apply --mode execute                          → applied
-             OR tpatch apply --mode started / edit / --mode done    → applied
+implementing → tpatch apply                                         → applied
+             OR tpatch apply --mode started / edit / --mode done    → applied (advanced)
 applied      → tpatch record     → active
 active       → tpatch reconcile  → active | upstream_merged | blocked
+applied/active/reconciling/reconciling-shadow → tpatch feature unapply → unapplied → tpatch apply → applied
 ```
 
 Never skip a phase. Never go backwards without `tpatch reconcile`.
+Retirement audit: after a feature is confirmed upstreamed, `tpatch reconcile confirm-upstreamed <slug> [--json|--format json]` confirms the upstreamed outcome, runs the retirement audit, and appends cleanup-needed follow-ups; `tpatch reconcile audit-retirement <slug> [--json]` reports stale dependency/base metadata without mutating feature state.
 
-## Preferred Workflow (v0.8+)
 
-**Default to Path B.** You implement the code, then let tpatch track it.
+## Verify (freshness overlay)
 
-### For new features (implement → land):
+**Verify before composing.** When you finish `tpatch apply` and want a cheap, machine-checkable signal that the feature is structurally healthy, run `tpatch verify <slug>`. Verify writes a freshness record on the feature; downstream readers see a `verified-fresh` label until the recipe, patch, or any hard parent's state drifts, at which point the label flips to `verified-stale`. The lifecycle state is never changed by verify — `applied` stays `applied`. Verify is read-only on the working tree. It does **not** run the project's test suite; for that, use `tpatch test`.
 
-```bash
-# 1. Add the feature
-tpatch add --slug <clean-slug> "<short description>"
+Run `tpatch verify --all` to walk every tracked feature in topological order; pre-apply features are reported with a `skipped: pre-apply` row at their topo position. Non-zero exit if any feature failed.
 
-# 2. Author brief artifacts (10-20 lines each)
-#    analysis.md — gap, risk, affected files
-#    spec.md — testable acceptance criteria
-#    exploration.md — files changed and why
+If `tpatch status` reports `dependent-broken`, a downstream feature's base SHA is no longer reachable — re-record affected features on the new base or run `tpatch reconcile`.
 
-# 3. Advance phases
-tpatch analyze <slug> --manual
-tpatch define <slug> --manual
-tpatch explore <slug> --manual
+If you need to correct an already-recorded feature patch, use `tpatch feature patch refresh <slug> [--reason "..."]` for the same logical patch or `tpatch feature patch fixup <slug> --reason "..."` for an explicit fixup generation (the target generation is auto-derived from the manifest). Plain `tpatch record <slug>` remains compatible; later byte-changing records are tracked as refreshes. If `tpatch status` reports `parent-generation-stale`, refresh or reconcile downstream features against the parent's current generation.
 
-# 4. Implement normally in your working tree
-
-# 5. Land (records patch + stages + commits in one step)
-tpatch land <slug> --auto --files <paths>
-# Or dry-run first:
-tpatch land <slug> --auto --files <paths> --dry-run
-```
-
-### For already-committed features (retroactive Path B):
-
-```bash
-tpatch add --slug <slug> "<description>"
-# Author artifacts, advance phases as above, then:
-tpatch land <slug> --from <base-commit> --to <tip-commit> --files <paths> --no-record
-# Or record separately:
-tpatch record <slug> --from <base> --to <tip> --files <paths> --regenerate-recipe
-```
-
-### Dependencies:
-
-```bash
-# Declare before implementation/recording
-tpatch feature deps <child> add <parent>:hard   # child can't work without parent
-tpatch feature deps <child> add <parent>:soft   # ordering hint
-# Validate
-tpatch feature deps --validate-all
-```
-
-### Provider guidance:
-- Try provider on `analyze` once. If boilerplate, switch to `--manual` immediately.
-- Never let the provider run `implement` unless using a top-tier model (Sonnet 4.6+).
-- Path B artifacts + recorded patches are always more reliable than provider-generated recipes.
+Run `tpatch doctor [--dry-run] [--fix] [--json] [--check <id>] [--release-metadata <file>]` to diagnose tpatch metadata drift before reconcile or cleanup; Doctor reports feature metadata, patch-generations manifests, installed skill assets, lock/evidence artifacts, release drift (D6 via local --release-metadata snapshots), recipe schemas, and workspace invariants.
 
 ## Before You Run Anything
 
 1. `tpatch status <slug>` — see current state and last command.
 2. `tpatch next <slug>` — get the exact next command (add `--format harness-json` for structured output).
 3. Only then proceed. Do not guess the next phase from file presence.
-4. Run tpatch record <slug> BEFORE git commit. If you already committed, use tpatch record <slug> --from <base> — a clean working tree without --from is refused.
-5. Run tpatch reconcile only on a CLEAN working tree at the target upstream state. Commit or stash first; reconcile refuses dirty trees, conflict markers, and .orig/.rej leftovers. See docs/reconcile.md for the workflow patterns.
+4. Run tpatch record <slug> BEFORE git commit. If you already committed, prefer tpatch record <slug> --auto (infers base from .tpatch/upstream.lock + merge-base); fall back to tpatch record <slug> --from <base> when --auto refuses (ambiguous merge-base or empty lock). A clean working tree without --auto/--from is refused. Or run `tpatch land <slug>` to compose record + safe-stage (limits the index to the feature's apply path set plus `.tpatch/features/<slug>/`) + one Git commit carrying the locked four-trailer block (`Tpatch-Feature`, `Tpatch-Patch-SHA`, `Tpatch-Recipe-SHA`, `Tpatch-Base-Commit`) plus the repo `Co-authored-by:` trailer. Use `--dry-run` to preview without mutating; use `--allow-extra-paths` to opt into staging dirty paths outside the feature scope.
+5. Run tpatch reconcile only on a CLEAN working tree at the target upstream state. Commit or stash first; reconcile refuses dirty trees, conflict markers, mid-merge state, and `*.orig` / `*.rej` leftovers. Reconcile is a mutating operation (it can replay patches and update `.tpatch/` artifacts), so re-run `tpatch record` afterwards to capture any changes. Multi-slug `tpatch reconcile a b c` uses each feature's canonical `post-apply.patch` as authoritative; pass `--cumulative-legacy` only when the stack was recorded cumulatively (each canonical patch is a superset of the previous — see ADR-030).
+6. Use `tpatch reject <slug> --reason <code> --note "..." --evidence <path>` when a feature should never be implemented. `rejected` is a terminal pre-implementation state: it is reachable only from `requested`, `analyzed` or `defined`, it preserves the feature directory plus an append-only audit trail, and each `--evidence` file is content-hashed at rejection time. `--reason` is a closed enum (`not-a-bug`, `premise-disproved`, `obsolete`, `out-of-scope`, `unsafe`, `duplicate`, `superseded`). Rejected features are hidden from `tpatch status` unless you pass `--include-rejected`, and `tpatch next` only ever tells you to reopen them. Run `tpatch reopen <slug> --note "..."` to return a rejected feature to `requested`; every recorded evidence file is re-hashed on reopen and divergence is recorded, never blocking. This is not the same as `tpatch reconcile --reject`, which only prunes a shadow worktree.
+7. Use `tpatch feature unapply <slug>` to remove a recorded feature patch from a clean working tree without deleting its metadata. `unapplied` keeps the canonical patch and audit history, remains visible in default status output, and `tpatch next` recommends `tpatch apply <slug>` to materialize it again. Hard and `supersedes` dependents always refuse unapply; soft dependents require `--allow-soft-dependents`. Dependency edges onto an `unapplied` parent remain allowed, but that parent does not satisfy a child's hard apply gate until reapplied.
+8. Use the typed-resource verbs to record non-Git state a feature depends on: `tpatch feature resource add <slug> --kind <ignored-file|git-metadata|adapter-snapshot> --selector <sel>`, `tpatch feature resource list <slug>`, `tpatch feature resource remove <slug> <id>`, `tpatch feature resource clear <slug>`, `tpatch feature resource trust-dolt <slug> <id> --binary-sha256 <64hex>`, `tpatch feature resource capture <slug>` and `tpatch feature resource diff <slug>`. Resources are audit sidecars, never canonical patch or lifecycle truth. `capture` publishes an immutable content-addressed batch under `artifacts/resource-captures/` and atomically rewrites `current.json`; a tracked resource artifact never contains raw bytes or a timestamp. Declaring an `adapter=dolt` resource requires `--trust-current-dolt`, and re-pinning after a Dolt upgrade uses `tpatch feature resource trust-dolt` rather than remove+add. `tpatch record <slug> --resources` stages resources in memory and publishes them only after the Git-side capture succeeds. Resource verbs use a binding exit taxonomy: 1 internal, 2 validation, 3 state/policy refusal. Resource capture is supported on Linux and macOS only.
 
 ## Phases — Path A and Path B
 
@@ -172,11 +142,12 @@ The `implement` phase produces a deterministic recipe that the `apply` phase con
 
 ```json
 {
-  "version": 1,
+  "feature": "<slug>",
   "operations": [
     { "type": "ensure-directory", "path": "src/feature/" },
     { "type": "write-file",
       "path": "src/feature/new.ts",
+      "preimage_hash": "",
       "content": "export function greet(name: string) {\n  return `hello ${name}`;\n}\n"
     },
     { "type": "replace-in-file",
@@ -195,7 +166,7 @@ The `implement` phase produces a deterministic recipe that the `apply` phase con
 ### Operations
 
 - **`ensure-directory`** `{ path }` — create the directory if missing. No-op if present.
-- **`write-file`** `{ path, content }` — write the full file. Overwrites existing content.
+- **`write-file`** `{ path, content, preimage_hash }` — write the full file. Overwrites existing content. **`preimage_hash` (v0.12.0+, PRD-write-file-recipe-safety §3.1, ADR-029 D1)** is a precondition: `sha256:<64 lowercase hex>` over the exact bytes the target file held before the recipe was generated, `""` for new-file writes (target must not exist at apply time), or absent for legacy recipes (accepted with a warning in v1). Apply refuses execution when the current file hash does not match, or when a later feature has already touched the same path.
 - **`replace-in-file`** `{ path, search, replace }` — replace the first occurrence of `search` with `replace`. Errors if `search` is not found.
 - **`append-file`** `{ path, content }` — append to an existing file. Errors if the file does not exist.
 
@@ -208,9 +179,49 @@ The `implement` phase produces a deterministic recipe that the `apply` phase con
 - Operations are executed in the order they appear. Later ops may depend on earlier ops (e.g. `ensure-directory` before `write-file`).
 - There is no `delete-file` or `rename-file` op in the current schema. To delete a file, use Path B: `apply --mode started`, `git rm <path>`, `apply --mode done`, `record`. Richer ops are tracked in `feat-recipe-schema-expansion`.
 
+### Optional fields
+
+- **`created_by`** — optional string on any operation. Value is the parent feature slug whose patch originally created this file. From v0.6.0 this is a **live apply-time gate**: `tpatch apply --mode execute` rejects an op whose `created_by` parent is missing from the recipe's `depends_on` (hard-parent miss is fatal in execute, warning in `--dry-run`). Omit when the feature has no DAG provenance to declare.
+
+## Feature dependencies (v0.6.0+)
+
+Tessera Patch tracks a dependency DAG between features. Declare parents in `status.json` `depends_on`, or via the CLI:
+
+- `tpatch feature deps <slug>` — print depends_on + dependents.
+- `tpatch feature deps <slug> add <parent>[:hard|:soft]` — add an edge (defaults to hard).
+- `tpatch feature deps <slug> remove <parent>` — remove an edge (atomic).
+- `tpatch amend <slug> --depends-on <parent>[:hard|:soft]` — same, in batch with other edits.
+- `tpatch amend <slug> --remove-depends-on <parent>` — same, in batch.
+- `tpatch feature deps --validate-all` — global validation (cycles, dangling, kind conflict).
+- `tpatch status --dag` (add `--json` for harnesses) — render the DAG tree. Add a slug to scope to one feature's parents + children.
+
+Edge kinds:
+
+- **hard** (default) — `tpatch apply <child>` is blocked until every hard parent reaches state `applied` or `upstream_merged`.
+- **soft** — ordering hint only; never gates apply.
+- **supersedes** — the newer feature declares `{slug: <older>, kind: "supersedes"}` to replace the older historical feature. The historical feature is preserved but excluded from default replay/reconcile/next when the superseder is active and healthy (ADR-028 D6).
+
+Composable reconcile labels overlay on `Reconcile.Outcome`:
+
+- `waiting-on-parent` — at least one hard parent has not yet been applied.
+- `blocked-by-parent` — at least one hard parent is in a terminal-failure verdict.
+- `stale-parent-applied` — a hard parent was updated after the child's last reconcile.
+- Compound: when the child's own outcome is `blocked-requires-human` AND `blocked-by-parent` is set, `EffectiveOutcome` reports `blocked-by-parent-and-needs-resolution` (display-only — programmatic decisions still read `Outcome` and `Labels` separately).
+
+Recipe operations may set `created_by: "<parent-slug>"` to declare DAG provenance. From v0.6.0 this is a **live apply-time gate**: `tpatch apply --mode execute` rejects an operation whose `created_by` parent is missing from `depends_on` (hard fail in execute, downgraded to a warning in `--dry-run` per PRD §4.3).
+
+Removing a feature with downstream dependents requires `--cascade`:
+
+- `tpatch remove <slug>` — refuses if any dependent exists.
+- `tpatch remove <slug> --cascade` — TTY confirms, then removes leaves first (reverse-topological order).
+- `tpatch remove <slug> --cascade --force` — required for non-TTY use.
+- **`--force` alone never bypasses the dep-integrity gate** — it only suppresses the TTY confirm prompt (PRD §3.7, ADR-011 D7).
+
+Toggle the whole feature with `features_dependencies: true|false` in `.tpatch/config.yaml` (default `true` from v0.6.0).
+
 ## Reconcile Phase 3.5 — Provider-assisted conflict resolution (v0.5.0)
 
-On 3-way conflict, `tpatch reconcile --resolve` asks the provider to merge each conflicted file inside a **shadow worktree** (`.tpatch/shadow/<slug>-<ts>/`). The real working tree is never touched until you accept. See `docs/adrs/ADR-010-provider-conflict-resolver.md` for the full decision table.
+On 3-way conflict, `tpatch reconcile --resolve` asks the provider to merge each conflicted file inside a **shadow worktree** (`.tpatch/shadow/<slug>-<ts>/`). The real working tree is never touched until you accept.
 
 ### Flags
 
@@ -276,7 +287,7 @@ When `tpatch reconcile` cannot forward-apply cleanly, it returns verdict `3WayCo
 6. Forward-apply: edit the files directly in the working tree; tpatch does not need to drive this.
 7. Once the tree is clean and the feature works, run:
    ```
-   tpatch apply <slug> --mode execute         # or --mode started / --mode done if you authored ad-hoc
+   tpatch apply <slug>                          # auto runs prepare→execute→done; or use --mode started / --mode done if you authored ad-hoc
    tpatch record <slug>
    ```
 8. The `post-apply.patch` is rewritten; the recipe is regenerated on the next `implement`.
@@ -303,12 +314,20 @@ When they disagree — e.g. the recipe's `replace-in-file` can no longer find it
 | `tpatch implement <slug>` | Generate deterministic apply recipe (add `--manual` for Path B) |
 | `tpatch apply <slug>` | Execute apply recipe or record an interactive session |
 | `tpatch record <slug>` | Capture patches (tracked + untracked files) |
+| `tpatch land <slug>` | Project a feature into Git history (one commit + Tpatch-Feature trailer block) |
 | `tpatch reconcile [slug...]` | Reconcile features against upstream |
 | `tpatch provider check` | Validate LLM provider endpoint |
 | `tpatch config show\|set` | Manage configuration |
 | `tpatch cycle <slug>` | Run analyze→define→explore→implement→apply→record in sequence. Add `--interactive` to pause between phases |
 | `tpatch test <slug>` | Run the configured `test_command` and record the pass/fail outcome |
+| `tpatch verify <slug>` | Run V0-V10 integrity checks against a feature's recipe and dependencies (freshness overlay) |
+| `tpatch doctor [--dry-run] [--fix] [--json] [--check <id>] [--release-metadata <file>]` | Diagnose tpatch metadata drift (D1-D8, including D6 release drift via local --release-metadata snapshots) |
 | `tpatch next <slug>` | Emit the next logical action. `--format harness-json` for structured JSON |
+| `tpatch session start <slug>` | Start an active session for a feature (writes to `.tpatch/local/capture/<slug>/<cs_id>/`) |
+| `tpatch session stop <slug>` | Close an active session (no committed writes) |
+| `tpatch session list [<slug>]` | List local sessions (add `--json` for deterministic output) |
+| `tpatch session summarize <slug>` | Preview/write a redacted committed summary (`--write` publishes and transitions source session to `promoted` per PRD §5 D9 rule 3) |
+| `tpatch session purge [<slug>]` | Delete local session buffers (dry-run by default; `--yes` to confirm) |
 
 ## .tpatch/ Structure
 
@@ -341,6 +360,31 @@ requested → analyzed → defined → implementing → applied → active
                                                      ↓ (with --resolve)
                                                reconciling-shadow → (accept) applied / (reject) active / blocked-requires-human
 ```
+
+## Local session buffers (v0.12.0)
+
+`tpatch session` manages **feature-scoped local capture buffers** for
+work-in-progress context. These buffers live in `.tpatch/local/capture/<slug>/<cs_id>/`
+(PRD-active-feature-session §4 D5, ADR-027 D1). The `.tpatch/local/` path is
+LOCAL private state — not a committed artifact — and `tpatch init` appends
+`.tpatch/local/` to `.gitignore` so buffers never accidentally land in a commit.
+
+Six-mandate refusal contract (PRD §4 D6):
+
+1. `tpatch init` installs the `.tpatch/local/` `.gitignore` rule.
+2. If `.gitignore` cannot be edited, init refuses and prints the exact rule.
+3. `tpatch session start` verifies the concrete path is effectively ignored before the first write.
+4. Refuse when Git is unavailable OR the path is not ignored.
+5. Verification uses `git check-ignore` (effective), NOT textual `.gitignore` matching.
+6. Pre-PRD workspaces: writers prompt/refuse until (1)-(5) hold; fallback path is `.git/tpatch/capture/`.
+
+Promotion of a redacted summary to the committed lane at
+`.tpatch/features/<slug>/artifacts/context/<ctx_id>.json` is EXPLICIT and
+OPT-IN (`tpatch session summarize --write`, or
+`tpatch record <slug> --with-session`). Raw session bodies NEVER cross the
+local→committed boundary — only redacted summaries do (PRD §5 D11).
+Sessions are FEATURE-scoped: a session for feature A cannot observe feature
+B's buffer (PRD §7 D18).
 
 ## Safety
 
