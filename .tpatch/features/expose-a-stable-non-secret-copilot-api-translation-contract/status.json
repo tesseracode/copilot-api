@@ -1,0 +1,31 @@
+{
+  "id": "expose-a-stable-non-secret-copilot-api-translation-contract",
+  "slug": "expose-a-stable-non-secret-copilot-api-translation-contract",
+  "title": "Expose a stable non-secret copilot-api translation contract and build provenance marker on the private /v1/models response so Tesseragateway can record the exact proxy contract used by client compatibility canaries. Keep catalog data backward-compatible; distinguish semantic contract version from package/build revision; never expose GitHub or Copilot tokens, account identity, paths, or mutable runtime counters; add deterministic route tests and document when each marker changes.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-08-12T09:23:49Z",
+  "updated_at": "2026-08-14T03:03:52Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-08-14T03:03:46Z",
+    "base_commit": "c9e35aa50e3b8c0ea4a4748326ad956d1c3dda2f",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "proxy-operational-hardening",
+      "kind": "hard"
+    },
+    {
+      "slug": "docker-builder-ignore-scripts",
+      "kind": "hard"
+    },
+    {
+      "slug": "copilot-pricing-cache",
+      "kind": "hard"
+    }
+  ]
+}

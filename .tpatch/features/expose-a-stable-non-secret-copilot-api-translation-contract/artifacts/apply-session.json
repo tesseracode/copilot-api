@@ -1,0 +1,9 @@
+{
+  "slug": "expose-a-stable-non-secret-copilot-api-translation-contract",
+  "completed_at": "2026-08-14T03:03:46Z",
+  "base_commit": "c9e35aa50e3b8c0ea4a4748326ad956d1c3dda2f",
+  "has_patch": true,
+  "operator_notes": "Path B: implemented by agent in-session",
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 300 tests, build all pass; 34 new tests cover revision sanitization, fingerprint normalization, header parity and secret non-disclosure"
+}

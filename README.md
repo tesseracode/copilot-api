@@ -228,6 +228,50 @@ New endpoints for monitoring your Copilot usage and quotas.
 | `GET /usage` | `GET`  | Get detailed Copilot usage statistics and quota information. |
 | `GET /token` | `GET`  | Get the current Copilot token being used by the API.         |
 
+### Proxy Provenance Headers
+
+`GET /models` and `GET /v1/models` return four non-secret markers that identify
+which proxy produced a translation and which upstream catalog it routed on. The
+response body is unchanged.
+
+| Header                              | Value                                       | Changes when                                                        |
+| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `X-Copilot-API-Translation-Contract` | Semantic token, e.g. `copilot-api.translation/1` | Externally observable proxy translation semantics change.        |
+| `X-Copilot-API-Build`               | `<package version>+<build revision>`        | Every build. Revision is `unknown` unless injected.                 |
+| `X-Copilot-API-Catalog`             | 16-hex digest of the routing-relevant catalog | A new catalog snapshot with different routing content is loaded. |
+| `X-Copilot-API-Catalog-Observed-At` | ISO-8601 UTC instant, or `unknown`          | A new catalog snapshot is loaded. It dates the fingerprint.         |
+
+Inject the build revision at build time:
+
+```sh
+docker build --build-arg COPILOT_API_BUILD_REVISION="$(git rev-parse --short HEAD)" -t copilot-api .
+```
+
+Outside Docker, set `COPILOT_API_BUILD_REVISION` in the runtime environment.
+Values are sanitized to `[A-Za-z0-9._-]` with a 64-character limit; anything
+else becomes `unknown`. The revision is never read from `.git` at runtime.
+
+#### What these markers do not promise
+
+**Identical markers do not guarantee identical responses.** They state only
+that the proxy's own translation code and its view of upstream were the same.
+Observable behavior is the proxy's translation composed with upstream Copilot
+behavior, and upstream moves independently:
+
+- Upstream model behavior can change behind an unchanged model ID.
+- Upstream performs per-account experiment assignment, so two accounts can
+  differ with everything else held constant.
+- The catalog snapshot is loaded once at startup, so a long-running process may
+  be serving an arbitrarily stale view. Read `X-Copilot-API-Catalog` together
+  with `X-Copilot-API-Catalog-Observed-At`: an unchanged fingerprint means
+  "upstream did not change" only if the observation is recent, and otherwise
+  means "this process has not looked again".
+
+The markers exist for attribution, letting an operator eliminate the proxy as a
+variable when a compatibility canary changes. Upstream publishes no catalog
+version, generation or ETag, so the catalog fingerprint is computed locally and
+no consumer could derive it independently.
+
 ## Example Usage
 
 Using with npx:

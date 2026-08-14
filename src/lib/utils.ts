@@ -3,6 +3,7 @@ import consola from "consola"
 import { getModels } from "~/services/copilot/get-models"
 import { getVSCodeVersion } from "~/services/get-vscode-version"
 
+import { catalogFingerprint } from "./build-info"
 import { state } from "./state"
 
 export const sleep = (ms: number) =>
@@ -16,6 +17,8 @@ export const isNullish = (value: unknown): value is null | undefined =>
 export async function cacheModels(): Promise<void> {
   const models = await getModels()
   state.models = models
+  state.modelsObservedAt = new Date().toISOString()
+  state.modelsFingerprint = catalogFingerprint(models.data)
 }
 
 export const cacheVSCodeVersion = async () => {

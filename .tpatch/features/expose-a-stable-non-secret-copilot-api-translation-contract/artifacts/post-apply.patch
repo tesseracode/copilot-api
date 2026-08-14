@@ -1,0 +1,538 @@
+diff --git a/Dockerfile b/Dockerfile
+index dacf124..6e519fc 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -10,6 +10,9 @@ RUN bun ./node_modules/tsdown/dist/run.mjs
+ FROM oven/bun:1.2.19-alpine AS runner
+ WORKDIR /app
+ 
++ARG COPILOT_API_BUILD_REVISION=unknown
++ENV COPILOT_API_BUILD_REVISION=${COPILOT_API_BUILD_REVISION}
++
+ COPY ./package.json ./bun.lock ./
+ RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache
+ 
+diff --git a/README.md b/README.md
+index 196f51d..88afb3c 100644
+--- a/README.md
++++ b/README.md
+@@ -228,6 +228,50 @@ New endpoints for monitoring your Copilot usage and quotas.
+ | `GET /usage` | `GET`  | Get detailed Copilot usage statistics and quota information. |
+ | `GET /token` | `GET`  | Get the current Copilot token being used by the API.         |
+ 
++### Proxy Provenance Headers
++
++`GET /models` and `GET /v1/models` return four non-secret markers that identify
++which proxy produced a translation and which upstream catalog it routed on. The
++response body is unchanged.
++
++| Header                              | Value                                       | Changes when                                                        |
++| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
++| `X-Copilot-API-Translation-Contract` | Semantic token, e.g. `copilot-api.translation/1` | Externally observable proxy translation semantics change.        |
++| `X-Copilot-API-Build`               | `<package version>+<build revision>`        | Every build. Revision is `unknown` unless injected.                 |
++| `X-Copilot-API-Catalog`             | 16-hex digest of the routing-relevant catalog | A new catalog snapshot with different routing content is loaded. |
++| `X-Copilot-API-Catalog-Observed-At` | ISO-8601 UTC instant, or `unknown`          | A new catalog snapshot is loaded. It dates the fingerprint.         |
++
++Inject the build revision at build time:
++
++```sh
++docker build --build-arg COPILOT_API_BUILD_REVISION="$(git rev-parse --short HEAD)" -t copilot-api .
++```
++
++Outside Docker, set `COPILOT_API_BUILD_REVISION` in the runtime environment.
++Values are sanitized to `[A-Za-z0-9._-]` with a 64-character limit; anything
++else becomes `unknown`. The revision is never read from `.git` at runtime.
++
++#### What these markers do not promise
++
++**Identical markers do not guarantee identical responses.** They state only
++that the proxy's own translation code and its view of upstream were the same.
++Observable behavior is the proxy's translation composed with upstream Copilot
++behavior, and upstream moves independently:
++
++- Upstream model behavior can change behind an unchanged model ID.
++- Upstream performs per-account experiment assignment, so two accounts can
++  differ with everything else held constant.
++- The catalog snapshot is loaded once at startup, so a long-running process may
++  be serving an arbitrarily stale view. Read `X-Copilot-API-Catalog` together
++  with `X-Copilot-API-Catalog-Observed-At`: an unchanged fingerprint means
++  "upstream did not change" only if the observation is recent, and otherwise
++  means "this process has not looked again".
++
++The markers exist for attribution, letting an operator eliminate the proxy as a
++variable when a compatibility canary changes. Upstream publishes no catalog
++version, generation or ETag, so the catalog fingerprint is computed locally and
++no consumer could derive it independently.
++
+ ## Example Usage
+ 
+ Using with npx:
+diff --git a/src/lib/build-info.test.ts b/src/lib/build-info.test.ts
+new file mode 100644
+index 0000000..b139ad1
+--- /dev/null
++++ b/src/lib/build-info.test.ts
+@@ -0,0 +1,159 @@
++import { describe, expect, it } from "bun:test"
++
++import type { Model } from "~/services/copilot/get-models"
++
++import packageJson from "../../package.json"
++import {
++  BUILD_IDENTITY,
++  catalogFingerprint,
++  sanitizeRevision,
++  TRANSLATION_CONTRACT,
++  UNKNOWN_MARKER,
++} from "./build-info"
++
++function model(overrides: Partial<Model> = {}): Model {
++  return {
++    id: "gpt-test",
++    name: "GPT Test",
++    object: "model",
++    vendor: "openai",
++    version: "1",
++    preview: false,
++    model_picker_enabled: true,
++    supported_endpoints: ["/responses"],
++    capabilities: {
++      family: "gpt",
++      limits: { max_output_tokens: 128 },
++      object: "model_capabilities",
++      supports: { tool_calls: true },
++      tokenizer: "test",
++      type: "chat",
++    },
++    ...overrides,
++  }
++}
++
++describe("build revision sanitization", () => {
++  it.each([undefined, "", "   "])("falls back to unknown for %p", (raw) => {
++    expect(sanitizeRevision(raw)).toBe(UNKNOWN_MARKER)
++  })
++
++  it.each(["abc1234", "1.2.3", "v0.7.0-rc.1", "a".repeat(64)])(
++    "accepts the safe revision %p",
++    (raw) => {
++      expect(sanitizeRevision(raw)).toBe(raw)
++    },
++  )
++
++  it("trims surrounding whitespace", () => {
++    expect(sanitizeRevision("  abc1234  ")).toBe("abc1234")
++  })
++
++  it.each([
++    "a".repeat(65),
++    "has space",
++    "semi;colon",
++    "new\nline",
++    "/etc/passwd",
++    "user@example.com",
++    "ghp_secrettokenvalue!",
++  ])("rejects the unsafe revision %p", (raw) => {
++    expect(sanitizeRevision(raw)).toBe(UNKNOWN_MARKER)
++  })
++
++  it("reports the package version alongside the revision", () => {
++    expect(BUILD_IDENTITY.startsWith(`${packageJson.version}+`)).toBe(true)
++  })
++})
++
++describe("translation contract token", () => {
++  it("is a stable constant that is not the package version", () => {
++    expect(TRANSLATION_CONTRACT).toBe("copilot-api.translation/1")
++    expect(TRANSLATION_CONTRACT).not.toContain(packageJson.version)
++  })
++})
++
++describe("catalog fingerprint", () => {
++  it("returns unknown when no catalog is loaded", () => {
++    expect(catalogFingerprint(undefined)).toBe(UNKNOWN_MARKER)
++    expect(catalogFingerprint([])).toBe(UNKNOWN_MARKER)
++  })
++
++  it("is stable for the same catalog content", () => {
++    const first = catalogFingerprint([model({ id: "a" }), model({ id: "b" })])
++    const second = catalogFingerprint([model({ id: "a" }), model({ id: "b" })])
++    expect(first).toBe(second)
++  })
++
++  it("ignores upstream response ordering", () => {
++    const ordered = catalogFingerprint([model({ id: "a" }), model({ id: "b" })])
++    const reversed = catalogFingerprint([
++      model({ id: "b" }),
++      model({ id: "a" }),
++    ])
++    expect(reversed).toBe(ordered)
++  })
++
++  it("ignores endpoint ordering within a model", () => {
++    const ordered = catalogFingerprint([
++      model({ supported_endpoints: ["/chat/completions", "/responses"] }),
++    ])
++    const reversed = catalogFingerprint([
++      model({ supported_endpoints: ["/responses", "/chat/completions"] }),
++    ])
++    expect(reversed).toBe(ordered)
++  })
++
++  it("ignores fields that do not affect routing", () => {
++    const base = catalogFingerprint([model()])
++    const noisy = catalogFingerprint([
++      model({
++        name: "Renamed",
++        preview: true,
++        model_picker_enabled: false,
++        model_picker_category: "powerful",
++        version: "2",
++      }),
++    ])
++    expect(noisy).toBe(base)
++  })
++
++  it("changes when a model is added", () => {
++    const before = catalogFingerprint([model({ id: "a" })])
++    const after = catalogFingerprint([model({ id: "a" }), model({ id: "b" })])
++    expect(after).not.toBe(before)
++  })
++
++  it("changes when supported endpoints change", () => {
++    const before = catalogFingerprint([
++      model({ supported_endpoints: ["/responses"] }),
++    ])
++    const after = catalogFingerprint([
++      model({ supported_endpoints: ["/chat/completions"] }),
++    ])
++    expect(after).not.toBe(before)
++  })
++
++  it("changes when capabilities change", () => {
++    const before = catalogFingerprint([model()])
++    const after = catalogFingerprint([
++      model({
++        capabilities: {
++          family: "gpt",
++          limits: { max_output_tokens: 256 },
++          object: "model_capabilities",
++          supports: { tool_calls: true },
++          tokenizer: "test",
++          type: "chat",
++        },
++      }),
++    ])
++    expect(after).not.toBe(before)
++  })
++
++  it("is a one-way digest that leaks no catalog content", () => {
++    const fingerprint = catalogFingerprint([model({ id: "secret-model" })])
++    expect(fingerprint).toMatch(/^[0-9a-f]{16}$/)
++    expect(fingerprint).not.toContain("secret-model")
++  })
++})
+diff --git a/src/lib/build-info.ts b/src/lib/build-info.ts
+new file mode 100644
+index 0000000..2401cfe
+--- /dev/null
++++ b/src/lib/build-info.ts
+@@ -0,0 +1,78 @@
++import { createHash } from "node:crypto"
++
++import type { Model } from "~/services/copilot/get-models"
++
++import packageJson from "../../package.json"
++
++/**
++ * Identifies proxy-owned translation semantics only. Bump this token when
++ * externally observable request or response translation changes. It is
++ * deliberately not derived from the package version, and it makes no claim
++ * about upstream Copilot behavior.
++ */
++export const TRANSLATION_CONTRACT = "copilot-api.translation/1"
++
++export const UNKNOWN_MARKER = "unknown"
++
++const REVISION_PATTERN = /^[\w.-]{1,64}$/
++
++/**
++ * Build revisions are operator-supplied, so anything that could smuggle header
++ * separators, paths or identity is rejected in favour of an explicit unknown.
++ */
++export function sanitizeRevision(raw: string | undefined): string {
++  const trimmed = raw?.trim() ?? ""
++  return REVISION_PATTERN.test(trimmed) ? trimmed : UNKNOWN_MARKER
++}
++
++export const BUILD_REVISION = sanitizeRevision(
++  process.env.COPILOT_API_BUILD_REVISION,
++)
++
++export const BUILD_IDENTITY = `${packageJson.version}+${BUILD_REVISION}`
++
++function compareStrings(a: string, b: string): number {
++  if (a === b) return 0
++  return a < b ? -1 : 1
++}
++
++function stableStringify(value: unknown): string {
++  if (value === undefined) return "null"
++  if (value === null || typeof value !== "object") {
++    return JSON.stringify(value)
++  }
++  if (Array.isArray(value)) {
++    return `[${value.map((item) => stableStringify(item)).join(",")}]`
++  }
++  const entries = Object.entries(value as Record<string, unknown>)
++    .filter(([, item]) => item !== undefined)
++    .sort(([a], [b]) => compareStrings(a, b))
++  return `{${entries
++    .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
++    .join(",")}}`
++}
++
++/**
++ * Fingerprints only the catalog fields that influence routing, normalized so
++ * that upstream response ordering and key ordering cannot change the result.
++ * Upstream publishes no catalog version, generation or ETag, so this proxy is
++ * the only component able to identify the catalog it actually routed on.
++ */
++export function catalogFingerprint(models: Array<Model> | undefined): string {
++  if (!models || models.length === 0) return UNKNOWN_MARKER
++
++  const normalized = models
++    .map((model) => ({
++      capabilities: model.capabilities,
++      id: model.id,
++      supported_endpoints: [...(model.supported_endpoints ?? [])].sort(
++        compareStrings,
++      ),
++    }))
++    .sort((a, b) => compareStrings(a.id, b.id))
++
++  return createHash("sha256")
++    .update(stableStringify(normalized))
++    .digest("hex")
++    .slice(0, 16)
++}
+diff --git a/src/lib/state.ts b/src/lib/state.ts
+index 2faca28..a4277f3 100644
+--- a/src/lib/state.ts
++++ b/src/lib/state.ts
+@@ -8,6 +8,10 @@ export interface State {
+ 
+   accountType: string
+   models?: ModelsResponse
++  /** When the current catalog snapshot was observed, not the current time. */
++  modelsObservedAt?: string
++  /** Fingerprint of the routing-relevant fields of the current snapshot. */
++  modelsFingerprint?: string
+   vsCodeVersion?: string
+ 
+   manualApprove: boolean
+diff --git a/src/lib/utils.ts b/src/lib/utils.ts
+index cc80be6..6877109 100644
+--- a/src/lib/utils.ts
++++ b/src/lib/utils.ts
+@@ -3,6 +3,7 @@ import consola from "consola"
+ import { getModels } from "~/services/copilot/get-models"
+ import { getVSCodeVersion } from "~/services/get-vscode-version"
+ 
++import { catalogFingerprint } from "./build-info"
+ import { state } from "./state"
+ 
+ export const sleep = (ms: number) =>
+@@ -16,6 +17,8 @@ export const isNullish = (value: unknown): value is null | undefined =>
+ export async function cacheModels(): Promise<void> {
+   const models = await getModels()
+   state.models = models
++  state.modelsObservedAt = new Date().toISOString()
++  state.modelsFingerprint = catalogFingerprint(models.data)
+ }
+ 
+ export const cacheVSCodeVersion = async () => {
+diff --git a/src/routes/models/route.ts b/src/routes/models/route.ts
+index 51f7fc2..5f2677e 100644
+--- a/src/routes/models/route.ts
++++ b/src/routes/models/route.ts
+@@ -1,5 +1,10 @@
+ import { Hono } from "hono"
+ 
++import {
++  BUILD_IDENTITY,
++  TRANSLATION_CONTRACT,
++  UNKNOWN_MARKER,
++} from "~/lib/build-info"
+ import { pricingForModel, readCopilotPricing } from "~/lib/copilot-pricing"
+ import { forwardError } from "~/lib/error"
+ import { filterModels } from "~/lib/filter-models"
+@@ -49,6 +54,16 @@ modelRoutes.get("/", async (c) => {
+       state.modelFilter,
+     )
+ 
++    // Provenance markers identify the proxy translation code and the catalog
++    // snapshot it routed on. They are not a guarantee of identical responses.
++    c.header("X-Copilot-API-Translation-Contract", TRANSLATION_CONTRACT)
++    c.header("X-Copilot-API-Build", BUILD_IDENTITY)
++    c.header("X-Copilot-API-Catalog", state.modelsFingerprint ?? UNKNOWN_MARKER)
++    c.header(
++      "X-Copilot-API-Catalog-Observed-At",
++      state.modelsObservedAt ?? UNKNOWN_MARKER,
++    )
++
+     return c.json({
+       object: "list",
+       data: models,
+diff --git a/tests/operational-hardening.test.ts b/tests/operational-hardening.test.ts
+index ffc71ff..484fda1 100644
+--- a/tests/operational-hardening.test.ts
++++ b/tests/operational-hardening.test.ts
+@@ -1,9 +1,22 @@
+-import { describe, expect, it } from "bun:test"
++import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+ 
++import {
++  BUILD_IDENTITY,
++  TRANSLATION_CONTRACT,
++  UNKNOWN_MARKER,
++} from "~/lib/build-info"
++import { state } from "~/lib/state"
+ import { server } from "~/server"
+ 
+ import packageJson from "../package.json"
+ 
++const PROVENANCE_HEADERS = [
++  "x-copilot-api-translation-contract",
++  "x-copilot-api-build",
++  "x-copilot-api-catalog",
++  "x-copilot-api-catalog-observed-at",
++]
++
+ describe("operational hardening", () => {
+   it("reports the package version from health", async () => {
+     const response = await server.request("/health")
+@@ -33,3 +46,123 @@ describe("operational hardening", () => {
+     expect(response.status).toBe(404)
+   })
+ })
++
++describe("translation contract provenance markers", () => {
++  const catalog = {
++    object: "list",
++    data: [
++      {
++        id: "gpt-provenance",
++        name: "GPT Provenance",
++        object: "model",
++        vendor: "openai",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        supported_endpoints: ["/responses"],
++        capabilities: {
++          family: "gpt",
++          limits: {},
++          object: "model_capabilities",
++          supports: {},
++          tokenizer: "test",
++          type: "chat",
++        },
++      },
++    ],
++  }
++
++  beforeEach(() => {
++    state.models = structuredClone(catalog)
++    state.modelsFingerprint = "0123456789abcdef"
++    state.modelsObservedAt = "2026-08-13T00:00:00.000Z"
++  })
++
++  afterEach(() => {
++    state.models = undefined
++    state.modelsFingerprint = undefined
++    state.modelsObservedAt = undefined
++  })
++
++  it.each(["/models", "/v1/models"])(
++    "marks %s with provenance",
++    async (path) => {
++      const response = await server.request(path)
++      expect(response.status).toBe(200)
++      expect(response.headers.get("x-copilot-api-translation-contract")).toBe(
++        TRANSLATION_CONTRACT,
++      )
++      expect(response.headers.get("x-copilot-api-build")).toBe(BUILD_IDENTITY)
++      expect(response.headers.get("x-copilot-api-catalog")).toBe(
++        "0123456789abcdef",
++      )
++      expect(response.headers.get("x-copilot-api-catalog-observed-at")).toBe(
++        "2026-08-13T00:00:00.000Z",
++      )
++    },
++  )
++
++  it("emits identical markers on both mounted paths", async () => {
++    const [mounted, versioned] = await Promise.all([
++      server.request("/models"),
++      server.request("/v1/models"),
++    ])
++    for (const header of PROVENANCE_HEADERS) {
++      expect(versioned.headers.get(header)).toBe(mounted.headers.get(header))
++    }
++  })
++
++  it("reports the package version in the build identity", async () => {
++    const response = await server.request("/v1/models")
++    expect(response.headers.get("x-copilot-api-build")).toStartWith(
++      `${packageJson.version}+`,
++    )
++  })
++
++  it("leaves the model list body unchanged", async () => {
++    const response = await server.request("/v1/models")
++    expect(await response.json()).toMatchObject({
++      object: "list",
++      has_more: false,
++      data: [{ id: "gpt-provenance", object: "model" }],
++    })
++  })
++
++  it("falls back to unknown when no catalog snapshot is recorded", async () => {
++    state.modelsFingerprint = undefined
++    state.modelsObservedAt = undefined
++
++    const response = await server.request("/v1/models")
++    expect(response.headers.get("x-copilot-api-catalog")).toBe(UNKNOWN_MARKER)
++    expect(response.headers.get("x-copilot-api-catalog-observed-at")).toBe(
++      UNKNOWN_MARKER,
++    )
++  })
++
++  it("never exposes secrets, identity or per-request counters", async () => {
++    state.githubToken = "gho_secret_github_token"
++    state.copilotToken = "copilot_secret_token"
++
++    const response = await server.request("/v1/models")
++    const rendered = [...response.headers.entries()]
++      .map(([name, value]) => `${name}: ${value}`)
++      .join("\n")
++
++    expect(rendered).not.toContain("gho_secret_github_token")
++    expect(rendered).not.toContain("copilot_secret_token")
++    expect(rendered).not.toContain("/Users/")
++    expect(rendered.toLowerCase()).not.toContain("uptime")
++    expect(rendered.toLowerCase()).not.toContain("exp-assignment")
++
++    state.githubToken = undefined
++    state.copilotToken = undefined
++  })
++
++  it("keeps markers stable across repeated requests to one snapshot", async () => {
++    const first = await server.request("/v1/models")
++    const second = await server.request("/v1/models")
++    for (const header of PROVENANCE_HEADERS) {
++      expect(second.headers.get(header)).toBe(first.headers.get(header))
++    }
++  })
++})

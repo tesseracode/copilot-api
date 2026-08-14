@@ -10,6 +10,9 @@ RUN bun ./node_modules/tsdown/dist/run.mjs
 FROM oven/bun:1.2.19-alpine AS runner
 WORKDIR /app
 
+ARG COPILOT_API_BUILD_REVISION=unknown
+ENV COPILOT_API_BUILD_REVISION=${COPILOT_API_BUILD_REVISION}
+
 COPY ./package.json ./bun.lock ./
 RUN bun install --frozen-lockfile --production --ignore-scripts --no-cache
 

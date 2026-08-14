@@ -8,6 +8,10 @@ export interface State {
 
   accountType: string
   models?: ModelsResponse
+  /** When the current catalog snapshot was observed, not the current time. */
+  modelsObservedAt?: string
+  /** Fingerprint of the routing-relevant fields of the current snapshot. */
+  modelsFingerprint?: string
   vsCodeVersion?: string
 
   manualApprove: boolean
