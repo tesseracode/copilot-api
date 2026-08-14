@@ -1,0 +1,19 @@
+{
+  "id": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
+  "slug": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
+  "title": "Refresh the cached Copilot model catalog on a timer instead of loading it once at startup. cacheModels() currently runs only at startup (src/start.ts:66) with no refresh timer, so a long-running proxy can never see models added upstream and routes on an arbitrarily stale snapshot; a live probe measured the catalog moving 40 to 41 models over three days while upstream advertises cache-control private max-age=21600. Mirror the proven pricing-scheduler pattern: single-flight refresh, non-fatal failure that keeps the last good catalog, unref'd timer, and SIGINT/SIGTERM cleanup. Because adopting a catalog change silently alters routing mid-process, the refresh must be observable (log added/removed model IDs) and operators running compatibility canaries must be able to pin a catalog by disabling refresh via a configurable interval where zero means never. Depends on the provenance markers so catalog changes are attributable rather than silent.",
+  "state": "defined",
+  "compatibility": "unknown",
+  "requested_at": "2026-08-14T02:51:45Z",
+  "updated_at": "2026-08-14T03:07:43Z",
+  "last_command": "explore",
+  "notes": "Phase advanced manually (--manual); artifact authored at exploration.md",
+  "apply": {},
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "expose-a-stable-non-secret-copilot-api-translation-contract",
+      "kind": "hard"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# Analysis
+
+`cacheModels()` runs exactly once, at startup (`src/start.ts:66`), and there is no refresh timer anywhere in `src/`. A long-running proxy therefore holds a frozen catalog snapshot for its entire process lifetime, with two consequences: it can never route to a model added upstream after boot, and it makes routing decisions from an arbitrarily stale view. The only recovery available to an operator today is a restart, which is undiscoverable because nothing reports catalog age.
+
+The staleness is measurable, not theoretical. A live probe recorded the upstream catalog moving from 40 to 41 models between 2026-08-11 and 2026-08-13, and upstream serves `/models` with `cache-control: private, max-age=21600`, an explicit six-hour hint that it expects the catalog to be re-read. A proxy left running across a week silently diverges from the provider it fronts.
+
+A proven in-repo pattern already exists. `src/services/copilot/pricing-scheduler.ts` refreshes pricing on a fixed interval with the exact properties this needs: single-flight via a shared in-flight promise, a non-fatal `catch` that logs and keeps the last good cache, an `unref()`d timer that never holds the event loop open, `SIGINT`/`SIGTERM` cleanup, and an injectable updater that makes it testable without network access (`tests/pricing-scheduler.test.ts`, `tests/pricing-updater-recovery.test.ts`). Mirroring it avoids inventing new lifecycle machinery.
+
+The real design tension is not implementation difficulty but observability. Refreshing the catalog changes routing *mid-process*: a model's `supported_endpoints` can change, which moves a request between the native Responses, Responses-translation, and Chat-fallback paths, and today that would happen with no operator signal at all. That is precisely the silent, unattributable drift the gateway compatibility matrix complains about. This is also why the feature depends on the provenance markers: `X-Copilot-API-Catalog` and `X-Copilot-API-Catalog-Observed-At` are what make a mid-process catalog change visible and attributable after the fact, so provenance must land first.
+
+Compatibility canaries want the opposite of freshness — they want a pinned catalog for the duration of a run. Refresh must therefore be disableable rather than unconditional, so a reproducibility-sensitive deployment can opt out deliberately instead of fighting the timer.
+
+Failure handling must be conservative. A refresh can fail on network loss or token expiry, and dropping a working catalog in that case would break routing for every subsequent request. The pricing scheduler's precedent is correct here: a failed refresh is a logged warning that leaves the previous snapshot in place.
