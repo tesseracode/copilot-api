@@ -188,3 +188,126 @@ describe("native Responses route", () => {
     expect(await response.text()).toBe("bad request")
   })
 })
+
+/**
+ * Copilot Responses is stateless: upstream rejects `store:true` and cannot
+ * honour `previous_response_id`. The proxy therefore forwards these fields
+ * verbatim rather than coercing them, so a client that asks for storage gets a
+ * loud upstream rejection instead of a silently truncated conversation.
+ */
+function captureUpstream() {
+  const captured: { body?: Record<string, unknown> } = {}
+  globalThis.fetch = mock(
+    (_input: string | URL | Request, init?: RequestInit) => {
+      if (typeof init?.body !== "string") throw new Error("Expected JSON body")
+      captured.body = JSON.parse(init.body) as Record<string, unknown>
+      return Promise.resolve(
+        Response.json({ id: "resp_1", object: "response" }),
+      )
+    },
+  ) as unknown as typeof fetch
+  return captured
+}
+
+async function post(body: Record<string, unknown>) {
+  return server.request("/v1/responses", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+describe("stateless Responses state contract", () => {
+  it("never defaults store when the client omits it", async () => {
+    const captured = captureUpstream()
+    await post({ model: "gpt-responses", input: "hello" })
+    expect(captured.body).not.toHaveProperty("store")
+  })
+
+  it("forwards store:false unchanged", async () => {
+    const captured = captureUpstream()
+    await post({ model: "gpt-responses", input: "hello", store: false })
+    expect(captured.body?.store).toBe(false)
+  })
+
+  it("forwards store:true unchanged instead of coercing it", async () => {
+    const captured = captureUpstream()
+    await post({ model: "gpt-responses", input: "hello", store: true })
+    expect(captured.body?.store).toBe(true)
+  })
+
+  it("surfaces the upstream store rejection verbatim", async () => {
+    const upstreamError = {
+      error: {
+        code: "unsupported_value",
+        message: "store must be the boolean false when provided",
+        type: "invalid_request_error",
+      },
+    }
+    globalThis.fetch = mock(() =>
+      Promise.resolve(Response.json(upstreamError, { status: 400 })),
+    ) as unknown as typeof fetch
+
+    const response = await post({
+      model: "gpt-responses",
+      input: "hello",
+      store: true,
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual(upstreamError)
+  })
+
+  it("forwards previous_response_id unchanged without implying continuation", async () => {
+    const captured = captureUpstream()
+    await post({
+      model: "gpt-responses",
+      input: "hello",
+      previous_response_id: "resp_previous",
+      store: false,
+    })
+    expect(captured.body?.previous_response_id).toBe("resp_previous")
+  })
+
+  it("forwards store and previous_response_id unchanged when streaming", async () => {
+    let captured: Record<string, unknown> | undefined
+    globalThis.fetch = mock(
+      (_input: string | URL | Request, init?: RequestInit) => {
+        if (typeof init?.body !== "string")
+          throw new Error("Expected JSON body")
+        captured = JSON.parse(init.body) as Record<string, unknown>
+        return Promise.resolve(
+          new Response('data: {"type":"response.created"}\n\n', {
+            headers: { "content-type": "text/event-stream" },
+          }),
+        )
+      },
+    ) as unknown as typeof fetch
+
+    const response = await post({
+      model: "gpt-responses",
+      input: "hello",
+      stream: true,
+      store: true,
+      previous_response_id: "resp_previous",
+    })
+
+    expect(response.status).toBe(200)
+    expect(captured?.store).toBe(true)
+    expect(captured?.previous_response_id).toBe("resp_previous")
+  })
+
+  it("fabricates no response identifier and stores no state", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        Response.json({ id: "resp_upstream", object: "response" }),
+      ),
+    ) as unknown as typeof fetch
+
+    const first = await post({ model: "gpt-responses", input: "one" })
+    const second = await post({ model: "gpt-responses", input: "two" })
+
+    expect(await first.json()).toMatchObject({ id: "resp_upstream" })
+    expect(await second.json()).toMatchObject({ id: "resp_upstream" })
+  })
+})

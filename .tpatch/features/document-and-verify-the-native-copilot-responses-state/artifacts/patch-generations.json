@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "feature": "document-and-verify-the-native-copilot-responses-state",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_80a347cfbf6b",
+      "kind": "record",
+      "patch_sha256": "44f30e92a04bd05dd6d973f6659415910a25da95ca140a1ca7221c54f0ea3c5c",
+      "git_patch_id": "c55fc3e0b1f86db02dc294fc41c76c4d563693cf",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "111587450c9ea631a8f526245c41e9c79a260fed91025017ca6efd1e17b82759",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "cd4eeffc792620826d7563dce0bb85325e70d72f",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "README.md",
+          "tests/native-responses-route.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "README.md",
+        "tests/native-responses-route.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "native-responses-route",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 3,
+          "parent_patch_sha256": "bf45f3e843e7fa29dae0e4bd9e1b9250c53d42c99ad4639300eef353de50c9ea",
+          "parent_recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c"
+        },
+        {
+          "slug": "proxy-operational-hardening",
+          "kind": "soft",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "33c480e4900ea55c5c6171fe051115b2d11b5c3e7a66a986bcccc6b85cc0658b",
+          "parent_recipe_sha256": "fc725fec74f19e09cf822b06842705c48bdaf0d6009538e9eefe755c6dc97afe"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}
