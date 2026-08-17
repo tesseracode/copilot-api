@@ -1,0 +1,8 @@
+{
+  "slug": "extract-the-claude-code-interactive-setup-out-of-runserver",
+  "completed_at": "2026-08-17T22:46:00Z",
+  "base_commit": "a04009fd75627cfa1a0a8d28b351763943e19334",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 331 tests, build pass; runServer reduced from 99 to 60 lines and the diff is a pure move"
+}
