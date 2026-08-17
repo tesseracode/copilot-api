@@ -157,6 +157,11 @@ export interface ChatCompletionsPayload {
   temperature?: number | null
   top_p?: number | null
   max_tokens?: number | null
+  /**
+   * Newer clients (VS Code Copilot Chat with thinking enabled) send this
+   * instead of max_tokens. Upstream rejects a request carrying both.
+   */
+  max_completion_tokens?: number | null
   stop?: string | Array<string> | null
   n?: number | null
   stream?: boolean | null

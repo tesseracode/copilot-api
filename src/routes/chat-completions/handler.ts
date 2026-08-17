@@ -47,7 +47,12 @@ export async function handleCompletion(c: Context) {
 
   if (state.manualApprove) await awaitApproval()
 
-  if (isNullish(payload.max_tokens)) {
+  // Upstream rejects a request carrying both token controls, so only supply a
+  // catalog default when the client expressed neither.
+  const hasClientTokenLimit =
+    !isNullish(payload.max_tokens) || !isNullish(payload.max_completion_tokens)
+
+  if (!hasClientTokenLimit) {
     payload = {
       ...payload,
       max_tokens: selectedModel?.capabilities.limits.max_output_tokens,

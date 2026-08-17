@@ -1,0 +1,27 @@
+{
+  "id": "stop-injecting-max-tokens-when-the-client-already-supplied",
+  "slug": "stop-injecting-max-tokens-when-the-client-already-supplied",
+  "title": "Stop injecting max_tokens when the client already supplied max_completion_tokens. handleCompletion injects max_tokens from the catalog whenever payload.max_tokens is nullish (src/routes/chat-completions/handler.ts:50), and createChatCompletions forwards the whole payload verbatim, so a client that sends only max_completion_tokens gets both controls upstream. A live upstream probe on claude-opus-4.6 measured only max_tokens 200, only max_completion_tokens 200, neither 200, and both 400 'max_tokens and max_completion_tokens cannot both be set'. This breaks VS Code Copilot Chat with thinking enabled, which sends max_completion_tokens. The probe also shows the injection is not required for a successful request. Skip the injection when either token control is already present, keep the existing catalog default for clients that send neither, and add regression tests for all four combinations.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-08-17T08:41:11Z",
+  "updated_at": "2026-08-17T08:44:32Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-08-17T08:44:28Z",
+    "base_commit": "8552825973e6238c0f0b4d95cef4e26e48c487bb",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "catalog-aware-effort-normalization",
+      "kind": "hard"
+    },
+    {
+      "slug": "anthropic-beta-1m-detection",
+      "kind": "hard"
+    }
+  ]
+}

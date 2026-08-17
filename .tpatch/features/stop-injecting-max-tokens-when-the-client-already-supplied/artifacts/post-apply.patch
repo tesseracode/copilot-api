@@ -1,0 +1,168 @@
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index bbcf94b..9e99292 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -47,7 +47,12 @@ export async function handleCompletion(c: Context) {
+ 
+   if (state.manualApprove) await awaitApproval()
+ 
+-  if (isNullish(payload.max_tokens)) {
++  // Upstream rejects a request carrying both token controls, so only supply a
++  // catalog default when the client expressed neither.
++  const hasClientTokenLimit =
++    !isNullish(payload.max_tokens) || !isNullish(payload.max_completion_tokens)
++
++  if (!hasClientTokenLimit) {
+     payload = {
+       ...payload,
+       max_tokens: selectedModel?.capabilities.limits.max_output_tokens,
+diff --git a/src/services/copilot/create-chat-completions.ts b/src/services/copilot/create-chat-completions.ts
+index 65e07bc..7e50e8e 100644
+--- a/src/services/copilot/create-chat-completions.ts
++++ b/src/services/copilot/create-chat-completions.ts
+@@ -157,6 +157,11 @@ export interface ChatCompletionsPayload {
+   temperature?: number | null
+   top_p?: number | null
+   max_tokens?: number | null
++  /**
++   * Newer clients (VS Code Copilot Chat with thinking enabled) send this
++   * instead of max_tokens. Upstream rejects a request carrying both.
++   */
++  max_completion_tokens?: number | null
+   stop?: string | Array<string> | null
+   n?: number | null
+   stream?: boolean | null
+diff --git a/tests/chat-token-limit-injection.test.ts b/tests/chat-token-limit-injection.test.ts
+new file mode 100644
+index 0000000..fc858af
+--- /dev/null
++++ b/tests/chat-token-limit-injection.test.ts
+@@ -0,0 +1,128 @@
++import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
++
++import { state } from "~/lib/state"
++import { server } from "~/server"
++
++const originalFetch = globalThis.fetch
++
++/**
++ * Upstream rejects a request that carries both max_tokens and
++ * max_completion_tokens with HTTP 400, so the catalog default must only be
++ * injected when the client expressed no token control at all. Measured live on
++ * claude-opus-4.6: each control alone succeeds, neither succeeds, both fail.
++ */
++beforeEach(() => {
++  state.copilotToken = "test-token"
++  state.models = {
++    object: "list",
++    data: [
++      {
++        id: "chat-model",
++        name: "Chat Model",
++        object: "model",
++        vendor: "anthropic",
++        version: "1",
++        preview: false,
++        model_picker_enabled: true,
++        supported_endpoints: ["/chat/completions"],
++        capabilities: {
++          family: "claude",
++          limits: { max_output_tokens: 4096 },
++          object: "model_capabilities",
++          supports: {},
++          tokenizer: "test",
++          type: "chat",
++        },
++      },
++    ],
++  }
++})
++
++afterEach(() => {
++  globalThis.fetch = originalFetch
++  state.models = undefined
++})
++
++async function captureUpstreamPayload(body: Record<string, unknown>) {
++  let captured: Record<string, unknown> | undefined
++  globalThis.fetch = mock(
++    (_input: string | URL | Request, init?: RequestInit) => {
++      if (typeof init?.body !== "string") throw new Error("Expected JSON body")
++      captured = JSON.parse(init.body) as Record<string, unknown>
++      return Promise.resolve(
++        Response.json({ id: "1", object: "chat.completion", choices: [] }),
++      )
++    },
++  ) as unknown as typeof fetch
++
++  const response = await server.request("/v1/chat/completions", {
++    method: "POST",
++    headers: { "content-type": "application/json" },
++    body: JSON.stringify({
++      model: "chat-model",
++      messages: [{ role: "user", content: "hi" }],
++      ...body,
++    }),
++  })
++
++  return { status: response.status, payload: captured }
++}
++
++describe("chat token limit injection", () => {
++  it("injects the catalog default when the client sends neither control", async () => {
++    const { payload } = await captureUpstreamPayload({})
++    expect(payload?.max_tokens).toBe(4096)
++    expect(payload).not.toHaveProperty("max_completion_tokens")
++  })
++
++  it("keeps a client max_tokens unchanged", async () => {
++    const { payload } = await captureUpstreamPayload({ max_tokens: 128 })
++    expect(payload?.max_tokens).toBe(128)
++    expect(payload).not.toHaveProperty("max_completion_tokens")
++  })
++
++  it("does not inject max_tokens alongside a client max_completion_tokens", async () => {
++    const { payload } = await captureUpstreamPayload({
++      max_completion_tokens: 128,
++    })
++    expect(payload?.max_completion_tokens).toBe(128)
++    expect(payload).not.toHaveProperty("max_tokens")
++  })
++
++  it("does not inject when max_tokens is explicitly null but max_completion_tokens is set", async () => {
++    const { payload } = await captureUpstreamPayload({
++      max_tokens: null,
++      max_completion_tokens: 128,
++    })
++    expect(payload?.max_completion_tokens).toBe(128)
++    expect(payload?.max_tokens).toBeNull()
++  })
++
++  it("forwards both controls unchanged when the client sends both", async () => {
++    const { payload } = await captureUpstreamPayload({
++      max_tokens: 64,
++      max_completion_tokens: 128,
++    })
++    expect(payload?.max_tokens).toBe(64)
++    expect(payload?.max_completion_tokens).toBe(128)
++  })
++
++  it("never emits both controls when the client sent only one", async () => {
++    for (const body of [{ max_tokens: 128 }, { max_completion_tokens: 128 }]) {
++      const { payload } = await captureUpstreamPayload(body)
++      const emitted = [
++        payload?.max_tokens,
++        payload?.max_completion_tokens,
++      ].filter((value) => value !== undefined && value !== null)
++      expect(emitted).toHaveLength(1)
++    }
++  })
++
++  it("applies the same rule to streaming requests", async () => {
++    const { payload } = await captureUpstreamPayload({
++      max_completion_tokens: 128,
++      stream: false,
++    })
++    expect(payload).not.toHaveProperty("max_tokens")
++  })
++})
