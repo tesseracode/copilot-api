@@ -13,6 +13,7 @@ import { state } from "./lib/state"
 import { setupCopilotToken, setupGitHubToken } from "./lib/token"
 import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
 import { server } from "./server"
+import { startCatalogScheduler } from "./services/copilot/catalog-scheduler"
 import { startPricingScheduler } from "./services/copilot/pricing-scheduler"
 
 interface RunServerOptions {
@@ -28,6 +29,7 @@ interface RunServerOptions {
   proxyEnv: boolean
   hideInternal: boolean
   modelFilter?: string
+  catalogRefreshMinutes: number
 }
 
 export async function runServer(options: RunServerOptions): Promise<void> {
@@ -64,6 +66,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   await setupCopilotToken()
   await cacheModels()
+  startCatalogScheduler({ intervalMs: options.catalogRefreshMinutes * 60_000 })
   await startPricingScheduler()
 
   const modelCount = state.models?.data.length ?? 0
@@ -224,12 +227,27 @@ export const start = defineCommand({
       description:
         "Filter /models response to only show models from a specific vendor (e.g. anthropic, openai)",
     },
+    "catalog-refresh-minutes": {
+      type: "string",
+      default: "360",
+      description:
+        "Minutes between model catalog refreshes (default 360, matching the upstream 6h cache hint). Use 0 to pin the startup snapshot",
+    },
   },
   run({ args }) {
     const rateLimitRaw = args["rate-limit"]
     const rateLimit =
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       rateLimitRaw === undefined ? undefined : Number.parseInt(rateLimitRaw, 10)
+
+    const catalogRefreshRaw = Number.parseInt(
+      args["catalog-refresh-minutes"],
+      10,
+    )
+    const catalogRefreshMinutes =
+      Number.isNaN(catalogRefreshRaw) || catalogRefreshRaw < 0 ?
+        360
+      : catalogRefreshRaw
 
     return runServer({
       port: Number.parseInt(args.port, 10),
@@ -244,6 +262,7 @@ export const start = defineCommand({
       proxyEnv: args["proxy-env"],
       hideInternal: args["hide-internal"],
       modelFilter: args["model-filter"],
+      catalogRefreshMinutes,
     })
   },
 })

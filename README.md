@@ -182,6 +182,32 @@ The following command line options are available for the `start` command:
 | --claude-code  | Generate a command to launch Claude Code with Copilot API config              | false      | -c    |
 | --show-token   | Show GitHub and Copilot tokens on fetch and refresh                           | false      | none  |
 | --proxy-env    | Initialize proxy from environment variables                                   | false      | none  |
+| --catalog-refresh-minutes | Minutes between model catalog refreshes. `0` pins the startup snapshot | 360 | none |
+
+#### Model catalog refresh
+
+The model catalog is loaded at startup and then refreshed every 6 hours by
+default, matching the `cache-control: private, max-age=21600` hint upstream
+serves with `/models`. Without refresh a long-running proxy can never route to a
+model added after boot.
+
+A refresh that changes the catalog is logged at info level with the added and
+removed model IDs, because adopting a change silently would move requests
+between the native Responses, Responses-translation, and Chat paths with no
+operator signal. A failed refresh logs a warning and keeps the previous snapshot
+serving traffic.
+
+Pass `--catalog-refresh-minutes 0` to disable refresh and pin the startup
+snapshot. This is the right setting for compatibility canaries and any run that
+needs a fixed catalog for the whole session.
+
+Every refresh updates `X-Copilot-API-Catalog` and
+`X-Copilot-API-Catalog-Observed-At` (see [Proxy Provenance
+Headers](#proxy-provenance-headers)), so a mid-process catalog change is always
+attributable after the fact. The observation timestamp advances on every
+successful refresh even when the content is unchanged, which is what
+distinguishes "upstream did not change" from "this process has not looked
+again".
 
 ### Auth Command Options
 

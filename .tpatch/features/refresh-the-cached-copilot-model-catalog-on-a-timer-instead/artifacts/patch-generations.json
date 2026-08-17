@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "feature": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_22103e2fade1",
+      "kind": "record",
+      "patch_sha256": "5575f302428fe6cc3b9de1a7499797b8821a6a4f1412f8f8b95f682975aa18b4",
+      "git_patch_id": "2e5c296cb1d43744a4e47006e37f6e28cd7d5321",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "f650566774d708e364558c7f19bd66eb4662ec5b380e229eadcd63dd7b5124f4",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "ad3717c3839fa294ca2b5f215a35a57d5d95633a",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "README.md",
+          "src/services/copilot/catalog-scheduler.ts",
+          "src/start.ts",
+          "tests/catalog-scheduler.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "README.md",
+        "src/services/copilot/catalog-scheduler.ts",
+        "src/start.ts",
+        "tests/catalog-scheduler.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "expose-a-stable-non-secret-copilot-api-translation-contract",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "9dedab0cc1f7aeb211f538ac1aa1b847c50bca0412a3d4466095bccc9668be25",
+          "parent_recipe_sha256": "3aac88d1d1c4f201597299c3d0731621503b8b419f091c89be512b653e148741"
+        }
+      ],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}
