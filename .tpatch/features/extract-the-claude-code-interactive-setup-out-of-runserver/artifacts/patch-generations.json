@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "feature": "extract-the-claude-code-interactive-setup-out-of-runserver",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_626a878b2a54",
+      "kind": "record",
+      "patch_sha256": "d12aa946c8dc65a6682ac0332a179c8c6685ddf321a69c62c51806624ddfac77",
+      "git_patch_id": "4b44b921bae7fa3b89f7dfcaa3dfd3cbf5fb7707",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "d993d0724c5a287313ea50108cec9a52a1c03a6c91f0bda1484da13a218b9c56",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "a04009fd75627cfa1a0a8d28b351763943e19334",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/start.ts",
+          "tests/claude-code-setup.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/start.ts",
+        "tests/claude-code-setup.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

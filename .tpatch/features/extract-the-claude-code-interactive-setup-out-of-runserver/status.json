@@ -1,0 +1,27 @@
+{
+  "id": "extract-the-claude-code-interactive-setup-out-of-runserver",
+  "slug": "extract-the-claude-code-interactive-setup-out-of-runserver",
+  "title": "Extract the Claude Code interactive setup out of runServer so startup stays readable and lintable. runServer is at 99 of the 100 lines allowed by max-lines-per-function from the shared eslint config, which skips blank lines and comments, so the count is real code and the next startup addition will fail lint. The opt-in claudeCode block is 51 of those 99 lines and is a different concern: it is interactive, using two consola.prompt calls and a clipboard write, and it cannot be exercised where it sits because driving it would block on prompts. Extract setupClaudeCodeEnv(serverUrl) so runServer drops to roughly 48 lines and the Claude Code flow becomes independently testable. Do not relax the lint rule, because it is inherited from the shared upstream config and an override would loosen the threshold globally and mask genuine cases elsewhere. Behavior must be unchanged for both --claude-code and normal startup, including 1M context detection and clipboard fallback logging.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-08-17T22:42:21Z",
+  "updated_at": "2026-08-17T22:46:04Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-08-17T22:46:00Z",
+    "base_commit": "a04009fd75627cfa1a0a8d28b351763943e19334",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "copilot-pricing-cache",
+      "kind": "hard"
+    },
+    {
+      "slug": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
+      "kind": "hard"
+    }
+  ]
+}

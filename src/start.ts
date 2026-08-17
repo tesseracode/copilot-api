@@ -32,6 +32,60 @@ interface RunServerOptions {
   catalogRefreshMinutes: number
 }
 
+/**
+ * Interactive Claude Code onboarding. Kept out of runServer because it is
+ * opt-in, prompt-driven, and otherwise impossible to exercise in tests.
+ */
+export async function setupClaudeCodeEnv(serverUrl: string): Promise<void> {
+  invariant(state.models, "Models should be loaded by now")
+
+  const selectedModel = await consola.prompt(
+    "Select a model to use with Claude Code",
+    {
+      type: "select",
+      options: state.models.data.map((model) => model.id),
+    },
+  )
+
+  // Detect 1M context from interactive selection
+  state.is1MContext = state.is1MContext || selectedModel.endsWith("-1m")
+  if (selectedModel.endsWith("-1m")) {
+    consola.info("1M context window mode enabled (from model selection)")
+  }
+
+  const selectedSmallModel = await consola.prompt(
+    "Select a small model to use with Claude Code",
+    {
+      type: "select",
+      options: state.models.data.map((model) => model.id),
+    },
+  )
+
+  const command = generateEnvScript(
+    {
+      ANTHROPIC_BASE_URL: serverUrl,
+      ANTHROPIC_AUTH_TOKEN: "dummy",
+      ANTHROPIC_MODEL: selectedModel,
+      ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
+      ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
+      DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    },
+    "claude",
+  )
+
+  try {
+    clipboard.writeSync(command)
+    consola.success("Copied Claude Code command to clipboard!")
+  } catch {
+    consola.warn(
+      "Failed to copy to clipboard. Here is the Claude Code command:",
+    )
+    consola.log(command)
+  }
+}
+
 export async function runServer(options: RunServerOptions): Promise<void> {
   if (options.proxyEnv) {
     initProxyFromEnv()
@@ -86,54 +140,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   }
 
   if (options.claudeCode) {
-    invariant(state.models, "Models should be loaded by now")
-
-    const selectedModel = await consola.prompt(
-      "Select a model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
-    )
-
-    // Detect 1M context from interactive selection
-
-    state.is1MContext = state.is1MContext || selectedModel.endsWith("-1m")
-    if (selectedModel.endsWith("-1m")) {
-      consola.info("1M context window mode enabled (from model selection)")
-    }
-
-    const selectedSmallModel = await consola.prompt(
-      "Select a small model to use with Claude Code",
-      {
-        type: "select",
-        options: state.models.data.map((model) => model.id),
-      },
-    )
-
-    const command = generateEnvScript(
-      {
-        ANTHROPIC_BASE_URL: serverUrl,
-        ANTHROPIC_AUTH_TOKEN: "dummy",
-        ANTHROPIC_MODEL: selectedModel,
-        ANTHROPIC_DEFAULT_SONNET_MODEL: selectedModel,
-        ANTHROPIC_SMALL_FAST_MODEL: selectedSmallModel,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: selectedSmallModel,
-        DISABLE_NON_ESSENTIAL_MODEL_CALLS: "1",
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-      },
-      "claude",
-    )
-
-    try {
-      clipboard.writeSync(command)
-      consola.success("Copied Claude Code command to clipboard!")
-    } catch {
-      consola.warn(
-        "Failed to copy to clipboard. Here is the Claude Code command:",
-      )
-      consola.log(command)
-    }
+    await setupClaudeCodeEnv(serverUrl)
   }
 
   consola.box(

@@ -1,0 +1,149 @@
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  spyOn,
+} from "bun:test"
+import clipboard from "clipboardy"
+import consola from "consola"
+
+import type { ModelsResponse } from "~/services/copilot/get-models"
+
+import { state } from "~/lib/state"
+import { setupClaudeCodeEnv } from "~/start"
+
+const SERVER_URL = "http://localhost:4141"
+
+function catalog(ids: Array<string>): ModelsResponse {
+  return {
+    object: "list",
+    data: ids.map((id) => ({
+      id,
+      name: id,
+      object: "model",
+      vendor: "anthropic",
+      version: "1",
+      preview: false,
+      model_picker_enabled: true,
+      supported_endpoints: ["/v1/messages"],
+      capabilities: {
+        family: "claude",
+        limits: {},
+        object: "model_capabilities",
+        supports: {},
+        tokenizer: "test",
+        type: "chat",
+      },
+    })),
+  }
+}
+
+/** Queues the answers the two interactive selections receive, in order. */
+function stubPrompts(answers: Array<string>) {
+  const queued = [...answers]
+  return spyOn(consola, "prompt").mockImplementation((() =>
+    Promise.resolve(queued.shift() ?? "")) as never)
+}
+
+function captureClipboard(): { command?: string } {
+  const captured: { command?: string } = {}
+  spyOn(clipboard, "writeSync").mockImplementation(((value: string) => {
+    captured.command = value
+  }) as never)
+  return captured
+}
+
+beforeEach(() => {
+  state.models = catalog(["claude-opus-4.6", "claude-haiku-4.5"])
+  state.is1MContext = false
+})
+
+afterEach(() => {
+  mock.restore()
+  state.models = undefined
+  state.is1MContext = false
+})
+
+describe("Claude Code interactive setup", () => {
+  it("generates an env script carrying the selected models and server URL", async () => {
+    stubPrompts(["claude-opus-4.6", "claude-haiku-4.5"])
+    const captured = captureClipboard()
+
+    await setupClaudeCodeEnv(SERVER_URL)
+
+    expect(captured.command).toContain(SERVER_URL)
+    expect(captured.command).toContain("ANTHROPIC_MODEL=claude-opus-4.6")
+    expect(captured.command).toContain(
+      "ANTHROPIC_DEFAULT_SONNET_MODEL=claude-opus-4.6",
+    )
+    expect(captured.command).toContain(
+      "ANTHROPIC_SMALL_FAST_MODEL=claude-haiku-4.5",
+    )
+    expect(captured.command).toContain(
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4.5",
+    )
+    expect(captured.command).toContain("ANTHROPIC_AUTH_TOKEN=dummy")
+    expect(captured.command).toContain("DISABLE_NON_ESSENTIAL_MODEL_CALLS=1")
+    expect(captured.command).toContain(
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+    )
+  })
+
+  it("enables 1M context when a -1m model is selected", async () => {
+    state.models = catalog(["claude-opus-4.6-1m"])
+    stubPrompts(["claude-opus-4.6-1m", "claude-opus-4.6-1m"])
+    captureClipboard()
+
+    await setupClaudeCodeEnv(SERVER_URL)
+
+    expect(state.is1MContext).toBe(true)
+  })
+
+  it("leaves 1M context off for a regular model", async () => {
+    stubPrompts(["claude-opus-4.6", "claude-haiku-4.5"])
+    captureClipboard()
+
+    await setupClaudeCodeEnv(SERVER_URL)
+
+    expect(state.is1MContext).toBe(false)
+  })
+
+  it("does not clear a 1M flag already set from the environment", async () => {
+    state.is1MContext = true
+    stubPrompts(["claude-opus-4.6", "claude-haiku-4.5"])
+    captureClipboard()
+
+    await setupClaudeCodeEnv(SERVER_URL)
+
+    expect(state.is1MContext).toBe(true)
+  })
+
+  it("falls back to logging when the clipboard is unavailable", async () => {
+    stubPrompts(["claude-opus-4.6", "claude-haiku-4.5"])
+    spyOn(clipboard, "writeSync").mockImplementation((() => {
+      throw new Error("no clipboard")
+    }) as never)
+    const logSpy = spyOn(consola, "log").mockImplementation(
+      (() => undefined) as never,
+    )
+
+    await setupClaudeCodeEnv(SERVER_URL)
+
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    expect(String(logSpy.mock.calls[0]?.[0])).toContain(
+      "ANTHROPIC_MODEL=claude-opus-4.6",
+    )
+  })
+
+  it("prompts exactly twice", async () => {
+    const promptSpy = stubPrompts(["claude-opus-4.6", "claude-haiku-4.5"])
+    captureClipboard()
+
+    await setupClaudeCodeEnv(SERVER_URL)
+
+    expect(promptSpy).toHaveBeenCalledTimes(2)
+  })
+})
