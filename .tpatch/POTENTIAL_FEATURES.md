@@ -82,6 +82,19 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ---
 
+## `runServer` length vs the `max-lines-per-function` rule
+
+- **Status**: cleanup — extract, do **not** relax the rule
+- **File**: `src/start.ts` (`runServer`)
+- **Issue**: `runServer` sits at 99 of the allowed 100 lines, so the next startup addition will fail lint. The rule comes from the shared `@echristian/eslint-config` and is configured `max: 100, skipBlankLines: true, skipComments: true` — the count is 99 lines of *real code*, not formatting.
+- **Verdict — the rule is flagging a true positive.** `runServer` currently owns at least seven responsibilities: proxy/logging setup, option-to-state transfer, auth bootstrap, catalog and scheduler startup, 1M-context env detection, Claude Code interactive setup, and server listen plus dev SIGINT handling. **The `if (options.claudeCode)` block alone is 51 of the 99 lines — more than half the function.**
+- **Why that block is the right extraction**: it is opt-in behind a CLI flag, it is *interactive* (two `consola.prompt` calls plus a clipboard write), and it is a completely different concern from starting an HTTP server. It is also untestable where it sits, because driving it would block on prompts. Extracting `setupClaudeCodeEnv(serverUrl)` drops `runServer` to roughly 48 lines, makes the Claude Code flow independently testable, and restores headroom for future startup wiring.
+- **Why not relax the rule**: `max-lines-per-function` is inherited from an upstream shared config, so relaxing it means adding a local override to `eslint.config.js` — a fork customization that must be maintained across upstream bumps. Worse, the override is **global**: loosening the threshold to accommodate one function would mask genuine cases everywhere else in the codebase. The surrounding config is not unreasonably strict either (`max-lines` 800, `complexity` 16), so 100 is a normal threshold rather than an outlier worth fighting.
+- **Risk**: low and bounded. The block is contiguous and self-contained — it reads `state.models` and `serverUrl` and writes `state.is1MContext`, all module-scoped — so the move is mechanical, and only `--claude-code` users are in the blast radius.
+- **Trigger to file**: the next change that needs a line in `runServer`, or any work on the Claude Code onboarding flow.
+
+---
+
 ## How to use this file
 
 When evidence for one of these flips from "could happen" to "happened in production" (a log line, a user report, a failing test, or a Copilot proxy change), promote it:
