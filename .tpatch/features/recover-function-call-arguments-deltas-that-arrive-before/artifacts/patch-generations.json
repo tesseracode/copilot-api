@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "feature": "recover-function-call-arguments-deltas-that-arrive-before",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_015d9857cdc8",
+      "kind": "record",
+      "patch_sha256": "8d68c65535472e40a9189450dbf1165056c5f9fb6b70f0f43e261b3a6d106b35",
+      "git_patch_id": "68f6f9bb5cdafc8dfa1b71679794965615d1be4a",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "76a9313790f8b6514753c49082be2da77d89451ebaae9b206b2b56c812e106d5",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "422b7bfe8228cf2b81cc6faa9165dc1cc45944fa",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/services/copilot/create-responses.ts",
+          "tests/responses-stream-delta-before-added.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/services/copilot/create-responses.ts",
+        "tests/responses-stream-delta-before-added.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

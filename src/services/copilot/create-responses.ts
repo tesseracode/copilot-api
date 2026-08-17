@@ -325,6 +325,11 @@ export interface ResponsesStreamState {
   toolCallIndex: number
   toolCallsByCallId: Partial<Record<string, ResponsesStreamToolCall>>
   toolCallsByOutputIndex: Partial<Record<number, ResponsesStreamToolCall>>
+  /**
+   * Arguments deltas that arrived before the tool call existed. Live deltas
+   * carry neither call_id nor name, so output_index is the only usable key.
+   */
+  orphanArgumentsByOutputIndex: Map<number, string>
   fallbackId: string
   created: number
   refusalSeen: boolean
@@ -336,6 +341,7 @@ export function createResponsesStreamState(): ResponsesStreamState {
     toolCallIndex: 0,
     toolCallsByCallId: {},
     toolCallsByOutputIndex: {},
+    orphanArgumentsByOutputIndex: new Map(),
     fallbackId: `chatcmpl-${randomUUID()}`,
     created: Math.floor(Date.now() / 1000),
     refusalSeen: false,
@@ -595,6 +601,24 @@ function* handleRefusalDeltaEvent(
     finishReason: null,
   })
 }
+/**
+ * Consumes any deltas buffered before the tool call was identifiable. The
+ * buffer is cleared on use so it can never be applied twice, and it is
+ * ignored when the item already carries the buffered text.
+ */
+function mergeOrphanArguments(
+  streamState: ResponsesStreamState,
+  outputIndex: number | undefined,
+  itemArguments: string,
+): string {
+  if (outputIndex === undefined) return itemArguments
+  const buffered = streamState.orphanArgumentsByOutputIndex.get(outputIndex)
+  if (buffered === undefined) return itemArguments
+  streamState.orphanArgumentsByOutputIndex.delete(outputIndex)
+  if (itemArguments.startsWith(buffered)) return itemArguments
+  return buffered + itemArguments
+}
+
 function* handleOutputItemAddedEvent(
   streamState: ResponsesStreamState,
   data: ResponsesStreamEventData,
@@ -602,9 +626,14 @@ function* handleOutputItemAddedEvent(
   if (data.item?.type !== "function_call") {
     return
   }
+  const initialArguments = mergeOrphanArguments(
+    streamState,
+    data.output_index,
+    data.item.arguments ?? "",
+  )
   const toolCall = getOrCreateToolCall(streamState, {
     callId: data.item.call_id,
-    initialArguments: data.item.arguments ?? "",
+    initialArguments,
     name: data.item.name,
     outputIndex: data.output_index,
   })
@@ -612,7 +641,7 @@ function* handleOutputItemAddedEvent(
     return
   }
   yield makeChunk(streamState, {
-    delta: getNewToolCallDelta(toolCall.toolCall, data.item.arguments ?? ""),
+    delta: getNewToolCallDelta(toolCall.toolCall, initialArguments),
     finishReason: null,
   })
 }
@@ -639,6 +668,16 @@ function* handleFunctionCallArgumentsDeltaEvent(
     outputIndex: data.output_index,
   })
   if (!toolCall) {
+    // The tool call is not identifiable yet: live deltas carry neither
+    // call_id nor name. Hold the text until output_item.added names it,
+    // rather than dropping it and desyncing the accumulator.
+    if (data.output_index !== undefined) {
+      streamState.orphanArgumentsByOutputIndex.set(
+        data.output_index,
+        (streamState.orphanArgumentsByOutputIndex.get(data.output_index) ?? "")
+          + data.delta,
+      )
+    }
     return
   }
   yield makeChunk(streamState, {
@@ -680,6 +719,11 @@ function* handleOutputItemDoneEvent(
 ): Generator<ChatCompletionChunk> {
   if (data.item?.type !== "function_call") {
     return
+  }
+  // item.arguments is complete here, so any leftover buffer is stale and must
+  // not leak into a later item that reuses this output_index.
+  if (data.output_index !== undefined) {
+    streamState.orphanArgumentsByOutputIndex.delete(data.output_index)
   }
   const toolCall = getExistingOrCreateCompletedToolCall(streamState, data)
   if (!toolCall) {

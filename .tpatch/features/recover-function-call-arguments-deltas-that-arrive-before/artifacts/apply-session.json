@@ -1,0 +1,8 @@
+{
+  "slug": "recover-function-call-arguments-deltas-that-arrive-before",
+  "completed_at": "2026-08-17T23:48:28Z",
+  "base_commit": "422b7bfe8228cf2b81cc6faa9165dc1cc45944fa",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 341 tests, build pass; 10 new tests verified to fail 4 against the unfixed assembler, including the Anthropic-path case"
+}
