@@ -1,0 +1,27 @@
+{
+  "id": "recover-function-call-arguments-deltas-that-arrive-before",
+  "slug": "recover-function-call-arguments-deltas-that-arrive-before",
+  "title": "Recover function_call_arguments deltas that arrive before output_item.added instead of dropping them into corrupt tool arguments. A synthetic run of delta then added then delta then done through translateResponsesStreamEvent assembles \":1}\" on the client instead of {\"a\":1}, and the done event cannot repair it because syncToolArguments sees that the complete arguments do not start with the streamed prefix and the divergence guard deliberately preserves the broken prefix. Live capture on gpt-5.3-codex shows Copilot honours spec ordering today with zero violations across 14 deltas, so this is latent, but those deltas carry neither name nor call_id and identify their tool call only by output_index, so any ordering change would make tool call creation impossible rather than merely lossy. Buffer orphan deltas by output_index and flush them when output_item.added creates the tool call, so the normal ordering path is byte-for-byte unchanged and only the racing path behaves differently.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-08-17T23:45:05Z",
+  "updated_at": "2026-08-17T23:48:32Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-08-17T23:48:28Z",
+    "base_commit": "422b7bfe8228cf2b81cc6faa9165dc1cc45944fa",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "anthropic-beta-1m-detection",
+      "kind": "hard"
+    },
+    {
+      "slug": "responses-stream-arg-divergence-guard",
+      "kind": "hard"
+    }
+  ]
+}
