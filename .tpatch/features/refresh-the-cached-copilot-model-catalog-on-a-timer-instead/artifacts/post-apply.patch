@@ -1,0 +1,461 @@
+diff --git a/README.md b/README.md
+index a064d91..eb34aa3 100644
+--- a/README.md
++++ b/README.md
+@@ -182,6 +182,32 @@ The following command line options are available for the `start` command:
+ | --claude-code  | Generate a command to launch Claude Code with Copilot API config              | false      | -c    |
+ | --show-token   | Show GitHub and Copilot tokens on fetch and refresh                           | false      | none  |
+ | --proxy-env    | Initialize proxy from environment variables                                   | false      | none  |
++| --catalog-refresh-minutes | Minutes between model catalog refreshes. `0` pins the startup snapshot | 360 | none |
++
++#### Model catalog refresh
++
++The model catalog is loaded at startup and then refreshed every 6 hours by
++default, matching the `cache-control: private, max-age=21600` hint upstream
++serves with `/models`. Without refresh a long-running proxy can never route to a
++model added after boot.
++
++A refresh that changes the catalog is logged at info level with the added and
++removed model IDs, because adopting a change silently would move requests
++between the native Responses, Responses-translation, and Chat paths with no
++operator signal. A failed refresh logs a warning and keeps the previous snapshot
++serving traffic.
++
++Pass `--catalog-refresh-minutes 0` to disable refresh and pin the startup
++snapshot. This is the right setting for compatibility canaries and any run that
++needs a fixed catalog for the whole session.
++
++Every refresh updates `X-Copilot-API-Catalog` and
++`X-Copilot-API-Catalog-Observed-At` (see [Proxy Provenance
++Headers](#proxy-provenance-headers)), so a mid-process catalog change is always
++attributable after the fact. The observation timestamp advances on every
++successful refresh even when the content is unchanged, which is what
++distinguishes "upstream did not change" from "this process has not looked
++again".
+ 
+ ### Auth Command Options
+ 
+diff --git a/src/services/copilot/catalog-scheduler.ts b/src/services/copilot/catalog-scheduler.ts
+new file mode 100644
+index 0000000..86b743d
+--- /dev/null
++++ b/src/services/copilot/catalog-scheduler.ts
+@@ -0,0 +1,122 @@
++import consola from "consola"
++
++import { state } from "~/lib/state"
++import { cacheModels } from "~/lib/utils"
++
++/**
++ * Upstream serves /models with `cache-control: private, max-age=21600`, so a
++ * six-hour cadence matches the provider's own expectation for how long a
++ * catalog snapshot stays valid.
++ */
++export const DEFAULT_CATALOG_REFRESH_MS = 6 * 60 * 60 * 1000
++
++type CatalogUpdater = () => Promise<void>
++
++interface CatalogSchedulerOptions {
++  /** Refresh cadence in milliseconds. Zero or negative disables refresh. */
++  intervalMs?: number
++  updater?: CatalogUpdater
++}
++
++let refreshPromise: Promise<void> | undefined
++let refreshTimer: ReturnType<typeof setTimeout> | undefined
++let catalogUpdater: CatalogUpdater = cacheModels
++let refreshIntervalMs = DEFAULT_CATALOG_REFRESH_MS
++let shuttingDown = false
++let shutdownHandlersInstalled = false
++
++function currentModelIds(): Array<string> {
++  return (state.models?.data ?? []).map((model) => model.id)
++}
++
++/**
++ * Adopting a catalog change silently would move requests between the native
++ * Responses, Responses-translation and Chat paths with no operator signal, so
++ * every routing-relevant change is named explicitly.
++ */
++function reportCatalogChange(
++  previousIds: Array<string>,
++  previousFingerprint: string | undefined,
++): void {
++  if (state.modelsFingerprint === previousFingerprint) return
++
++  const nextIds = currentModelIds()
++  const previous = new Set(previousIds)
++  const next = new Set(nextIds)
++  const added = nextIds.filter((id) => !previous.has(id))
++  const removed = previousIds.filter((id) => !next.has(id))
++
++  consola.info(
++    `Copilot catalog changed (${nextIds.length} models): added [${
++      added.join(", ") || "none"
++    }], removed [${removed.join(", ") || "none"}]`,
++  )
++}
++
++function refreshCatalog(): Promise<void> {
++  refreshPromise ??= (() => {
++    const previousIds = currentModelIds()
++    const previousFingerprint = state.modelsFingerprint
++    return catalogUpdater()
++      .then(() => {
++        reportCatalogChange(previousIds, previousFingerprint)
++      })
++      .catch((error: unknown) => {
++        consola.warn(
++          "Failed to refresh Copilot model catalog; keeping the previous snapshot:",
++          error,
++        )
++      })
++      .finally(() => {
++        refreshPromise = undefined
++      })
++  })()
++  return refreshPromise
++}
++
++function scheduleNextRefresh(): void {
++  if (shuttingDown || refreshIntervalMs <= 0) return
++  refreshTimer = setTimeout(() => {
++    void refreshCatalog().finally(scheduleNextRefresh)
++  }, refreshIntervalMs)
++  refreshTimer.unref()
++}
++
++/**
++ * Starts periodic catalog refresh. The startup snapshot is already loaded by
++ * `cacheModels()`, so this only schedules subsequent refreshes.
++ */
++export function startCatalogScheduler(
++  options: CatalogSchedulerOptions = {},
++): void {
++  shuttingDown = false
++  refreshIntervalMs = options.intervalMs ?? DEFAULT_CATALOG_REFRESH_MS
++  catalogUpdater = options.updater ?? cacheModels
++
++  if (refreshIntervalMs <= 0) {
++    consola.info(
++      "Copilot catalog refresh disabled; pinning the startup snapshot",
++    )
++    return
++  }
++
++  if (!refreshTimer) scheduleNextRefresh()
++
++  if (!shutdownHandlersInstalled) {
++    shutdownHandlersInstalled = true
++    for (const signal of ["SIGINT", "SIGTERM"] as const) {
++      process.once(signal, stopCatalogScheduler)
++    }
++  }
++}
++
++export function stopCatalogScheduler(): void {
++  shuttingDown = true
++  if (refreshTimer) clearTimeout(refreshTimer)
++  refreshTimer = undefined
++}
++
++/** Triggers a refresh immediately, sharing any refresh already in flight. */
++export function refreshCatalogNow(): Promise<void> {
++  return refreshCatalog()
++}
+diff --git a/src/start.ts b/src/start.ts
+index 55448a7..5416edd 100644
+--- a/src/start.ts
++++ b/src/start.ts
+@@ -13,6 +13,7 @@ import { state } from "./lib/state"
+ import { setupCopilotToken, setupGitHubToken } from "./lib/token"
+ import { cacheModels, cacheVSCodeVersion } from "./lib/utils"
+ import { server } from "./server"
++import { startCatalogScheduler } from "./services/copilot/catalog-scheduler"
+ import { startPricingScheduler } from "./services/copilot/pricing-scheduler"
+ 
+ interface RunServerOptions {
+@@ -28,6 +29,7 @@ interface RunServerOptions {
+   proxyEnv: boolean
+   hideInternal: boolean
+   modelFilter?: string
++  catalogRefreshMinutes: number
+ }
+ 
+ export async function runServer(options: RunServerOptions): Promise<void> {
+@@ -64,6 +66,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
+ 
+   await setupCopilotToken()
+   await cacheModels()
++  startCatalogScheduler({ intervalMs: options.catalogRefreshMinutes * 60_000 })
+   await startPricingScheduler()
+ 
+   const modelCount = state.models?.data.length ?? 0
+@@ -224,6 +227,12 @@ export const start = defineCommand({
+       description:
+         "Filter /models response to only show models from a specific vendor (e.g. anthropic, openai)",
+     },
++    "catalog-refresh-minutes": {
++      type: "string",
++      default: "360",
++      description:
++        "Minutes between model catalog refreshes (default 360, matching the upstream 6h cache hint). Use 0 to pin the startup snapshot",
++    },
+   },
+   run({ args }) {
+     const rateLimitRaw = args["rate-limit"]
+@@ -231,6 +240,15 @@ export const start = defineCommand({
+       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+       rateLimitRaw === undefined ? undefined : Number.parseInt(rateLimitRaw, 10)
+ 
++    const catalogRefreshRaw = Number.parseInt(
++      args["catalog-refresh-minutes"],
++      10,
++    )
++    const catalogRefreshMinutes =
++      Number.isNaN(catalogRefreshRaw) || catalogRefreshRaw < 0 ?
++        360
++      : catalogRefreshRaw
++
+     return runServer({
+       port: Number.parseInt(args.port, 10),
+       verbose: args.verbose,
+@@ -244,6 +262,7 @@ export const start = defineCommand({
+       proxyEnv: args["proxy-env"],
+       hideInternal: args["hide-internal"],
+       modelFilter: args["model-filter"],
++      catalogRefreshMinutes,
+     })
+   },
+ })
+diff --git a/tests/catalog-scheduler.test.ts b/tests/catalog-scheduler.test.ts
+new file mode 100644
+index 0000000..850ffe3
+--- /dev/null
++++ b/tests/catalog-scheduler.test.ts
+@@ -0,0 +1,225 @@
++import { afterEach, beforeEach, describe, expect, it } from "bun:test"
++
++import type { ModelsResponse } from "~/services/copilot/get-models"
++
++import { catalogFingerprint } from "~/lib/build-info"
++import { state } from "~/lib/state"
++import {
++  DEFAULT_CATALOG_REFRESH_MS,
++  refreshCatalogNow,
++  startCatalogScheduler,
++  stopCatalogScheduler,
++} from "~/services/copilot/catalog-scheduler"
++
++function catalog(ids: Array<string>): ModelsResponse {
++  return {
++    object: "list",
++    data: ids.map((id) => ({
++      id,
++      name: id,
++      object: "model",
++      vendor: "openai",
++      version: "1",
++      preview: false,
++      model_picker_enabled: true,
++      supported_endpoints: ["/responses"],
++      capabilities: {
++        family: "gpt",
++        limits: {},
++        object: "model_capabilities",
++        supports: {},
++        tokenizer: "test",
++        type: "chat",
++      },
++    })),
++  }
++}
++
++/** Mirrors what cacheModels() does, without touching the network. */
++function applyCatalog(ids: Array<string>): void {
++  const models = catalog(ids)
++  state.models = models
++  state.modelsObservedAt = new Date().toISOString()
++  state.modelsFingerprint = catalogFingerprint(models.data)
++}
++
++beforeEach(() => {
++  applyCatalog(["gpt-a"])
++})
++
++afterEach(() => {
++  stopCatalogScheduler()
++  state.models = undefined
++  state.modelsFingerprint = undefined
++  state.modelsObservedAt = undefined
++})
++
++describe("catalog scheduler", () => {
++  it("matches the upstream six hour cache hint by default", () => {
++    expect(DEFAULT_CATALOG_REFRESH_MS).toBe(21_600_000)
++  })
++
++  it("does not refresh on start, preserving the startup snapshot", () => {
++    let calls = 0
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => {
++        calls += 1
++        return Promise.resolve()
++      },
++    })
++    expect(calls).toBe(0)
++  })
++
++  it("replaces the snapshot and updates both provenance markers", async () => {
++    const before = state.modelsFingerprint
++    const observedBefore = state.modelsObservedAt
++
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => {
++        applyCatalog(["gpt-a", "gpt-b"])
++        return Promise.resolve()
++      },
++    })
++    await Bun.sleep(2)
++    await refreshCatalogNow()
++
++    expect(state.models?.data).toHaveLength(2)
++    expect(state.modelsFingerprint).not.toBe(before)
++    expect(state.modelsObservedAt).not.toBe(observedBefore)
++  })
++
++  it("refreshes the observation timestamp even when content is identical", async () => {
++    const fingerprintBefore = state.modelsFingerprint
++    const observedBefore = state.modelsObservedAt
++
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => {
++        applyCatalog(["gpt-a"])
++        return Promise.resolve()
++      },
++    })
++    await Bun.sleep(2)
++    await refreshCatalogNow()
++
++    expect(state.modelsFingerprint).toBe(fingerprintBefore)
++    expect(state.modelsObservedAt).not.toBe(observedBefore)
++  })
++
++  it("keeps the previous snapshot when a refresh fails", async () => {
++    const fingerprintBefore = state.modelsFingerprint
++
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => Promise.reject(new Error("offline")),
++    })
++    await refreshCatalogNow()
++
++    expect(state.models?.data).toHaveLength(1)
++    expect(state.modelsFingerprint).toBe(fingerprintBefore)
++  })
++
++  it("does not reject the caller when a refresh fails", async () => {
++    let rejected = false
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => Promise.reject(new Error("offline")),
++    })
++    try {
++      await refreshCatalogNow()
++    } catch {
++      rejected = true
++    }
++    expect(rejected).toBe(false)
++  })
++
++  it("recovers on the next refresh after a failure", async () => {
++    let shouldFail = true
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => {
++        if (shouldFail) return Promise.reject(new Error("offline"))
++        applyCatalog(["gpt-a", "gpt-c"])
++        return Promise.resolve()
++      },
++    })
++
++    await refreshCatalogNow()
++    expect(state.models?.data).toHaveLength(1)
++
++    shouldFail = false
++    await refreshCatalogNow()
++    expect(state.models?.data).toHaveLength(2)
++  })
++
++  it("shares a single in-flight refresh across concurrent triggers", async () => {
++    let calls = 0
++    let release: (() => void) | undefined
++    startCatalogScheduler({
++      intervalMs: 60_000,
++      updater: () => {
++        calls += 1
++        return new Promise<void>((resolve) => {
++          release = resolve
++        })
++      },
++    })
++
++    const triggers = [refreshCatalogNow(), refreshCatalogNow()]
++    expect(calls).toBe(1)
++    if (!release) throw new Error("Expected a pending refresh")
++    release()
++    await Promise.all(triggers)
++
++    expect(calls).toBe(1)
++  })
++
++  it("never schedules a refresh when the interval is zero", async () => {
++    let calls = 0
++    startCatalogScheduler({
++      intervalMs: 0,
++      updater: () => {
++        calls += 1
++        return Promise.resolve()
++      },
++    })
++
++    await Bun.sleep(20)
++    expect(calls).toBe(0)
++  })
++
++  it("refreshes on the configured interval", async () => {
++    let calls = 0
++    startCatalogScheduler({
++      intervalMs: 5,
++      updater: () => {
++        calls += 1
++        applyCatalog(["gpt-a"])
++        return Promise.resolve()
++      },
++    })
++
++    await Bun.sleep(60)
++    expect(calls).toBeGreaterThan(0)
++  })
++
++  it("stops refreshing once the scheduler is stopped", async () => {
++    let calls = 0
++    startCatalogScheduler({
++      intervalMs: 5,
++      updater: () => {
++        calls += 1
++        return Promise.resolve()
++      },
++    })
++
++    await Bun.sleep(40)
++    stopCatalogScheduler()
++    const callsAtStop = calls
++
++    await Bun.sleep(40)
++    expect(calls).toBe(callsAtStop)
++  })
++})

@@ -1,0 +1,8 @@
+{
+  "slug": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
+  "completed_at": "2026-08-17T08:59:53Z",
+  "base_commit": "ad3717c3839fa294ca2b5f215a35a57d5d95633a",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 325 tests, build pass; live run confirmed pinned mode holds the snapshot and a 1-minute interval advanced observed-at by 60s with the fingerprint unchanged and no false change log"
+}
