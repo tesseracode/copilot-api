@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "feature": "stop-injecting-max-tokens-when-the-client-already-supplied",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_434e5f815ffd",
+      "kind": "record",
+      "patch_sha256": "05f78cae2d5a5f49f846f2551b806c72ba4d620c8c535505e25a9a3c965cc3aa",
+      "git_patch_id": "d6121c44c7f2b84ea3e58acf303dc48fd3f93729",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "6bd7b83beae107395339bcee4db91ca9d92fa695d2c71b2c055b40dfd10eab13",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "8552825973e6238c0f0b4d95cef4e26e48c487bb",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/routes/chat-completions/handler.ts",
+          "src/services/copilot/create-chat-completions.ts",
+          "tests/chat-token-limit-injection.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/routes/chat-completions/handler.ts",
+        "src/services/copilot/create-chat-completions.ts",
+        "tests/chat-token-limit-injection.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

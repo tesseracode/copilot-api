@@ -1,0 +1,8 @@
+{
+  "slug": "stop-injecting-max-tokens-when-the-client-already-supplied",
+  "completed_at": "2026-08-17T08:44:28Z",
+  "base_commit": "8552825973e6238c0f0b4d95cef4e26e48c487bb",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 314 tests, build pass; 7 new tests verified to fail 4/7 against the pre-fix guard"
+}

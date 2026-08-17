@@ -70,6 +70,18 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ---
 
+## WebSocket Responses transport (`ws:/responses`)
+
+- **Status**: measured, deliberately not implemented
+- **File**: `src/lib/endpoint-routing.ts` (`resolveEndpoint`)
+- **Measurement (2026-08-17, live catalog, 42 models)**: 8 models advertise `ws:/responses` — `gpt-5.3-codex`, `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5`, `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5-mini`. Endpoint form counts: `/chat/completions` 14, `/responses` 12, `ws:/responses` 8, `/v1/messages` 7.
+- **Decisive fact**: every model advertising `ws:/responses` also advertises plain `/responses`. There is no ws-only model, so WebSocket support unlocks **zero** capability that HTTP does not already provide. It would be a latency/transport optimization only.
+- **Current handling is already correct**: `resolveEndpoint` matches on `endpoints.includes("/responses")`, which is true for all 8 models, so the `ws:` entry is ignored harmlessly. No bug, no dead path.
+- **Cost if implemented**: a second transport with connection lifecycle, reconnect/backoff, multiplexing, backpressure, and abort semantics — duplicating the SSE pipeline (`responses-stream-wrapper.ts`, `streaming.ts`) for no functional gain.
+- **Trigger to file**: a model appears that advertises `ws:/responses` *without* `/responses`, or a measured latency/throughput problem attributable to SSE that a WebSocket would fix.
+
+---
+
 ## How to use this file
 
 When evidence for one of these flips from "could happen" to "happened in production" (a log line, a user report, a failing test, or a Copilot proxy change), promote it:
