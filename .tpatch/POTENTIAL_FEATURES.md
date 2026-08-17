@@ -8,11 +8,14 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 1. delta-before-added race in `function_call_arguments`
 
-- **Status**: latent
-- **File**: `src/services/copilot/create-responses.ts` (`getOrCreateToolCall`, around line 472)
-- **Issue**: `response.function_call_arguments.delta` carries `call_id` / `output_index` / `delta` but typically does **not** carry `name`. `getOrCreateToolCall` requires both `callId` AND `name` to materialise a new tool call, so if a delta arrives before `response.output_item.added` (which carries `name`), `getExistingToolCall` misses it, then `getOrCreateToolCall` returns `undefined`, and the delta is silently dropped. Today this depends on the OpenAI spec ordering (`output_item.added` precedes deltas); Copilot's proxy is assumed to honour it.
-- **Possible solution**: relax `getOrCreateToolCall` to allow creation from `callId + outputIndex` alone, deferring `name` assignment until `output_item.added` lands; emit a "name unknown" placeholder if a downstream chunk needs it before the added event. Alternatively, buffer orphan deltas in `streamState.pendingByCallId` and flush them once `output_item.added` is seen.
-- **Trigger to file**: any log line confirming a delta arrived without a corresponding tool call entry, or a Copilot proxy change that re-orders events.
+- **Status**: latent — **confirmed by synthetic reproduction (2026-08-17), no live trigger observed**
+- **File**: `src/services/copilot/create-responses.ts` (`getOrCreateToolCall`, around line 491)
+- **Issue**: `getOrCreateToolCall` requires both `callId` AND `name` to materialise a new tool call, so a delta arriving before `response.output_item.added` is dropped: `getExistingToolCall` misses it, then `getOrCreateToolCall` returns `undefined`.
+- **Impact is worse than a dropped delta — it is silent corruption.** A synthetic run of `delta('{"a"')` → `added()` → `delta(':1}')` → `done('{"a":1}')` through `translateResponsesStreamEvent` assembles `":1}"` on the client instead of `{"a":1}` — invalid JSON, so the tool call fails. **The `done` event does not recover it**: `syncToolArguments` finds that `'{"a":1}'.startsWith('":1}')` is false, so the argument-divergence guard fires ("Tool call argument stream diverged; preserving streamed prefix") and deliberately keeps the broken prefix. The guard added by `responses-stream-arg-divergence-guard` therefore converts a recoverable desync into permanent corruption in this specific ordering.
+- **Live event shape (2026-08-17, `gpt-5.3-codex`, `tool_choice: required`, 14 deltas)**: `deltaBeforeAddedViolations: 0` — Copilot honours spec ordering today, with `output_item.added` carrying `call_id` and `name` before every delta. But **deltas carry neither `name` nor `call_id`** (`deltasCarryingName: 0`, `deltasCarryingCallId: 0`); they identify their tool call *solely* by `output_index`. So if the ordering ever flipped, `getOrCreateToolCall` could not possibly succeed — it would be missing both required fields, not just `name`.
+- **Note for entry 2**: the same capture shows `output_index` 0 was a reasoning item and 1 was the function call, confirming indices are shared across item types. No collision occurred only because index 0 was never registered as a tool call.
+- **Possible solution**: allow creation keyed on `outputIndex` alone, deferring `name` until `output_item.added` lands; or buffer orphan deltas by `output_index` and flush them when the added event arrives. Any fix must also let `syncToolArguments` distinguish "we missed a prefix" from a genuine divergence, otherwise the guard will keep suppressing the repair.
+- **Trigger to file**: a Copilot proxy change that re-orders events, or any occurrence of the divergence warning in production logs alongside a failed tool call.
 
 ---
 
