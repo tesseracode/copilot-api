@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-08-13T06:59:15Z",
-  "updated_at": "2026-08-14T03:06:41Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:35Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-08-14T03:06:37Z",
@@ -27,5 +27,15 @@
       "slug": "expose-a-stable-non-secret-copilot-api-translation-contract",
       "kind": "hard"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:35Z",
+    "passed": false,
+    "recipe_hash_at_verify": "111587450c9ea631a8f526245c41e9c79a260fed91025017ca6efd1e17b82759",
+    "patch_hash_at_verify": "44f30e92a04bd05dd6d973f6659415910a25da95ca140a1ca7221c54f0ea3c5c",
+    "parent_snapshot": {
+      "expose-a-stable-non-secret-copilot-api-translation-contract": "applied",
+      "native-responses-route": "applied"
+    }
+  }
 }

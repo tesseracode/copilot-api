@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-08-18T04:20:44Z",
-  "updated_at": "2026-08-18T04:22:54Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:37Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-08-18T04:22:49Z",
@@ -27,5 +27,16 @@
       "slug": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
       "kind": "hard"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:37Z",
+    "passed": false,
+    "recipe_hash_at_verify": "a4c04136135c48f43196c896e6eaed4576624a7d1673691edd724b3651cfd7bc",
+    "patch_hash_at_verify": "4ed50735d01c0f6600ec3bca11db424a7723dba3e4728d97f5556807204d04d7",
+    "parent_snapshot": {
+      "anthropic-beta-1m-detection": "applied",
+      "recover-function-call-arguments-deltas-that-arrive-before": "applied",
+      "refresh-the-cached-copilot-model-catalog-on-a-timer-instead": "applied"
+    }
+  }
 }

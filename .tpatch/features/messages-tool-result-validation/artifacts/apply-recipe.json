@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "messages-tool-result-validation",
   "operations": [
     {
       "type": "replace-in-file",

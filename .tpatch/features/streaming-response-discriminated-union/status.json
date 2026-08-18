@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-07-27T05:58:52Z",
-  "updated_at": "2026-07-29T14:22:34Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:31Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-29T14:22:44Z",
@@ -23,5 +23,11 @@
       "slug": "stream-failure-visibility",
       "kind": "soft"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:31Z",
+    "passed": false,
+    "recipe_hash_at_verify": "705f5ab4759b56ab0722056045f0469284d690a97f1647ce25e1ab0ef93ea8f8",
+    "patch_hash_at_verify": "b0ada2b960b0f99fe7bc0642b84fe54df4f44fa3dcdd60730f9980db90696ab3"
+  }
 }

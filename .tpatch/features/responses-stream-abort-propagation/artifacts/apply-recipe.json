@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "responses-stream-abort-propagation",
   "operations": [
     {
       "type": "replace-in-file",

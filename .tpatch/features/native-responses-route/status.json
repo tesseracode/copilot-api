@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-07-22T06:23:35Z",
-  "updated_at": "2026-07-23T04:14:09Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:34Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-23T04:14:11Z",
@@ -19,5 +19,14 @@
       "slug": "token-refresh-resilience",
       "kind": "hard"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:33Z",
+    "passed": false,
+    "recipe_hash_at_verify": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
+    "patch_hash_at_verify": "bf45f3e843e7fa29dae0e4bd9e1b9250c53d42c99ad4639300eef353de50c9ea",
+    "parent_snapshot": {
+      "token-refresh-resilience": "applied"
+    }
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "native-payload-sanitization",
   "operations": [
     {
       "type": "replace-in-file",

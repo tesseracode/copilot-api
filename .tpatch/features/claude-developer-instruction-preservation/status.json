@@ -2,11 +2,24 @@
   "id": "claude-developer-instruction-preservation",
   "slug": "claude-developer-instruction-preservation",
   "title": "Preserve OpenAI developer instructions when converting Chat requests to Claude Messages",
-  "state": "requested",
+  "state": "rejected",
   "compatibility": "unknown",
   "requested_at": "2026-07-30T04:37:22Z",
-  "updated_at": "2026-07-30T04:37:22Z",
-  "last_command": "add",
+  "updated_at": "2026-08-18T05:13:54Z",
+  "last_command": "reject",
   "apply": {},
-  "reconcile": {}
+  "reconcile": {},
+  "rejection": {
+    "reason": "premise-disproved",
+    "note": "Live measurement disproved the premise: Claude Chat passthrough already preserves developer instructions across Sonnet 4.6, Opus 4.8 and Haiku 4.5, so there is nothing to fix. Reopen only on an upstream regression or if native Messages rerouting returns.",
+    "actor": "jdbencardinop@unal.edu.co",
+    "evidence": [
+      {
+        "path": "request.md",
+        "sha256": "d44800fa742da2a44d9c22acaba12138dc363fc016e193ba17a8f40dd727adb5"
+      }
+    ],
+    "rejected_at": "2026-08-18T05:13:54Z",
+    "prior_state": "requested"
+  }
 }

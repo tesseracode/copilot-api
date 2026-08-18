@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-05-01T07:43:54Z",
-  "updated_at": "2026-07-21T13:54:07Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:33Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-21T13:54:09Z",
@@ -19,5 +19,11 @@
       "slug": "graceful-shutdown-fix",
       "kind": "soft"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:33Z",
+    "passed": false,
+    "recipe_hash_at_verify": "8764413bc005511afedfa7c7a7d14378654022b06e558865df8f9ff9dddaf638",
+    "patch_hash_at_verify": "cbca1c91bcad902009c526f0949cece63fa326185938ef8a15d32c3b873f9a37"
+  }
 }

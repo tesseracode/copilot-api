@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-07-27T05:58:52Z",
-  "updated_at": "2026-07-28T15:43:24Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:30Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-28T15:43:41Z",
@@ -23,5 +23,14 @@
       "slug": "responses-stream-error-events",
       "kind": "soft"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:29Z",
+    "passed": false,
+    "recipe_hash_at_verify": "d4843a5f5f568cd84556d7648b39bbeb2452112eb5fa075d468d8637069f123a",
+    "patch_hash_at_verify": "e0a91146fe0a771152488b190864c9cc414654adaaada7278c6ec62bb0bdf648",
+    "parent_snapshot": {
+      "sse-pump-consolidation": "applied"
+    }
+  }
 }
