@@ -39,11 +39,13 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 4. Incremental `usage` emission is dropped
 
-- **Status**: latent (minor)
-- **File**: `src/services/copilot/create-responses.ts` (`handleCompletedEvent`, around line 692)
-- **Issue**: `usage` is only translated and emitted on `response.completed`. If upstream begins sending interim `usage` data on other events (e.g. a future `response.output_item.done` carrying running token totals), the proxy drops it. Clients that update token-budget UIs from streaming `usage` would never see updates.
-- **Possible solution**: read `data.response?.usage` on every event that carries it (`in_progress`, `output_item.done`, `incomplete`, `failed`) and emit a chunk with the latest usage when it changes. Track last-seen usage on `streamState.lastUsage` to avoid emitting redundant chunks.
-- **Trigger to file**: a Copilot release note mentioning streaming usage, or a client request for live token counters during a stream.
+- **Status**: hypothetical — **do not implement speculatively (measured 2026-08-17)**
+- **File**: `src/services/copilot/create-responses.ts` (`handleCompletedEvent`, `handleFailedEvent`, `handleIncompleteEvent`)
+- **Correction to the original entry**: usage is **not** emitted only on `response.completed`. All three terminal handlers already translate it — `completed` (line 752), `failed` (781) and `incomplete` (814) — so `failed` and `incomplete` were never in the gap the entry described.
+- **Measured upstream behavior (`gpt-5.4-mini`)**: usage arrives on exactly one terminal event per stream and never incrementally. A 79-delta text stream produced usage on `response.completed` alone (23 in / 99 out / 122 total) out of ~89 events; `response.in_progress` and `response.output_item.done` carried none. A stream truncated by `max_output_tokens` produced usage only on `response.incomplete` (16 / 20 / 36), which the proxy already forwards. **There is no interim usage to drop.**
+- **The Anthropic path is fine too**: `src/routes/messages/stream-translation.ts:78,217` maps `prompt_tokens` minus cached tokens to `input_tokens`, `completion_tokens` to `output_tokens`, and preserves `cache_read_input_tokens`.
+- **Why implementing anyway would be harmful**: emitting usage on non-terminal chunks breaks the OpenAI convention that usage arrives in the final chunk. Clients that accumulate usage across chunks would double-count, so a speculative fix would create an active bug to guard a hypothetical one — the same trap as the rejected `getOrCreateToolCall` relaxation in entry 1.
+- **Trigger to file**: a capture showing usage on a non-terminal event, a Copilot release note introducing streaming usage, or a client that genuinely needs live token counters mid-stream.
 
 ---
 
