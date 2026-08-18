@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-07-24T03:57:43Z",
-  "updated_at": "2026-07-24T08:42:08Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:34Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-24T04:28:25Z",
@@ -23,5 +23,11 @@
       "slug": "copilot-pricing-node-runtime",
       "kind": "soft"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:34Z",
+    "passed": false,
+    "recipe_hash_at_verify": "fc725fec74f19e09cf822b06842705c48bdaf0d6009538e9eefe755c6dc97afe",
+    "patch_hash_at_verify": "33c480e4900ea55c5c6171fe051115b2d11b5c3e7a66a986bcccc6b85cc0658b"
+  }
 }

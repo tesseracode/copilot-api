@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-08-14T02:51:45Z",
-  "updated_at": "2026-08-17T08:59:58Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:36Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-08-17T08:59:53Z",
@@ -27,5 +27,16 @@
       "slug": "copilot-pricing-cache",
       "kind": "hard"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:35Z",
+    "passed": false,
+    "recipe_hash_at_verify": "f650566774d708e364558c7f19bd66eb4662ec5b380e229eadcd63dd7b5124f4",
+    "patch_hash_at_verify": "5575f302428fe6cc3b9de1a7499797b8821a6a4f1412f8f8b95f682975aa18b4",
+    "parent_snapshot": {
+      "copilot-pricing-cache": "applied",
+      "document-and-verify-the-native-copilot-responses-state": "applied",
+      "expose-a-stable-non-secret-copilot-api-translation-contract": "applied"
+    }
+  }
 }

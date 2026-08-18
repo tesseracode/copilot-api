@@ -368,3 +368,65 @@ but tpatch still does not natively model:
 Those gaps do not block the workflow, but they explain why this Part 3 and the mutation artifact
 are necessary. A future tpatch review/verification model could make this evidence structured rather
 than relying on retrospective prose.
+
+---
+
+## Part 4 — Workspace cleanup, August 2026
+
+Cleanup of the lifecycle and metadata debt left by the July review. Two items were resolved, one
+was found to be un-backfillable, and one turned out to be a much larger pre-existing condition.
+
+### Resolved
+
+**Stale requested features rejected.** `claude-developer-instruction-preservation` and
+`reasoning-roundtrip` were both moved to `rejected` with `--reason premise-disproved`, each with its
+own `request.md` recorded as content-hashed evidence. The first was disproved by live measurement
+showing Claude Chat passthrough already preserves developer instructions. The second was disproved
+on two counts: the malformed empty-ID reasoning item cannot originate from the current
+`/v1/messages` path, and its stated blocker ("Copilot must populate summaries") is stale — the real
+obstacle is that Anthropic history has no safe representation for a provider-issued opaque reasoning
+ID, its encrypted content and its provenance.
+
+**D7 recipe schema drift cleared (8 features).** Legacy `apply-recipe.json` files carried a
+`"version": 1` key the current schema rejects. Removing it and adding the `feature` key cleared all
+eight findings. The re-serialization expanded some single-line operations, but the operation types,
+paths and search/replace strings are byte-identical.
+
+### D2 cannot be backfilled honestly (24 features)
+
+`patch-generations.json` is missing for 24 pre-manifest features. Doctor recommends
+`tpatch feature patch refresh <slug>`, but that command **skips when the patch bytes are unchanged**
+("no patch byte change; refresh skipped") and therefore never creates the manifest. The only ways to
+force it would be to alter historical patch bytes or to re-record against the current tree, both of
+which would corrupt patches that are otherwise intact.
+
+Hand-authoring the manifests was rejected as worse than the gap. The schema carries
+`base_commit`, `git_patch_id`, and `capture.mode`/`pathspecs` — provenance that was never recorded
+for these features and cannot be reconstructed. Synthesizing it would make an audit trail look
+authoritative while being invented. **Accept D2 as legacy drift**: it means only that generation
+history is unavailable for pre-manifest features, which is simply true.
+
+### `tpatch verify --all` fails 53 of 56 — pre-existing and structural
+
+Discovered during this cleanup, not caused by it. `health-endpoint`, untouched for months, fails
+`post_apply_patch_replay_clean` exactly like the rest, which dates the condition well before the
+August work.
+
+The cause is that this fork's patches are cumulative. Each feature was recorded against the tree as
+it existed at the time, so replaying the stack from a clean upstream baseline fails once a later
+feature has touched the same file — the same overlap the `later-touch` warnings report on nearly
+every record. Two failure shapes dominate: `post_apply_patch_replay_clean` (the canonical patch no
+longer applies to a closure-replayed baseline) and `recipe_replay_clean` (an old recipe's
+`replace-in-file` anchor no longer exists, e.g. `responses-stream-arg-divergence-guard` against
+`create-responses.ts`).
+
+This does not indicate broken features. Every patch recorded in this session round-tripped cleanly
+against the working tree, and the repository's own gates — typecheck, lint, 352 tests, build — pass.
+It reflects the documented model that **the patch captures intent and the recipe is a point-in-time
+script**; when they disagree, the patch wins.
+
+Restoring a clean `verify --all` would mean re-recording the entire stack in dependency order
+against a fresh upstream baseline. That is a migration with real risk of losing or reordering intent,
+and it should be a deliberate decision with its own feature, not a side effect of metadata cleanup.
+Until then, treat `verify --all` as informational and rely on the per-feature round-trip validation
+that `tpatch record` already performs.

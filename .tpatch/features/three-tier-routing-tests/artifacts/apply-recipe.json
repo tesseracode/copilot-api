@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "three-tier-routing-tests",
   "operations": [
     {
       "type": "write-file",

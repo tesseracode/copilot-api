@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "responses-stream-arg-divergence-guard",
   "operations": [
     {
       "type": "replace-in-file",

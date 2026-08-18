@@ -5,12 +5,18 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-04-29T04:53:31Z",
-  "updated_at": "2026-04-29T06:26:58Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:20Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "base_commit": "df4378e0929a70e0a0bfbb1edfc6295a0b31b64b",
     "has_patch": true
   },
-  "reconcile": {}
+  "reconcile": {},
+  "verify": {
+    "verified_at": "2026-08-18T05:15:20Z",
+    "passed": false,
+    "recipe_hash_at_verify": "91d67293ce2ab565d96f07251df87a900f76e5ac8d5ffbd7c2485d593c100a01",
+    "patch_hash_at_verify": "208e07e13b33727bebf376146d32558ec7b080142d0c4c78697cda6dcee73b4a"
+  }
 }

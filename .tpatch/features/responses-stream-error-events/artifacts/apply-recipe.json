@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "responses-stream-error-events",
   "operations": [
     {
       "type": "replace-in-file",

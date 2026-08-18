@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "feature": "responses-stream-stable-ids-and-created",
   "operations": [
     {
       "type": "replace-in-file",

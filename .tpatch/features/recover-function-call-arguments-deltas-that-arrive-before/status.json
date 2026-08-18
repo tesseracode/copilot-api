@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-08-17T23:45:05Z",
-  "updated_at": "2026-08-17T23:48:32Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:26Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-08-17T23:48:28Z",
@@ -23,5 +23,15 @@
       "slug": "responses-stream-arg-divergence-guard",
       "kind": "hard"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:26Z",
+    "passed": false,
+    "recipe_hash_at_verify": "76a9313790f8b6514753c49082be2da77d89451ebaae9b206b2b56c812e106d5",
+    "patch_hash_at_verify": "8d68c65535472e40a9189450dbf1165056c5f9fb6b70f0f43e261b3a6d106b35",
+    "parent_snapshot": {
+      "anthropic-beta-1m-detection": "applied",
+      "responses-stream-arg-divergence-guard": "applied"
+    }
+  }
 }

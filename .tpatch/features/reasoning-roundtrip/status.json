@@ -2,11 +2,11 @@
   "id": "reasoning-roundtrip",
   "slug": "reasoning-roundtrip",
   "title": "Map inbound thinking blocks to reasoning input items for /responses API multi-turn: when an Anthropic-format assistant message contains thinking blocks that originated from GPT-5.x reasoning, translate them back to type=reasoning input items instead of plain text. Blocked until Copilot populates reasoning summaries.",
-  "state": "requested",
+  "state": "rejected",
   "compatibility": "unknown",
   "requested_at": "2026-04-28T23:59:19Z",
-  "updated_at": "2026-04-28T23:59:19Z",
-  "last_command": "add",
+  "updated_at": "2026-08-18T05:14:02Z",
+  "last_command": "reject",
   "apply": {},
   "reconcile": {},
   "depends_on": [
@@ -14,5 +14,18 @@
       "slug": "responses-via-messages",
       "kind": "hard"
     }
-  ]
+  ],
+  "rejection": {
+    "reason": "premise-disproved",
+    "note": "Measured against the live gateway: the malformed empty-ID reasoning item this feature was written to prevent cannot originate from the current /v1/messages path, because thinking is flattened into assistant text before translateRequestToResponses, and two-turn tool loops returned 200 with no reasoning input. Authentic provider-issued reasoning replays with 200 while an empty id is rejected locally with a structured 400, so the reported 502 did not come from this repository. The stated blocker is also stale: it is no longer 'Copilot must populate summaries' but that Anthropic history has no safe representation for a provider-issued opaque reasoning id, its encrypted content and its provenance. A future opaque reasoning-state carrier must be proposed as its own feature rather than resumed here.",
+    "actor": "jdbencardinop@unal.edu.co",
+    "evidence": [
+      {
+        "path": "request.md",
+        "sha256": "3d78b87e5bb8d1f75156b2d086ad7adbe674ac93bced9d1598f80831ee6dfc6e"
+      }
+    ],
+    "rejected_at": "2026-08-18T05:14:02Z",
+    "prior_state": "requested"
+  }
 }

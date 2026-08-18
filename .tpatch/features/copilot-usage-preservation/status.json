@@ -5,8 +5,8 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-07-22T06:23:35Z",
-  "updated_at": "2026-07-22T17:29:24Z",
-  "last_command": "record",
+  "updated_at": "2026-08-18T05:15:32Z",
+  "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-22T14:07:44Z",
@@ -19,5 +19,11 @@
       "slug": "three-tier-routing",
       "kind": "soft"
     }
-  ]
+  ],
+  "verify": {
+    "verified_at": "2026-08-18T05:15:32Z",
+    "passed": false,
+    "recipe_hash_at_verify": "dacd7a69fa0674afde9f89e898c009ba0e9f420406770088b331422ad748f524",
+    "patch_hash_at_verify": "5cfd6789a149291f1a2a8a71eb3cb03b363d0bdf3da65ee96b747f13d2b89ffc"
+  }
 }
