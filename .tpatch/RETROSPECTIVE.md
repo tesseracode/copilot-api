@@ -430,3 +430,148 @@ against a fresh upstream baseline. That is a migration with real risk of losing 
 and it should be a deliberate decision with its own feature, not a side effect of metadata cleanup.
 Until then, treat `verify --all` as informational and rely on the per-feature round-trip validation
 that `tpatch record` already performs.
+
+---
+
+## Part 5 — Report for the `tpatch` team (v0.15.1)
+
+Written to be sent as-is. All figures were measured on 2026-08-17 against `tpatch v0.15.1` in
+`tesseracode/copilot-api`, a long-lived fork with **56 tracked features** on a cumulative stack.
+
+### Context: what this repository looks like
+
+This is not a greenfield workspace. Features have accumulated over roughly five months, and many of
+them modify the same files — `README.md`, `src/services/copilot/create-responses.ts`,
+`src/start.ts`, `src/routes/models/route.ts`. Each feature's canonical patch was recorded against
+the tree as it existed at the time. The repository itself is healthy: `bun run typecheck`,
+`bun run lint:all`, 352 tests and `bun run build` all pass, and every patch recorded during the
+August work reported `Patch validated: round-trips cleanly against working tree`.
+
+### Finding 1 — `verify --all` reports zero passing features on a healthy repository
+
+```
+Summary: 0 passed, 53 failed, 3 skipped, 0 error
+```
+
+Failing blocking checks, aggregated:
+
+| Check | Failures |
+| ----- | -------- |
+| `post_apply_patch_replay_clean` | 38 |
+| `recipe_replay_clean` | 16 |
+| `write_file_preimage_fresh` | 6 |
+| `intent_files_present` | 1 |
+
+Because **no** feature passes, the signal carries no discriminating information — a genuinely broken
+feature would be indistinguishable from the other 52. This is pre-existing and not the result of
+recent work: `health-endpoint` has been untouched for months and fails `post_apply_patch_replay_clean`
+identically.
+
+The root cause appears to be that closure replay assumes a stack that can be rebuilt from a clean
+upstream baseline, whereas a cumulative fork's later patches legitimately depend on earlier ones
+having already materialized.
+
+**Ask:** a verification mode for cumulative stacks — for example validating each patch against its
+own recorded base commit rather than a closure-replayed baseline — or an explicit statement that
+`verify --all` is only meaningful for stacks maintained in re-recordable form, plus a documented
+procedure for converting an existing repository into that form.
+
+### Finding 2 — `write_file_preimage_fresh` cannot stay green on a shared file
+
+Six features fail this check, and **four were recorded within the last week**:
+`expose-a-stable-non-secret-copilot-api-translation-contract`,
+`document-and-verify-the-native-copilot-responses-state`,
+`refresh-the-cached-copilot-model-catalog-on-a-timer-instead`,
+`extract-the-claude-code-interactive-setup-out-of-runserver`.
+
+Their `preimage_hash` values were correct when written — computed from `git show HEAD:<path>` at
+authoring time. They went stale as soon as a sibling feature touched the same file, which on this
+repository is routine: four consecutive features each modified `README.md` in non-overlapping
+sections.
+
+So the ADR-029 precondition appears to hold only until the next feature touches the same path. For a
+whole-file `write-file` op on a shared file, that window is often hours.
+
+**Ask:** distinguish "stale because a later feature legitimately modified this path" from "unexpected
+content, refuse to apply". The former is normal in a stack and should not read as a blocking
+integrity failure. The `later-touch` warning already computes exactly this relationship at record
+time — surfacing it in verify would resolve the ambiguity.
+
+### Finding 3 — D2 findings are not backfillable with any current command
+
+24 pre-manifest features lack `artifacts/patch-generations.json`. Doctor's remediation is
+`tpatch feature patch refresh <slug>`, which does not work:
+
+```
+$ tpatch feature patch refresh anthropic-beta-1m-detection --reason "backfill missing manifest"
+no patch byte change; refresh skipped
+```
+
+Refresh short-circuits when patch bytes are unchanged, so the manifest is never written. The only
+ways to force it would be to alter historical patch bytes or re-record against the current tree,
+both of which would corrupt patches that are currently intact.
+
+Hand-authoring was rejected deliberately: the schema carries `base_commit`, `git_patch_id` and
+`capture.mode`/`pathspecs` — provenance that was never recorded for these features and cannot be
+reconstructed. Writing plausible values would make an audit trail look authoritative while being
+invented, which is worse than the gap.
+
+**Ask:** a first-class backfill — for example `tpatch feature patch adopt <slug>` — that creates a
+generation record from the existing patch bytes and marks the unknown provenance fields explicitly
+as unknown, rather than requiring either fabrication or a byte change.
+
+### Finding 4 — schema changes shipped without an automatic fixer
+
+Eight features carried `"version": 1` in `apply-recipe.json`, which the current
+`workflow.ApplyRecipe` schema rejects as an unknown field. Doctor reported them (D7) but offered only
+"hand-fix ... or regenerate with `tpatch implement`" — and regenerating would have replaced recorded
+intent with a freshly generated recipe.
+
+The fix was mechanical: delete one key, add `feature`. We scripted it and all eight cleared. Compare
+with D3 (stale skill assets), where `tpatch doctor --fix --check D3` handled the migration
+automatically and worked well.
+
+**Ask:** treat recipe-schema evolution the same way as asset drift — ship `doctor --fix` support for
+mechanical schema migrations, so a version bump does not require every downstream repository to
+hand-edit historical artifacts.
+
+### Finding 5 — `later-touch` warnings have no resolution path
+
+Nearly every record on this repository emits warnings of the form:
+
+```
+⚠ later-touch warning: [<feature>] touches README.md which is whole-file-owned by older
+active feature "<other>"; this recipe may supersede or invalidate that older write-file
+(PRD-write-file-recipe-safety §4.2, ADR-029 D6)
+```
+
+We responded by declaring hard dependency edges for every reported owner, which is the correct
+modelling and keeps `tpatch feature deps --validate-all` at `DAG: ok (0 violations)`. But declaring
+the edge does not clear the warning, and does not affect the corresponding verify failure, so there
+is no way to reach a clean state or to distinguish "acknowledged and modelled" from "unexamined".
+
+**Ask:** let a declared dependency edge acknowledge the overlap, or provide an explicit
+acknowledgement mechanism, so the warning highlights genuinely unmodelled overlaps.
+
+### Evidence
+
+| Claim | Where to look |
+| ----- | ------------- |
+| Cumulative stack, dependency modelling | `.tpatch/features/*/status.json` (`depends_on`) |
+| Recent features with stale preimages | `.tpatch/features/expose-a-stable-non-secret-copilot-api-translation-contract/artifacts/apply-recipe.json` and the three siblings named above |
+| Legacy recipes lacking manifests | the 24 features without `artifacts/patch-generations.json` |
+| A well-formed manifest for comparison | `.tpatch/features/expose-a-stable-non-secret-copilot-api-translation-contract/artifacts/patch-generations.json` |
+| D7 schema fix applied | commit `578d189` |
+| Repository health despite verify failures | CI gates in `AGENTS.md`; `bun test` → 352 pass |
+| Prior feedback round | Part 2 of this document (v0.11.1) |
+
+### Summary of asks
+
+1. A verification mode, or documented migration procedure, for cumulative forks.
+2. Distinguish legitimate later-touch staleness from integrity failure in `write_file_preimage_fresh`.
+3. A backfill command for pre-manifest features that records unknown provenance honestly.
+4. `doctor --fix` support for mechanical recipe-schema migrations.
+5. A way for a declared dependency edge to acknowledge a later-touch overlap.
+
+Items 1 and 2 are the blocking ones: together they are why this repository cannot use `verify` as a
+signal at all today.
