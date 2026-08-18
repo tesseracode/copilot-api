@@ -44,6 +44,7 @@ Non-standard tracking file for issues identified during the streaming-stability 
 - **Correction to the original entry**: usage is **not** emitted only on `response.completed`. All three terminal handlers already translate it — `completed` (line 752), `failed` (781) and `incomplete` (814) — so `failed` and `incomplete` were never in the gap the entry described.
 - **Measured upstream behavior (`gpt-5.4-mini`)**: usage arrives on exactly one terminal event per stream and never incrementally. A 79-delta text stream produced usage on `response.completed` alone (23 in / 99 out / 122 total) out of ~89 events; `response.in_progress` and `response.output_item.done` carried none. A stream truncated by `max_output_tokens` produced usage only on `response.incomplete` (16 / 20 / 36), which the proxy already forwards. **There is no interim usage to drop.**
 - **The Anthropic path is fine too**: `src/routes/messages/stream-translation.ts:78,217` maps `prompt_tokens` minus cached tokens to `input_tokens`, `completion_tokens` to `output_tokens`, and preserves `cache_read_input_tokens`.
+- **Exposure is translation-path only.** The native `/v1/responses` route re-emits upstream bytes unchanged — `wrapResponsesStream` inspects frames only to detect terminal errors, and `tests/native-responses-route.test.ts` asserts exact byte equality — so native consumers would receive interim usage automatically with no code change. Only the translating paths (`/v1/chat/completions`, and `/v1/messages` when routed through Responses) would drop it, because `translateResponsesStreamEvent` reads usage solely in the three terminal handlers.
 - **Why implementing anyway would be harmful**: emitting usage on non-terminal chunks breaks the OpenAI convention that usage arrives in the final chunk. Clients that accumulate usage across chunks would double-count, so a speculative fix would create an active bug to guard a hypothetical one — the same trap as the rejected `getOrCreateToolCall` relaxation in entry 1.
 - **Trigger to file**: a capture showing usage on a non-terminal event, a Copilot release note introducing streaming usage, or a client that genuinely needs live token counters mid-stream.
 
@@ -97,6 +98,18 @@ Non-standard tracking file for issues identified during the streaming-stability 
 - **Why not relax the rule**: `max-lines-per-function` is inherited from an upstream shared config, so relaxing it means adding a local override to `eslint.config.js` — a fork customization that must be maintained across upstream bumps. Worse, the override is **global**: loosening the threshold to accommodate one function would mask genuine cases everywhere else in the codebase. The surrounding config is not unreasonably strict either (`max-lines` 800, `complexity` 16), so 100 is a normal threshold rather than an outlier worth fighting.
 - **Risk**: low and bounded. The block is contiguous and self-contained — it reads `state.models` and `serverUrl` and writes `state.is1MContext`, all module-scoped — so the move is mechanical, and only `--claude-code` users are in the blast radius.
 - **Trigger to file**: the next change that needs a line in `runServer`, or any work on the Claude Code onboarding flow.
+
+---
+
+## Unknown upstream events are silently dropped on the translating path
+
+- **Status**: observability gap, not a bug — a debug log is the proportionate fix
+- **File**: `src/services/copilot/create-responses.ts` (`translateResponsesStreamEvent`, `default: break`)
+- **Asymmetry**: the native `/v1/responses` route re-emits upstream bytes unchanged, so it is inherently forward-compatible with any event Copilot invents. The translating paths (`/v1/chat/completions`, and `/v1/messages` routed through Responses) dispatch on a `switch` whose `default` branch discards anything unrecognised, with no log and no counter.
+- **This is currently correct behavior.** A measured text stream (`gpt-5.4-mini`) emitted three event types that already fall through to `default` — `response.content_part.added`, `response.output_text.done` and `response.content_part.done` — all of which are structural markers carrying no content the OpenAI chunk format needs, because the text already arrived via `response.output_text.delta`. Dropping them is right.
+- **The gap is discoverability, not correctness.** If Copilot ships an event carrying genuinely new semantics — interim usage (entry 4), a new reasoning shape, a new refusal or annotation type — the translating path will discard it silently while native consumers keep receiving it. Nothing would surface the divergence until a user reported missing data.
+- **Possible solution**: `consola.debug` the unrecognised event type in the `default` branch, ideally once per type per stream to avoid flooding a 79-delta stream. This changes no output and no contract, so it carries none of the risk that emitting speculative chunks would. An allowlist of known-ignorable structural events keeps the log meaningful.
+- **Trigger to file**: any investigation where "does the proxy see this event?" cannot be answered without adding temporary instrumentation — which is exactly what entries 1, 2 and 4 each required.
 
 ---
 
