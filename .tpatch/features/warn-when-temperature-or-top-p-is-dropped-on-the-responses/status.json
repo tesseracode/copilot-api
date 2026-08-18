@@ -1,0 +1,31 @@
+{
+  "id": "warn-when-temperature-or-top-p-is-dropped-on-the-responses",
+  "slug": "warn-when-temperature-or-top-p-is-dropped-on-the-responses",
+  "title": "Warn when temperature or top_p is dropped on the Responses path, and document the asymmetry. translateRequestToResponses builds a strict allowlist that never carries temperature or top_p, so a client that sets them on a Responses-routed model gets them silently ignored while the same request against a Chat-routed model has them forwarded verbatim. A live probe confirms upstream still rejects them: temperature 0.2 returns 400 Unsupported parameter on every Responses model tested, and top_p 0.5 is rejected by gpt-5.4-mini, gpt-5.4, gpt-5.5 and gpt-5.6-luna but accepted by gpt-5.3-codex. Notably temperature 1 is accepted, so dropping the default value is a semantic no-op. Forwarding is not viable because it would turn currently succeeding requests into 400s, and per-model forwarding is not viable because the catalog advertises no temperature or top_p capability at all, so any allowlist would be a hardcoded heuristic that goes stale. Emit a single warning per request naming the model and the dropped parameters, only when the value is not the default of 1, and document the behavior and the Chat versus Responses asymmetry in the README.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-08-18T04:20:44Z",
+  "updated_at": "2026-08-18T04:22:54Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-08-18T04:22:49Z",
+    "base_commit": "5bf7700bf079a98088b9811cb1e8e8f87060a384",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "anthropic-beta-1m-detection",
+      "kind": "hard"
+    },
+    {
+      "slug": "recover-function-call-arguments-deltas-that-arrive-before",
+      "kind": "hard"
+    },
+    {
+      "slug": "refresh-the-cached-copilot-model-catalog-on-a-timer-instead",
+      "kind": "hard"
+    }
+  ]
+}

@@ -68,11 +68,12 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 7. `temperature` / `top_p` silently dropped for GPT-5.x
 
-- **Status**: intentional, but worth re-evaluating
-- **File**: `src/services/copilot/create-responses.ts` (`translateRequestToResponses`, lines 180-185, with the inline comment)
-- **Issue**: `temperature` and `top_p` are intentionally omitted because the /responses API rejects them for GPT-5.x ("Unsupported parameter"). Clients that set these values get them silently dropped, which can produce "why is my temperature setting ignored?" confusion.
-- **Possible solution**: emit a one-time `consola.warn` per request when `temperature` or `top_p` is provided but dropped, naming the model. Alternatively, surface a 400 if `temperature !== 1` or similar — but that's a behavioural break.
-- **Trigger to file**: any user-facing report that temperature is ignored, or a Copilot upgrade that re-enables those params.
+- **Status**: completed by `warn-when-temperature-or-top-p-is-dropped-on-the-responses`.
+- **Resolution**: the parameters are still dropped, because that remains correct, but the loss is no longer invisible. `translateRequestToResponses` logs one warning per request naming the model and the dropped values, and `README.md` documents the behavior plus the Chat-versus-Responses asymmetry. No request or response bytes changed.
+- **Measured upstream behavior (2026-08-17)**: `temperature: 0.2` is rejected with `400 Unsupported parameter` on `gpt-5.3-codex`, `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5` and `gpt-5.6-luna`. **`temperature: 1` is accepted**, so dropping the default is a semantic no-op and is deliberately not warned about. **`top_p` support is model-dependent** — accepted by `gpt-5.3-codex`, rejected by the other four.
+- **Why forwarding was rejected**: clients that send a default `temperature` today succeed; forwarding would turn those into `400`s, trading silent degradation for broken requests.
+- **Why per-model forwarding was rejected**: a full-text scan of the live `/models` response contains no occurrence of `temperature` or `top_p`, so support could only be encoded as a hardcoded list — the stale-heuristic pattern this project has already been burned by. This is the one genuine loss: `gpt-5.3-codex` really does support `top_p`, and the proxy cannot safely tell.
+- **Reopen if**: the catalog begins advertising sampling-parameter capability, at which point selective forwarding becomes derivable rather than guessed.
 
 ---
 

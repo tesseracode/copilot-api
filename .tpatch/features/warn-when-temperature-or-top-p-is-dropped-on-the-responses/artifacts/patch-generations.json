@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "feature": "warn-when-temperature-or-top-p-is-dropped-on-the-responses",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_d56c264b4bdf",
+      "kind": "record",
+      "patch_sha256": "4ed50735d01c0f6600ec3bca11db424a7723dba3e4728d97f5556807204d04d7",
+      "git_patch_id": "2c2ba34f3abaeef54ac0a4bde5a5aa77891eafca",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "a4c04136135c48f43196c896e6eaed4576624a7d1673691edd724b3651cfd7bc",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "5bf7700bf079a98088b9811cb1e8e8f87060a384",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "README.md",
+          "src/services/copilot/create-responses.ts",
+          "tests/responses-dropped-sampling-params.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "README.md",
+        "src/services/copilot/create-responses.ts",
+        "tests/responses-dropped-sampling-params.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

@@ -201,10 +201,37 @@ function translateTools(
   }
   return result
 }
+/**
+ * The Responses API rejects these with "Unsupported parameter", so they are
+ * never forwarded. Upstream does accept the default of 1, which is why only
+ * meaningful values are worth reporting.
+ */
+function warnDroppedSamplingParams(payload: ChatCompletionsPayload): void {
+  const dropped: Array<string> = []
+  if (
+    payload.temperature !== null
+    && payload.temperature !== undefined
+    && payload.temperature !== 1
+  )
+    dropped.push(`temperature=${payload.temperature}`)
+  if (
+    payload.top_p !== null
+    && payload.top_p !== undefined
+    && payload.top_p !== 1
+  )
+    dropped.push(`top_p=${payload.top_p}`)
+  if (dropped.length === 0) return
+
+  consola.warn(
+    `Dropping ${dropped.join(", ")} for ${payload.model}: the Responses API rejects these parameters. Chat-routed models still honour them.`,
+  )
+}
+
 export function translateRequestToResponses(
   payload: ChatCompletionsPayload,
   effort?: string,
 ): ResponsesPayload {
+  warnDroppedSamplingParams(payload)
   const result: ResponsesPayload = {
     model: payload.model,
     input: translateMessages(payload.messages),
