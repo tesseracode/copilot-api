@@ -5,7 +5,7 @@
   "state": "applied",
   "compatibility": "unknown",
   "requested_at": "2026-07-22T06:23:35Z",
-  "updated_at": "2026-08-18T05:15:34Z",
+  "updated_at": "2026-08-18T16:47:09Z",
   "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
@@ -21,7 +21,7 @@
     }
   ],
   "verify": {
-    "verified_at": "2026-08-18T05:15:33Z",
+    "verified_at": "2026-08-18T16:47:09Z",
     "passed": false,
     "recipe_hash_at_verify": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
     "patch_hash_at_verify": "bf45f3e843e7fa29dae0e4bd9e1b9250c53d42c99ad4639300eef353de50c9ea",

@@ -459,7 +459,7 @@ Failing blocking checks, aggregated:
 | ----- | -------- |
 | `post_apply_patch_replay_clean` | 38 |
 | `recipe_replay_clean` | 16 |
-| `write_file_preimage_fresh` | 6 |
+| `write_file_preimage_fresh` | 6 (now 2 — see Finding 2) |
 | `intent_files_present` | 1 |
 
 Because **no** feature passes, the signal carries no discriminating information — a genuinely broken
@@ -476,26 +476,44 @@ own recorded base commit rather than a closure-replayed baseline — or an expli
 `verify --all` is only meaningful for stacks maintained in re-recordable form, plus a documented
 procedure for converting an existing repository into that form.
 
-### Finding 2 — `write_file_preimage_fresh` cannot stay green on a shared file
+### Finding 2 — Path B never emits `recipe-provenance.json`, so V10 cannot pass *(corrected)*
 
-Six features fail this check, and **four were recorded within the last week**:
-`expose-a-stable-non-secret-copilot-api-translation-contract`,
-`document-and-verify-the-native-copilot-responses-state`,
-`refresh-the-cached-copilot-model-catalog-on-a-timer-instead`,
-`extract-the-claude-code-interactive-setup-out-of-runserver`.
+**This finding was originally reported incorrectly and is retained here with its correction, because
+the mistake is itself instructive.** We first claimed six features failed `write_file_preimage_fresh`
+because their `preimage_hash` values had gone stale when a sibling touched the same shared file. The
+tpatch team responded that the recent failures were "missing Path B provenance, not stale hashes; all
+11 preimages match their recorded bases". They were right, and we had not measured before reporting.
 
-Their `preimage_hash` values were correct when written — computed from `git show HEAD:<path>` at
-authoring time. They went stale as soon as a sibling feature touched the same file, which on this
-repository is routine: four consecutive features each modified `README.md` in non-overlapping
-sections.
+Verifying all 14 non-new preimages across our six recent features against the `base_commit` recorded
+in each `patch-generations.json` produced **zero mismatches**. The actual check message is:
 
-So the ADR-029 precondition appears to hold only until the next feature touches the same path. For a
-whole-file `write-file` op on a shared file, that window is often hours.
+```
+✗ [block] write_file_preimage_fresh — recipe op #1 src/lib/build-info.ts carries a preimage_hash
+but artifacts/recipe-provenance.json is absent; verify will not evaluate a preimage against the
+live working tree
+```
 
-**Ask:** distinguish "stale because a later feature legitimately modified this path" from "unexpected
-content, refuse to apply". The former is normal in a stack and should not read as a blocking
-integrity failure. The `later-touch` warning already computes exactly this relationship at record
-time — surfacing it in verify would resolve the ambiguity.
+The real gap is that `tpatch implement --manual` does not write `artifacts/recipe-provenance.json`,
+while the Path A provider flow does — only 5 of 56 features had one. Since Path B is documented as a
+first-class workflow, any hand-authored recipe carrying `preimage_hash` values fails V10 permanently,
+regardless of how correct those hashes are.
+
+We backfilled the sidecar for eight features. Two of its three fields came from tpatch's own
+authoritative records — `base_commit` and `recipe_sha256` from `patch-generations.json`, with the
+recorded `recipe_sha256` verified byte-for-byte against the current recipe — and `generated_at` was
+anchored to the commit that first added the recipe. V10 failures dropped from 6 to 2, and the first
+feature in this repository's history began passing `verify`.
+
+The two remaining V10 failures are older features reporting `landing evidence ... is malformed`,
+which is downstream of `recipe_replay_clean` rather than of provenance.
+
+**Ask:** have `tpatch implement --manual` write `recipe-provenance.json` exactly as the provider path
+does. Path B is otherwise complete, and this single omission makes a blocking check unreachable for
+every hand-authored recipe.
+
+**Process note for us:** we reported an inference as a measurement. The correction cost the tpatch
+team a round trip, and the same discipline we apply to feature premises must apply to bug reports we
+file.
 
 ### Finding 3 — D2 findings are not backfillable with any current command
 
@@ -568,10 +586,12 @@ acknowledgement mechanism, so the warning highlights genuinely unmodelled overla
 ### Summary of asks
 
 1. A verification mode, or documented migration procedure, for cumulative forks.
-2. Distinguish legitimate later-touch staleness from integrity failure in `write_file_preimage_fresh`.
+2. Have `tpatch implement --manual` write `recipe-provenance.json`, as the provider path does.
 3. A backfill command for pre-manifest features that records unknown provenance honestly.
 4. `doctor --fix` support for mechanical recipe-schema migrations.
 5. A way for a declared dependency edge to acknowledge a later-touch overlap.
 
-Items 1 and 2 are the blocking ones: together they are why this repository cannot use `verify` as a
-signal at all today.
+Item 2 is small and fully diagnosed; fixing it took this repository from 0 to 1 passing feature
+after we backfilled the sidecar by hand. Item 1 is the blocking one, and item 5 is the strategic
+one: together they are why `verify --all` still reports 52 failures on a repository whose own gates
+are green.
