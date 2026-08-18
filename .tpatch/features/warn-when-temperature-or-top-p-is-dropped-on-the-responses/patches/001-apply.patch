@@ -1,0 +1,195 @@
+diff --git a/README.md b/README.md
+index eb34aa3..651b098 100644
+--- a/README.md
++++ b/README.md
+@@ -325,6 +325,34 @@ Certified client configuration:
+ Upstream response storage is unrelated to this proxy's usage accounting: the
+ `copilot_usage` metadata is reported regardless of `store`.
+ 
++### Sampling Parameters on Responses-Routed Models
++
++`temperature` and `top_p` are **dropped** for models routed to the Responses
++API. Upstream rejects them with `400 Unsupported parameter: 'temperature' is
++not supported with this model`, so forwarding them would turn working requests
++into errors. The request otherwise succeeds and uses the model's default
++sampling.
++
++**Behavior depends on the model you pick.** Chat-routed models forward both
++parameters verbatim, so the same request can honour `temperature` on one model
++and ignore it on another:
++
++| Model routing | `temperature` / `top_p` |
++| ------------- | ----------------------- |
++| Chat-routed (`/chat/completions`) | Forwarded and honoured |
++| Responses-routed (GPT-5.x) | Dropped, request still succeeds |
++| Native `POST /v1/responses` | Passed through untouched; upstream rejects them itself |
++
++When a value other than the default of `1` is dropped, the server logs a
++warning naming the model and the parameters. `temperature: 1` is accepted
++upstream, so dropping it changes nothing and is not reported.
++
++The proxy cannot forward these selectively. Upstream support is genuinely
++model-dependent — `gpt-5.3-codex` accepts `top_p` while `gpt-5.4-mini`,
++`gpt-5.4`, `gpt-5.5` and `gpt-5.6-luna` reject it — but the `/models` catalog
++advertises no capability for either parameter, so any per-model rule would be a
++hardcoded list that goes stale as models change.
++
+ ## Example Usage
+ 
+ Using with npx:
+diff --git a/src/services/copilot/create-responses.ts b/src/services/copilot/create-responses.ts
+index ee1f048..060d49d 100644
+--- a/src/services/copilot/create-responses.ts
++++ b/src/services/copilot/create-responses.ts
+@@ -201,10 +201,37 @@ function translateTools(
+   }
+   return result
+ }
++/**
++ * The Responses API rejects these with "Unsupported parameter", so they are
++ * never forwarded. Upstream does accept the default of 1, which is why only
++ * meaningful values are worth reporting.
++ */
++function warnDroppedSamplingParams(payload: ChatCompletionsPayload): void {
++  const dropped: Array<string> = []
++  if (
++    payload.temperature !== null
++    && payload.temperature !== undefined
++    && payload.temperature !== 1
++  )
++    dropped.push(`temperature=${payload.temperature}`)
++  if (
++    payload.top_p !== null
++    && payload.top_p !== undefined
++    && payload.top_p !== 1
++  )
++    dropped.push(`top_p=${payload.top_p}`)
++  if (dropped.length === 0) return
++
++  consola.warn(
++    `Dropping ${dropped.join(", ")} for ${payload.model}: the Responses API rejects these parameters. Chat-routed models still honour them.`,
++  )
++}
++
+ export function translateRequestToResponses(
+   payload: ChatCompletionsPayload,
+   effort?: string,
+ ): ResponsesPayload {
++  warnDroppedSamplingParams(payload)
+   const result: ResponsesPayload = {
+     model: payload.model,
+     input: translateMessages(payload.messages),
+diff --git a/tests/responses-dropped-sampling-params.test.ts b/tests/responses-dropped-sampling-params.test.ts
+new file mode 100644
+index 0000000..75f83c3
+--- /dev/null
++++ b/tests/responses-dropped-sampling-params.test.ts
+@@ -0,0 +1,108 @@
++import { describe, expect, spyOn, test } from "bun:test"
++import consola from "consola"
++
++import type { ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
++
++import { translateRequestToResponses } from "~/services/copilot/create-responses"
++
++function payload(extra: Partial<ChatCompletionsPayload> = {}) {
++  return {
++    model: "gpt-5.4-mini",
++    messages: [{ role: "user" as const, content: "hi" }],
++    ...extra,
++  } satisfies ChatCompletionsPayload
++}
++
++function translateCapturingWarnings(request: ChatCompletionsPayload) {
++  const warn = spyOn(consola, "warn").mockImplementation(
++    (() => undefined) as never,
++  )
++  const result = translateRequestToResponses(request)
++  const messages = warn.mock.calls.map((call) => String(call[0]))
++  warn.mockRestore()
++  return { result, messages }
++}
++
++describe("dropped sampling parameters", () => {
++  test("warns for a meaningful temperature", () => {
++    const { messages } = translateCapturingWarnings(
++      payload({ temperature: 0.2 }),
++    )
++
++    expect(messages).toHaveLength(1)
++    expect(messages[0]).toContain("temperature=0.2")
++    expect(messages[0]).toContain("gpt-5.4-mini")
++  })
++
++  test("warns for a meaningful top_p", () => {
++    const { messages } = translateCapturingWarnings(payload({ top_p: 0.5 }))
++
++    expect(messages).toHaveLength(1)
++    expect(messages[0]).toContain("top_p=0.5")
++  })
++
++  test("names both parameters in a single warning", () => {
++    const { messages } = translateCapturingWarnings(
++      payload({ temperature: 0.2, top_p: 0.5 }),
++    )
++
++    expect(messages).toHaveLength(1)
++    expect(messages[0]).toContain("temperature=0.2")
++    expect(messages[0]).toContain("top_p=0.5")
++  })
++
++  const defaultValueCases: Array<[string, Partial<ChatCompletionsPayload>]> = [
++    ["temperature of 1", { temperature: 1 }],
++    ["top_p of 1", { top_p: 1 }],
++    ["both defaults", { temperature: 1, top_p: 1 }],
++  ]
++  for (const [label, extra] of defaultValueCases) {
++    test(`stays silent for ${label} because upstream accepts it`, () => {
++      const { messages } = translateCapturingWarnings(payload(extra))
++
++      expect(messages).toHaveLength(0)
++    })
++  }
++
++  const emptyValueCases: Array<[string, null | undefined]> = [
++    ["null", null],
++    ["undefined", undefined],
++  ]
++  for (const [label, value] of emptyValueCases) {
++    test(`stays silent for a ${label} temperature`, () => {
++      const { messages } = translateCapturingWarnings(
++        payload({ temperature: value }),
++      )
++
++      expect(messages).toHaveLength(0)
++    })
++  }
++
++  test("stays silent when neither parameter is present", () => {
++    const { messages } = translateCapturingWarnings(payload())
++
++    expect(messages).toHaveLength(0)
++  })
++
++  test("never forwards the parameters regardless of value", () => {
++    for (const extra of [
++      { temperature: 0.2 },
++      { top_p: 0.5 },
++      { temperature: 1, top_p: 1 },
++    ]) {
++      const { result } = translateCapturingWarnings(payload(extra))
++      expect(result).not.toHaveProperty("temperature")
++      expect(result).not.toHaveProperty("top_p")
++    }
++  })
++
++  test("leaves the rest of the translated payload intact", () => {
++    const { result } = translateCapturingWarnings(
++      payload({ temperature: 0.2, max_tokens: 64, stream: true }),
++    )
++
++    expect(result.model).toBe("gpt-5.4-mini")
++    expect(result.max_output_tokens).toBe(64)
++    expect(result.stream).toBe(true)
++  })
++})

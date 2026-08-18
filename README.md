@@ -325,6 +325,34 @@ Certified client configuration:
 Upstream response storage is unrelated to this proxy's usage accounting: the
 `copilot_usage` metadata is reported regardless of `store`.
 
+### Sampling Parameters on Responses-Routed Models
+
+`temperature` and `top_p` are **dropped** for models routed to the Responses
+API. Upstream rejects them with `400 Unsupported parameter: 'temperature' is
+not supported with this model`, so forwarding them would turn working requests
+into errors. The request otherwise succeeds and uses the model's default
+sampling.
+
+**Behavior depends on the model you pick.** Chat-routed models forward both
+parameters verbatim, so the same request can honour `temperature` on one model
+and ignore it on another:
+
+| Model routing | `temperature` / `top_p` |
+| ------------- | ----------------------- |
+| Chat-routed (`/chat/completions`) | Forwarded and honoured |
+| Responses-routed (GPT-5.x) | Dropped, request still succeeds |
+| Native `POST /v1/responses` | Passed through untouched; upstream rejects them itself |
+
+When a value other than the default of `1` is dropped, the server logs a
+warning naming the model and the parameters. `temperature: 1` is accepted
+upstream, so dropping it changes nothing and is not reported.
+
+The proxy cannot forward these selectively. Upstream support is genuinely
+model-dependent — `gpt-5.3-codex` accepts `top_p` while `gpt-5.4-mini`,
+`gpt-5.4`, `gpt-5.5` and `gpt-5.6-luna` reject it — but the `/models` catalog
+advertises no capability for either parameter, so any per-model rule would be a
+hardcoded list that goes stale as models change.
+
 ## Example Usage
 
 Using with npx:

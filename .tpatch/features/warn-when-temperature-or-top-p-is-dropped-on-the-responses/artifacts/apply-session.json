@@ -1,0 +1,8 @@
+{
+  "slug": "warn-when-temperature-or-top-p-is-dropped-on-the-responses",
+  "completed_at": "2026-08-18T04:22:49Z",
+  "base_commit": "5bf7700bf079a98088b9811cb1e8e8f87060a384",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 352 tests, build pass; 11 new tests, no request or response bytes changed"
+}
