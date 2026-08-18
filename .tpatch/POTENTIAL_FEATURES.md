@@ -18,12 +18,14 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## 2. `output_index` namespace collision across output item types
 
-- **Status**: theoretical
+- **Status**: **closed — premise disproved by measurement (2026-08-17)**. Do not implement namespacing.
 - **File**: `src/services/copilot/create-responses.ts` (`toolCallsByOutputIndex` map)
-- **Issue**: `toolCallsByOutputIndex` is keyed by `output_index`, but `output_index` is shared across **all** output item types (reasoning, message, function_call). If an `output_index` previously belonged to a non-tool item that was never registered as a tool call, current code is safe by omission. But if upstream ever reuses an index after replacing an item type (replay, edit, abort-and-retry), a `function_call_arguments.delta` could be misrouted to the wrong tool entry.
-- **Measured (2026-08-17, `gpt-5.3-codex`)**: a real tool-call stream used `output_index` 0 for a reasoning item and 1 for the function call, confirming indices *are* shared across item types. No collision occurred only because index 0 was never registered as a tool call. The same capture showed deltas carry neither `name` nor `call_id`, so `output_index` is the **only** key a delta provides — which makes this map load-bearing rather than a convenience.
-- **Possible solution**: namespace the map: `toolCallsByOutputIndex` becomes `Map<\`${outputType}:${outputIndex}\`, ResponsesStreamToolCall>`. Or maintain `toolCallsByCallId` as the only authoritative index and use `output_index` only for fallback resolution within a single output_item lifecycle.
-- **Trigger to file**: any test or trace showing two different output items sharing an index in the same response, or a tool delta resolving to an unrelated tool call entry.
+- **Original concern**: `toolCallsByOutputIndex` is keyed by `output_index`, which is shared across all output item types, so if upstream ever reused an index "after replacing an item type (replay, edit, abort-and-retry)", a `function_call_arguments.delta` could be misrouted to the wrong tool entry.
+- **Why the named triggers cannot cause it**: replay, edit, and abort-and-retry all begin a **new response stream**, and `createResponsesStreamState()` is invoked per request (`src/routes/chat-completions/handler.ts:140`, `src/routes/messages/handler.ts:252`). Every request therefore starts with an empty map, so no state survives to be collided with. A measured two-turn replay — full history plus `function_call_output` — restarted cleanly at `output_index` 0 with a fresh map on turn 2.
+- **Within a single stream, indices are monotonic and unique.** Five scenarios on `gpt-5.4-mini` produced zero collisions and no index ever restarted or repeated: two parallel tool calls took indices 1 and 2, three tool calls took 1, 2 and 3, a text-then-tool response took 0 and 1, an output-budget-truncated response emitted a single item, and the replayed continuation behaved as above.
+- **Safety is doubly guaranteed**: only `function_call` items are ever registered in the map, so a reasoning or message item at some index can never be mistaken for a tool call; and function calls receive unique monotonically increasing indices, so two of them cannot share one.
+- **Residual note**: the map remains load-bearing, because deltas carry neither `name` nor `call_id` and identify their tool call solely by `output_index`. The same is true of the orphan buffer added by `recover-function-call-arguments-deltas-that-arrive-before`, which mitigates locally by discarding its entry when an item completes. Namespacing the key would add complexity without addressing any demonstrated failure.
+- **Reopen only if**: a trace shows two `function_call` items sharing an `output_index` *within one response*, which is the only mechanism that could still produce the described misrouting.
 
 ---
 
