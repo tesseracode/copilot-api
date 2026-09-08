@@ -1,0 +1,8 @@
+{
+  "slug": "tolerate-catalog-entries-that-omit-capabilities-limits-the",
+  "completed_at": "2026-09-08T00:59:54Z",
+  "base_commit": "67222dcc6c32e83da6f33bf424c9e9de84ed253e",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 369 tests, build pass; the HTTP 500 was reproduced from the verbatim live gpt-41-copilot shape before the fix"
+}

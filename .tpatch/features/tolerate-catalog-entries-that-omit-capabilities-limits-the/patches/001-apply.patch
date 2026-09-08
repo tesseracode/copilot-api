@@ -1,0 +1,533 @@
+diff --git a/scripts/context-boundary-validation.ts b/scripts/context-boundary-validation.ts
+index 84e5cf8..806b38c 100644
+--- a/scripts/context-boundary-validation.ts
++++ b/scripts/context-boundary-validation.ts
+@@ -88,8 +88,8 @@ function chooseModel(models: ModelsResponse): Model {
+     .filter((model) => hasCompleteLimits(model))
+     .sort(
+       (a, b) =>
+-        (a.capabilities.limits.max_context_window_tokens ?? Infinity)
+-        - (b.capabilities.limits.max_context_window_tokens ?? Infinity),
++        (a.capabilities.limits?.max_context_window_tokens ?? Infinity)
++        - (b.capabilities.limits?.max_context_window_tokens ?? Infinity),
+     )
+   const model =
+     modelArg ?
+diff --git a/scripts/lib/context-boundary.ts b/scripts/lib/context-boundary.ts
+index 7b2bb68..6c0ade1 100644
+--- a/scripts/lib/context-boundary.ts
++++ b/scripts/lib/context-boundary.ts
+@@ -39,9 +39,9 @@ export interface ProbeResult {
+ 
+ export function buildProbeCases(model: Model, margin = 32): Array<ProbeCase> {
+   const limits = model.capabilities.limits
+-  const context = limits.max_context_window_tokens
+-  const prompt = limits.max_prompt_tokens
+-  const output = limits.max_output_tokens
++  const context = limits?.max_context_window_tokens
++  const prompt = limits?.max_prompt_tokens
++  const output = limits?.max_output_tokens
+   if (!context || !prompt || !output) {
+     throw new Error(`Model ${model.id} has incomplete context limits`)
+   }
+diff --git a/scripts/lib/copilot-test-lib.ts b/scripts/lib/copilot-test-lib.ts
+index da9413a..906edf4 100644
+--- a/scripts/lib/copilot-test-lib.ts
++++ b/scripts/lib/copilot-test-lib.ts
+@@ -141,7 +141,7 @@ export function classifyModel(model: CopilotModel): ModelProfile {
+     effortSupport:
+       (supports.reasoning_effort?.length ?? 0) > 0 ? "param" : "none",
+     temperatureSupport: endpoint !== "/responses",
+-    maxOutputTokens: model.capabilities.limits.max_output_tokens ?? 0,
++    maxOutputTokens: model.capabilities.limits?.max_output_tokens ?? 0,
+   }
+ }
+ 
+diff --git a/src/lib/copilot-pricing.ts b/src/lib/copilot-pricing.ts
+index a04034a..c9d1da9 100644
+--- a/src/lib/copilot-pricing.ts
++++ b/src/lib/copilot-pricing.ts
+@@ -10,30 +10,34 @@ import { PATHS } from "./paths"
+ export const COPILOT_PRICING_SOURCE =
+   "https://raw.githubusercontent.com/github/docs/main/data/tables/copilot/models-and-pricing.yml"
+ 
++/**
++ * Explicit overrides, for pricing rows whose display name does not reduce to
++ * the catalog model ID. The derived rule below covers every ordinary name, so
++ * this map only needs an entry when a model breaks the pattern.
++ */
+ const MODEL_ALIASES: Record<string, string> = {
+-  "GPT-5 mini": "gpt-5-mini",
+-  "GPT-5.3-Codex": "gpt-5.3-codex",
+-  "GPT-5.4": "gpt-5.4",
+-  "GPT-5.4 mini": "gpt-5.4-mini",
+-  "GPT-5.5": "gpt-5.5",
+-  "GPT-5.6 Luna": "gpt-5.6-luna",
+-  "GPT-5.6 Sol": "gpt-5.6-sol",
+-  "GPT-5.6 Terra": "gpt-5.6-terra",
+-  "Claude Haiku 4.5": "claude-haiku-4.5",
+-  "Claude Sonnet 4.5": "claude-sonnet-4.5",
+-  "Claude Sonnet 4.6": "claude-sonnet-4.6",
+-  "Claude Opus 4.6": "claude-opus-4.6",
+-  "Claude Opus 4.7": "claude-opus-4.7",
+-  "Claude Opus 4.8": "claude-opus-4.8",
+-  "Claude Sonnet 5[^sonnet-5-promo]": "claude-sonnet-5",
+-  "Gemini 2.5 Pro": "gemini-2.5-pro",
+   "Gemini 3 Flash": "gemini-3-flash-preview",
+   "Gemini 3.1 Pro": "gemini-3.1-pro-preview",
+-  "Gemini 3.5 Flash": "gemini-3.5-flash",
+-  "Gemini 3.6 Flash": "gemini-3.6-flash",
+   "MAI-Code-1-Flash": "mai-code-1-flash-picker",
+ }
+ 
++/**
++ * Reduce a pricing-table display name to a catalog model ID.
++ *
++ * The pricing table is documentation, so names carry markdown footnote markers
++ * that come and go with promotions — `Claude Sonnet 5[^sonnet-5-promo]` lost
++ * its marker and `Gemini 3.6 Flash` gained one, and each change silently broke
++ * an exact-string alias. Deriving the ID keeps pricing attached across those
++ * edits and across newly released models.
++ */
++export function pricingNameToModelId(displayName: string): string {
++  const withoutFootnotes = displayName.replaceAll(/\[\^[^\]]*\]/g, "")
++  return withoutFootnotes.trim().toLowerCase().replaceAll(/\s+/g, "-")
++}
++
++/** Characters a Copilot model ID is made of. */
++const MODEL_ID_SHAPE = /^[a-z0-9.-]+$/
++
+ interface RawPricingRow {
+   model?: string
+   input?: string | number
+@@ -137,7 +141,11 @@ export function parseCopilotPricingYaml(
+ 
+   const unmatched: Array<string> = []
+   const data = [...grouped.entries()].map(([displayName, modelRows]) => {
+-    const model = MODEL_ALIASES[displayName] ?? null
++    const derived =
++      MODEL_ALIASES[displayName] ?? pricingNameToModelId(displayName)
++    // A derived name that still carries prose (e.g. "(fast mode) (preview)")
++    // is a documentation row rather than a model, so it stays unattached.
++    const model = MODEL_ID_SHAPE.test(derived) ? derived : null
+     if (!model) unmatched.push(displayName)
+     const tiers = modelRows.map((row, index): PricingTier => {
+       const input = parsePrice(row.input)
+diff --git a/src/lib/model-mapping.test.ts b/src/lib/model-mapping.test.ts
+index 26399c8..d11c401 100644
+--- a/src/lib/model-mapping.test.ts
++++ b/src/lib/model-mapping.test.ts
+@@ -56,6 +56,44 @@ describe("anthropicToCopilotModelId", () => {
+     expect(anthropicToCopilotModelId("gpt-4o", false)).toBe("gpt-4o")
+   })
+ 
++  // Versions are derived, not enumerated: a model released after this file was
++  // last edited must still map without a code change.
++  it("maps versions with no explicit map entry", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-8", false)).toBe(
++      "claude-opus-4.8",
++    )
++    expect(anthropicToCopilotModelId("claude-opus-4-9", false)).toBe(
++      "claude-opus-4.9",
++    )
++    expect(anthropicToCopilotModelId("claude-haiku-5-2", false)).toBe(
++      "claude-haiku-5.2",
++    )
++  })
++
++  it("leaves single-segment versions alone", () => {
++    expect(anthropicToCopilotModelId("claude-sonnet-5", false)).toBe(
++      "claude-sonnet-5",
++    )
++    expect(anthropicToCopilotModelId("claude-opus-5", false)).toBe(
++      "claude-opus-5",
++    )
++  })
++
++  it("never reads a date suffix as a minor version", () => {
++    expect(anthropicToCopilotModelId("claude-sonnet-4-20250514", false)).toBe(
++      "claude-sonnet-4",
++    )
++    expect(anthropicToCopilotModelId("claude-opus-4-20250514", false)).toBe(
++      "claude-opus-4",
++    )
++  })
++
++  it("combines a derived version with an effort suffix", () => {
++    expect(anthropicToCopilotModelId("claude-opus-4-8-xhigh", false)).toBe(
++      "claude-opus-4.8",
++    )
++  })
++
+   it("handles haiku models", () => {
+     expect(anthropicToCopilotModelId("claude-haiku-4-5", false)).toBe(
+       "claude-haiku-4.5",
+@@ -116,6 +154,22 @@ describe("copilotToAnthropicModelId", () => {
+     expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
+   })
+ 
++  it("maps versions with no explicit map entry", () => {
++    expect(copilotToAnthropicModelId("claude-opus-4.8")).toBe("claude-opus-4-8")
++    expect(copilotToAnthropicModelId("claude-opus-4.9")).toBe("claude-opus-4-9")
++  })
++
++  it("round-trips a derived version", () => {
++    const copilotId = anthropicToCopilotModelId("claude-opus-4-8", false)
++    expect(copilotId).toBe("claude-opus-4.8")
++    expect(copilotToAnthropicModelId(copilotId)).toBe("claude-opus-4-8")
++  })
++
++  it("leaves single-segment versions alone", () => {
++    expect(copilotToAnthropicModelId("claude-sonnet-5")).toBe("claude-sonnet-5")
++    expect(copilotToAnthropicModelId("claude-opus-5")).toBe("claude-opus-5")
++  })
++
+   it("handles -1m suffix → [1m]", () => {
+     expect(copilotToAnthropicModelId("claude-opus-4.6-1m")).toBe(
+       "claude-opus-4-6[1m]",
+diff --git a/src/lib/model-mapping.ts b/src/lib/model-mapping.ts
+index 3bfd7a8..a54e987 100644
+--- a/src/lib/model-mapping.ts
++++ b/src/lib/model-mapping.ts
+@@ -2,7 +2,9 @@ import type { EffortLevel } from "./effort"
+ 
+ import { state } from "./state"
+ 
+-// Forward map: Anthropic dash format → Copilot dot format
++// Explicit overrides, for models whose IDs do not follow the version
++// convention below. The derived rule handles every ordinary model, so this
++// map only needs an entry when a model breaks the pattern.
+ const MODEL_ID_MAP: Record<string, string> = {
+   "claude-opus-4-7": "claude-opus-4.7",
+   "claude-opus-4-6": "claude-opus-4.6",
+@@ -14,6 +16,18 @@ const MODEL_ID_MAP: Record<string, string> = {
+   "claude-haiku-4-5": "claude-haiku-4.5",
+ }
+ 
++/**
++ * Anthropic writes a minor version as `-N`, Copilot writes it as `.N`. That is
++ * a format convention between the two APIs rather than a model capability, so
++ * it is derived rather than enumerated — an enumerated list silently drops
++ * every model released after it was last edited.
++ *
++ * The minor version is bounded to two digits so an unstripped date suffix
++ * (`claude-sonnet-4-20250514`) can never be read as one.
++ */
++const ANTHROPIC_VERSION = /^(claude-[a-z]+-\d+)-(\d{1,2})$/
++const COPILOT_VERSION = /^(claude-[a-z]+-\d+)\.(\d{1,2})$/
++
+ /** Legacy effort suffixes that may appear in model names from old configs */
+ const EFFORT_SUFFIXES: ReadonlyArray<`-${EffortLevel}`> = [
+   "-xhigh",
+@@ -81,7 +95,7 @@ export function anthropicToCopilotModelId(
+     base = "claude-opus-4"
+   }
+ 
+-  const mapped = MODEL_ID_MAP[base] ?? base
++  const mapped = MODEL_ID_MAP[base] ?? base.replace(ANTHROPIC_VERSION, "$1.$2")
+ 
+   const use1M = is1M || has1MBracket || has1MDash
+ 
+@@ -111,6 +125,7 @@ export function copilotToAnthropicModelId(copilotModel: string): string {
+   const is1M = base.endsWith("-1m")
+   if (is1M) base = base.slice(0, -3)
+ 
+-  const mapped = REVERSE_MODEL_ID_MAP[base] ?? base
++  const mapped =
++    REVERSE_MODEL_ID_MAP[base] ?? base.replace(COPILOT_VERSION, "$1-$2")
+   return is1M ? `${mapped}[1m]` : mapped
+ }
+diff --git a/src/routes/chat-completions/handler.ts b/src/routes/chat-completions/handler.ts
+index 9e99292..af97d66 100644
+--- a/src/routes/chat-completions/handler.ts
++++ b/src/routes/chat-completions/handler.ts
+@@ -55,7 +55,7 @@ export async function handleCompletion(c: Context) {
+   if (!hasClientTokenLimit) {
+     payload = {
+       ...payload,
+-      max_tokens: selectedModel?.capabilities.limits.max_output_tokens,
++      max_tokens: selectedModel?.capabilities.limits?.max_output_tokens,
+     }
+     consola.debug("Set max_tokens to:", JSON.stringify(payload.max_tokens))
+   }
+diff --git a/src/routes/embeddings/route.ts b/src/routes/embeddings/route.ts
+index cc2a572..05eeadb 100644
+--- a/src/routes/embeddings/route.ts
++++ b/src/routes/embeddings/route.ts
+@@ -48,7 +48,7 @@ function validateOptions(
+       "model_not_found",
+     )
+   }
+-  const maxInputs = model.capabilities.limits.max_inputs
++  const maxInputs = model.capabilities.limits?.max_inputs
+   if (maxInputs && values.length > maxInputs) {
+     return errorResponse(
+       `input contains ${values.length} items; model limit is ${maxInputs}`,
+diff --git a/src/services/copilot/get-models.ts b/src/services/copilot/get-models.ts
+index 2abd159..d18ce49 100644
+--- a/src/services/copilot/get-models.ts
++++ b/src/services/copilot/get-models.ts
+@@ -30,11 +30,18 @@ interface ModelSupports {
+   parallel_tool_calls?: boolean
+   dimensions?: boolean
+   reasoning_effort?: Array<EffortLevel>
++  streaming?: boolean
++  structured_outputs?: boolean
++  vision?: boolean
++  adaptive_thinking?: boolean
++  min_thinking_budget?: number
++  max_thinking_budget?: number
+ }
+ 
+ interface ModelCapabilities {
+   family: string
+-  limits: ModelLimits
++  /** Absent on some catalog entries, e.g. gpt-41-copilot and inference-only embeddings. */
++  limits?: ModelLimits
+   object: string
+   supports: ModelSupports
+   tokenizer: string
+diff --git a/tests/catalog-shape-resilience.test.ts b/tests/catalog-shape-resilience.test.ts
+new file mode 100644
+index 0000000..5b3c4dc
+--- /dev/null
++++ b/tests/catalog-shape-resilience.test.ts
+@@ -0,0 +1,139 @@
++import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test"
++
++import { state } from "~/lib/state"
++import { server } from "~/server"
++
++const originalFetch = globalThis.fetch
++
++/**
++ * Not every catalog entry carries capabilities.limits. Live examples are
++ * `gpt-41-copilot` (type: completion) and `text-embedding-3-small-inference`,
++ * both of which also omit supported_endpoints. Reading through the absent
++ * object used to throw and surface as HTTP 500.
++ */
++const LIMITLESS_CHAT_MODEL = {
++  id: "gpt-41-copilot",
++  name: "GPT 4.1 Copilot",
++  object: "model",
++  vendor: "Azure OpenAI",
++  version: "1",
++  preview: false,
++  model_picker_enabled: false,
++  capabilities: {
++    family: "gpt-4.1",
++    object: "model_capabilities",
++    supports: { streaming: true },
++    tokenizer: "o200k_base",
++    type: "completion",
++  },
++}
++
++const LIMITLESS_EMBEDDING_MODEL = {
++  id: "text-embedding-3-small-inference",
++  name: "Embedding V3 small (Inference)",
++  object: "model",
++  vendor: "Azure OpenAI",
++  version: "1",
++  preview: false,
++  model_picker_enabled: false,
++  capabilities: {
++    family: "text-embedding-3-small",
++    object: "model_capabilities",
++    supports: { dimensions: true },
++    tokenizer: "cl100k_base",
++    type: "embeddings",
++  },
++}
++
++beforeEach(() => {
++  state.copilotToken = "test-token"
++  state.models = {
++    object: "list",
++    data: [LIMITLESS_CHAT_MODEL, LIMITLESS_EMBEDDING_MODEL],
++  } as unknown as typeof state.models
++})
++
++afterEach(() => {
++  globalThis.fetch = originalFetch
++  state.models = undefined
++})
++
++describe("catalog entries without capabilities.limits", () => {
++  it("does not crash the chat path", async () => {
++    let upstreamBody: Record<string, unknown> | undefined
++    globalThis.fetch = mock(
++      (_input: string | URL | Request, init?: RequestInit) => {
++        if (typeof init?.body === "string") {
++          upstreamBody = JSON.parse(init.body) as Record<string, unknown>
++        }
++        return Promise.resolve(
++          Response.json({ id: "1", object: "chat.completion", choices: [] }),
++        )
++      },
++    ) as unknown as typeof fetch
++
++    const response = await server.request("/v1/chat/completions", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        model: "gpt-41-copilot",
++        messages: [{ role: "user", content: "hi" }],
++      }),
++    })
++
++    expect(response.status).toBe(200)
++    // No catalog ceiling exists, so none is injected.
++    expect(upstreamBody?.max_tokens).toBeUndefined()
++  })
++
++  it("still honours a client max_tokens for such a model", async () => {
++    let upstreamBody: Record<string, unknown> | undefined
++    globalThis.fetch = mock(
++      (_input: string | URL | Request, init?: RequestInit) => {
++        if (typeof init?.body === "string") {
++          upstreamBody = JSON.parse(init.body) as Record<string, unknown>
++        }
++        return Promise.resolve(
++          Response.json({ id: "1", object: "chat.completion", choices: [] }),
++        )
++      },
++    ) as unknown as typeof fetch
++
++    const response = await server.request("/v1/chat/completions", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        model: "gpt-41-copilot",
++        messages: [{ role: "user", content: "hi" }],
++        max_tokens: 64,
++      }),
++    })
++
++    expect(response.status).toBe(200)
++    expect(upstreamBody?.max_tokens).toBe(64)
++  })
++
++  it("does not crash the embeddings path", async () => {
++    globalThis.fetch = mock(() =>
++      Promise.resolve(Response.json({ object: "list", data: [], model: "x" })),
++    ) as unknown as typeof fetch
++
++    const response = await server.request("/v1/embeddings", {
++      method: "POST",
++      headers: { "content-type": "application/json" },
++      body: JSON.stringify({
++        model: "text-embedding-3-small-inference",
++        input: ["a", "b"],
++      }),
++    })
++
++    expect(response.status).toBe(200)
++  })
++
++  it("lists such models without crashing", async () => {
++    const response = await server.request("/v1/models")
++    expect(response.status).toBe(200)
++    const body = (await response.json()) as { data: Array<{ id: string }> }
++    expect(body.data.map((m) => m.id)).toContain("gpt-41-copilot")
++  })
++})
+diff --git a/tests/copilot-pricing.test.ts b/tests/copilot-pricing.test.ts
+index 84aad9c..78b2bf8 100644
+--- a/tests/copilot-pricing.test.ts
++++ b/tests/copilot-pricing.test.ts
+@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
+ 
+ import {
+   parseCopilotPricingYaml,
++  pricingNameToModelId,
+   pricingEtagMatches,
+   pricingForModel,
+   publishCopilotPricing,
+@@ -76,11 +77,27 @@ describe("Copilot pricing parser", () => {
+     })
+   })
+ 
+-  it("reports unmatched model names rather than guessing", () => {
++  // Reversal of an earlier "report unmatched rather than guess" rule. That
++  // rule was conservative about billing data, but it was measured dropping
++  // pricing for ten live models, two of which regressed only because a
++  // promotion footnote appeared or disappeared. Deriving is inert when wrong,
++  // since lookups are keyed by live catalog IDs and an entry for a model that
++  // does not exist is never read; not deriving is silently wrong for models
++  // that do exist.
++  it("derives an ID for a well-formed unknown name", () => {
+     const pricing = parseCopilotPricingYaml(
+       `${FIXTURE}\n- model: Future Model\n  input: $1\n  output: $2\n`,
+     )
+-    expect(pricing.unmatched_models).toContain("Future Model")
++    expect(pricing.unmatched_models).toEqual([])
++    expect(pricingForModel(pricing, "future-model")).toBeTruthy()
++  })
++
++  it("attaches a derived entry to no other model", () => {
++    const pricing = parseCopilotPricingYaml(
++      `${FIXTURE}\n- model: Future Model\n  input: $1\n  output: $2\n`,
++    )
++    expect(pricingForModel(pricing, "gpt-5.6-sol")).toBeTruthy()
++    expect(pricingForModel(pricing, "nonexistent-model")).toBeFalsy()
+   })
+ 
+   it("rejects structurally empty sources", () => {
+@@ -174,3 +191,56 @@ describe("Copilot pricing parser", () => {
+     expect(pricingEtagMatches('"other"', '"abc"')).toBe(false)
+   })
+ })
++
++describe("pricing display name derivation", () => {
++  it("lowercases and dashes ordinary names", () => {
++    expect(pricingNameToModelId("GPT-6 Astra")).toBe("gpt-6-astra")
++    expect(pricingNameToModelId("Claude Opus 5")).toBe("claude-opus-5")
++    expect(pricingNameToModelId("Grok 4.6")).toBe("grok-4.6")
++    expect(pricingNameToModelId("GPT-5.4 mini")).toBe("gpt-5.4-mini")
++    expect(pricingNameToModelId("MAI-Code-1.1-Flash")).toBe(
++      "mai-code-1.1-flash",
++    )
++  })
++
++  // Promotions add and remove these markers, which silently broke exact-string
++  // aliases for Gemini 3.6 Flash and Claude Sonnet 5.
++  it("strips markdown footnote markers", () => {
++    expect(pricingNameToModelId("Gemini 3.6 Flash[^gemini-flash-promo]")).toBe(
++      "gemini-3.6-flash",
++    )
++    expect(pricingNameToModelId("Claude Sonnet 5[^sonnet-5-promo]")).toBe(
++      "claude-sonnet-5",
++    )
++  })
++
++  it("is unaffected by a marker appearing or disappearing", () => {
++    expect(pricingNameToModelId("Claude Sonnet 5")).toBe(
++      pricingNameToModelId("Claude Sonnet 5[^sonnet-5-promo]"),
++    )
++  })
++
++  it("attaches pricing for a model with no explicit alias", () => {
++    const parsed = parseCopilotPricingYaml(`
++- model: GPT-6 Astra
++  provider: openai
++  input: $1.00
++  cached_input: $0.10
++  output: $2.00
++`)
++    expect(pricingForModel(parsed, "gpt-6-astra")).toBeTruthy()
++    expect(parsed.unmatched_models).toEqual([])
++  })
++
++  it("leaves a prose documentation row unattached", () => {
++    const parsed = parseCopilotPricingYaml(`
++- model: Claude Opus 4.8 (fast mode) (preview)
++  provider: anthropic
++  input: $1.00
++  output: $2.00
++`)
++    expect(parsed.unmatched_models).toEqual([
++      "Claude Opus 4.8 (fast mode) (preview)",
++    ])
++  })
++})

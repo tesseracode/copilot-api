@@ -1,0 +1,7 @@
+ scripts/context-boundary-validation.ts | 4 ++--
+ scripts/lib/context-boundary.ts        | 6 +++---
+ scripts/lib/copilot-test-lib.ts        | 2 +-
+ src/routes/chat-completions/handler.ts | 2 +-
+ src/routes/embeddings/route.ts         | 2 +-
+ src/services/copilot/get-models.ts     | 9 ++++++++-
+ 6 files changed, 16 insertions(+), 9 deletions(-)

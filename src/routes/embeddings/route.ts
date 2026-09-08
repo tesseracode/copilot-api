@@ -48,7 +48,7 @@ function validateOptions(
       "model_not_found",
     )
   }
-  const maxInputs = model.capabilities.limits.max_inputs
+  const maxInputs = model.capabilities.limits?.max_inputs
   if (maxInputs && values.length > maxInputs) {
     return errorResponse(
       `input contains ${values.length} items; model limit is ${maxInputs}`,

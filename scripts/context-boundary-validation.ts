@@ -88,8 +88,8 @@ function chooseModel(models: ModelsResponse): Model {
     .filter((model) => hasCompleteLimits(model))
     .sort(
       (a, b) =>
-        (a.capabilities.limits.max_context_window_tokens ?? Infinity)
-        - (b.capabilities.limits.max_context_window_tokens ?? Infinity),
+        (a.capabilities.limits?.max_context_window_tokens ?? Infinity)
+        - (b.capabilities.limits?.max_context_window_tokens ?? Infinity),
     )
   const model =
     modelArg ?

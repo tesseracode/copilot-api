@@ -141,7 +141,7 @@ export function classifyModel(model: CopilotModel): ModelProfile {
     effortSupport:
       (supports.reasoning_effort?.length ?? 0) > 0 ? "param" : "none",
     temperatureSupport: endpoint !== "/responses",
-    maxOutputTokens: model.capabilities.limits.max_output_tokens ?? 0,
+    maxOutputTokens: model.capabilities.limits?.max_output_tokens ?? 0,
   }
 }
 

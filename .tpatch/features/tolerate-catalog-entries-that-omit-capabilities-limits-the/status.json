@@ -1,0 +1,39 @@
+{
+  "id": "tolerate-catalog-entries-that-omit-capabilities-limits-the",
+  "slug": "tolerate-catalog-entries-that-omit-capabilities-limits-the",
+  "title": "Tolerate catalog entries that omit capabilities.limits. The Model type declared limits as required, but the live catalog serves gpt-41-copilot (type completion) and text-embedding-3-small-inference without it, and both also omit supported_endpoints so they fall through to the Chat path. A request naming gpt-41-copilot with no max_tokens reached handler.ts reading .max_output_tokens through the absent object and returned HTTP 500, proven with a route test against the verbatim live catalog shape. The embeddings route had the same unguarded read of limits.max_inputs. Make limits optional so the type matches the served data, guard both production reads, fix the script call sites the type change surfaces, and declare the previously undeclared supports fields streaming, structured_outputs, vision, adaptive_thinking, min_thinking_budget and max_thinking_budget.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-09-08T00:58:24Z",
+  "updated_at": "2026-09-08T00:59:58Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-09-08T00:59:54Z",
+    "base_commit": "67222dcc6c32e83da6f33bf424c9e9de84ed253e",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "context-boundary-cost-validation",
+      "kind": "hard"
+    },
+    {
+      "slug": "stabilize-copilot-api",
+      "kind": "hard"
+    },
+    {
+      "slug": "catalog-aware-effort-normalization",
+      "kind": "hard"
+    },
+    {
+      "slug": "embeddings-openai-compatibility",
+      "kind": "hard"
+    },
+    {
+      "slug": "warn-when-temperature-or-top-p-is-dropped-on-the-responses",
+      "kind": "hard"
+    }
+  ]
+}

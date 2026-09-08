@@ -1,0 +1,13 @@
+# Analysis
+
+`Model.capabilities.limits` was declared as a required `ModelLimits`, but the live catalog does not always send it. Two of the 42 current entries omit it entirely: `gpt-41-copilot` (`type: completion`) and `text-embedding-3-small-inference` (`type: embeddings`). Both also omit `supported_endpoints`, so `resolveEndpoint` falls through to its `/chat/completions` default and they are reachable on the ordinary request path.
+
+The consequence is a crash rather than a degraded response. `handleCompletion` reads `selectedModel?.capabilities.limits.max_output_tokens`, where the optional chain guards only `selectedModel`; when `limits` is absent the property read throws. A route test built from the verbatim live catalog shape for `gpt-41-copilot` returned **HTTP 500** `{"error":{"type":"server_error","code":"internal_error"}}`. The embeddings route carried the same unguarded read of `limits.max_inputs`, reachable for `text-embedding-3-small-inference`.
+
+The declared type was actively harmful here. Because it promised `limits` was always present, TypeScript could not flag either read, and the compiler was asserting a guarantee the provider does not make. Correcting the declaration to `limits?: ModelLimits` immediately surfaced all eight unguarded sites — two in `src/` and six in `scripts/` — which is the strongest argument that the type, not the call sites, was the defect.
+
+The same audit found `capabilities.supports` carrying six fields the interface never declared: `streaming`, `structured_outputs`, `vision`, `adaptive_thinking`, `min_thinking_budget` and `max_thinking_budget`. These are read today only through catalog-driven helpers that access `reasoning_effort`, so nothing is broken, but `CLAUDE.md` requires capabilities to be derived from the live catalog rather than from name heuristics, and fields that are not declared cannot be derived type-safely. Declaring them is what makes future thinking-budget work possible without a type assertion.
+
+Neither model is a picker entry (`model_picker_enabled: false`), so ordinary UI traffic does not reach them. That lowers the incident probability but not the correctness question: they are served in our `/models` response, so any client may name them, and the failure mode is a 500 rather than a clean 4xx.
+
+The fix is deliberately minimal. Making `limits` optional and guarding the two production reads restores the documented behavior — inject the catalog ceiling when one exists, otherwise leave `max_tokens` absent, which the `stop-injecting-max-tokens-when-the-client-already-supplied` measurements already proved upstream accepts. No filtering of these models is introduced, because the proxy's stated posture is to serve what upstream advertises.

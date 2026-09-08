@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "feature": "tolerate-catalog-entries-that-omit-capabilities-limits-the",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_e7a638fc7eda",
+      "kind": "record",
+      "patch_sha256": "1c11e51a6fdf2725dd5519d7a3be68b1995c932325effa67024e955c94965240",
+      "git_patch_id": "9d5c222c5dc300c212e4fc17df6717d3a10630c5",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "a9edc05e9894fd2b35662b4e0d28d251a6544c96bf411bb2ea756ef47f941037",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/002-record.patch",
+      "base_commit": "67222dcc6c32e83da6f33bf424c9e9de84ed253e",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "scripts/context-boundary-validation.ts",
+          "scripts/lib/context-boundary.ts",
+          "scripts/lib/copilot-test-lib.ts",
+          "src/routes/chat-completions/handler.ts",
+          "src/routes/embeddings/route.ts",
+          "src/services/copilot/get-models.ts",
+          "tests/catalog-shape-resilience.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "scripts/context-boundary-validation.ts",
+        "scripts/lib/context-boundary.ts",
+        "scripts/lib/copilot-test-lib.ts",
+        "src/routes/chat-completions/handler.ts",
+        "src/routes/embeddings/route.ts",
+        "src/services/copilot/get-models.ts",
+        "tests/catalog-shape-resilience.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

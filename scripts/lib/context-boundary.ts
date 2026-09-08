@@ -39,9 +39,9 @@ export interface ProbeResult {
 
 export function buildProbeCases(model: Model, margin = 32): Array<ProbeCase> {
   const limits = model.capabilities.limits
-  const context = limits.max_context_window_tokens
-  const prompt = limits.max_prompt_tokens
-  const output = limits.max_output_tokens
+  const context = limits?.max_context_window_tokens
+  const prompt = limits?.max_prompt_tokens
+  const output = limits?.max_output_tokens
   if (!context || !prompt || !output) {
     throw new Error(`Model ${model.id} has incomplete context limits`)
   }

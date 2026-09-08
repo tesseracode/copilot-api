@@ -30,11 +30,18 @@ interface ModelSupports {
   parallel_tool_calls?: boolean
   dimensions?: boolean
   reasoning_effort?: Array<EffortLevel>
+  streaming?: boolean
+  structured_outputs?: boolean
+  vision?: boolean
+  adaptive_thinking?: boolean
+  min_thinking_budget?: number
+  max_thinking_budget?: number
 }
 
 interface ModelCapabilities {
   family: string
-  limits: ModelLimits
+  /** Absent on some catalog entries, e.g. gpt-41-copilot and inference-only embeddings. */
+  limits?: ModelLimits
   object: string
   supports: ModelSupports
   tokenizer: string
