@@ -7,6 +7,7 @@ import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
 import { ensurePaths } from "./lib/paths"
+import { markLongRunning } from "./lib/process-lifetime"
 import { initProxyFromEnv } from "./lib/proxy"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
@@ -151,6 +152,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
     fetch: server.fetch as ServerHandler,
     port: options.port,
   })
+  markLongRunning()
   if (process.env.NODE_ENV !== "production") {
     process.once("SIGINT", async () => {
       await instance.close(true)

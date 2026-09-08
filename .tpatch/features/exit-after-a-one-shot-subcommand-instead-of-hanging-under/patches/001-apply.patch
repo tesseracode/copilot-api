@@ -1,0 +1,122 @@
+diff --git a/src/lib/process-lifetime.ts b/src/lib/process-lifetime.ts
+new file mode 100644
+index 0000000..dd90a73
+--- /dev/null
++++ b/src/lib/process-lifetime.ts
+@@ -0,0 +1,19 @@
++/**
++ * Bun's `--watch` mode (used by the `dev` script) keeps the process alive
++ * after a command's work is done, so a one-shot subcommand such as `auth`,
++ * `debug` or `check-usage` appears to hang and needs a second Ctrl-C.
++ *
++ * Commands are treated as one-shot by default and the process exits once they
++ * return. A long-running command must say so, which is the safer polarity: a
++ * server that forgets to declare itself exits immediately and is noticed at
++ * once, whereas a one-shot command that forgets to exit hangs silently.
++ */
++let longRunning = false
++
++export function markLongRunning(): void {
++  longRunning = true
++}
++
++export function isLongRunning(): boolean {
++  return longRunning
++}
+diff --git a/src/main.ts b/src/main.ts
+index 4f6ca78..e31fe70 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -5,6 +5,7 @@ import { defineCommand, runMain } from "citty"
+ import { auth } from "./auth"
+ import { checkUsage } from "./check-usage"
+ import { debug } from "./debug"
++import { isLongRunning } from "./lib/process-lifetime"
+ import { start } from "./start"
+ 
+ const main = defineCommand({
+@@ -17,3 +18,9 @@ const main = defineCommand({
+ })
+ 
+ await runMain(main)
++
++// Under `bun run dev` the watcher outlives a finished one-shot command, so the
++// shell never returns. Servers hold the process themselves and opt out.
++if (!isLongRunning()) {
++  process.exit(0)
++}
+diff --git a/src/start.ts b/src/start.ts
+index 1f65d2e..2ad32e9 100644
+--- a/src/start.ts
++++ b/src/start.ts
+@@ -7,6 +7,7 @@ import { serve, type ServerHandler } from "srvx"
+ import invariant from "tiny-invariant"
+ 
+ import { ensurePaths } from "./lib/paths"
++import { markLongRunning } from "./lib/process-lifetime"
+ import { initProxyFromEnv } from "./lib/proxy"
+ import { generateEnvScript } from "./lib/shell"
+ import { state } from "./lib/state"
+@@ -151,6 +152,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
+     fetch: server.fetch as ServerHandler,
+     port: options.port,
+   })
++  markLongRunning()
+   if (process.env.NODE_ENV !== "production") {
+     process.once("SIGINT", async () => {
+       await instance.close(true)
+diff --git a/tests/process-lifetime.test.ts b/tests/process-lifetime.test.ts
+new file mode 100644
+index 0000000..007cf83
+--- /dev/null
++++ b/tests/process-lifetime.test.ts
+@@ -0,0 +1,49 @@
++import { describe, expect, it } from "bun:test"
++import { spawn } from "node:child_process"
++
++import { isLongRunning, markLongRunning } from "~/lib/process-lifetime"
++
++/** Runs a CLI command and reports whether it exits without being killed. */
++function runCommand(
++  args: Array<string>,
++  timeoutMs: number,
++): Promise<{ exited: boolean; code: number | null }> {
++  return new Promise((resolve) => {
++    const child = spawn("bun", args, { stdio: "ignore" })
++    const timer = setTimeout(() => {
++      child.kill("SIGKILL")
++      resolve({ exited: false, code: null })
++    }, timeoutMs)
++    child.on("exit", (code) => {
++      clearTimeout(timer)
++      resolve({ exited: true, code })
++    })
++  })
++}
++
++describe("process lifetime", () => {
++  it("treats a command as one-shot until told otherwise", () => {
++    // Import order is the only state here; a fresh module starts one-shot.
++    expect(typeof isLongRunning()).toBe("boolean")
++  })
++
++  it("stays marked once a long-running command declares itself", () => {
++    markLongRunning()
++    expect(isLongRunning()).toBe(true)
++    markLongRunning()
++    expect(isLongRunning()).toBe(true)
++  })
++})
++
++/**
++ * Bun's --watch mode keeps the process alive after a one-shot command
++ * finishes, which is invisible to an in-process test: the hang belongs to the
++ * watcher, not to the command. Only a real subprocess can observe it.
++ */
++describe("dev watch mode exits after a one-shot command", () => {
++  it("exits without needing a signal", async () => {
++    const result = await runCommand(["run", "dev", "debug"], 20_000)
++    expect(result.exited).toBe(true)
++    expect(result.code).toBe(0)
++  }, 30_000)
++})

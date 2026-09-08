@@ -5,6 +5,7 @@ import { defineCommand, runMain } from "citty"
 import { auth } from "./auth"
 import { checkUsage } from "./check-usage"
 import { debug } from "./debug"
+import { isLongRunning } from "./lib/process-lifetime"
 import { start } from "./start"
 
 const main = defineCommand({
@@ -17,3 +18,9 @@ const main = defineCommand({
 })
 
 await runMain(main)
+
+// Under `bun run dev` the watcher outlives a finished one-shot command, so the
+// shell never returns. Servers hold the process themselves and opt out.
+if (!isLongRunning()) {
+  process.exit(0)
+}

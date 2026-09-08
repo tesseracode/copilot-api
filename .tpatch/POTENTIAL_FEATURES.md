@@ -113,14 +113,12 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ## `bun run dev auth` needs a second Ctrl-C, like `dev start` did
 
-- **Status**: confirmed by user report, same root cause as a fix we already shipped
-- **File**: `package.json` (`dev` runs Bun `--watch`), `src/auth.ts`, `src/start.ts:140`
-- **Symptom**: `bun run dev auth` completes its work and prints `GitHub token written to ...`, then hangs until the user presses Ctrl-C. Observed 2026-09-07 during a routine re-auth.
-- **Root cause**: identical to the bug fixed in `c9e35aa` for `dev start`. `runAuth` returns cleanly, but the `dev` script runs Bun in `--watch` mode and the watcher keeps the process alive after the command finishes. `start` was fixed with a development-only SIGINT handler that closes the server and exits; `auth` never got equivalent treatment because it owns no server to close.
-- **Why the existing fix does not cover it**: the `start` handler is installed alongside `serve()` in `src/start.ts`, so it is only reachable on the server path. `auth` exits its own logic normally and simply has nothing that calls `process.exit`.
-- **Possible solution**: exit explicitly at the end of `runAuth` when not in production, mirroring the `start` handler; or move the watch-mode exit into a shared place both commands reach, so any future subcommand inherits it rather than reproducing the bug.
-- **Scope note**: cosmetic for interactive use, but it makes `dev auth` unusable in any script that waits for the process to exit.
-- **Trigger to file**: any automation that shells out to `dev auth`, or a third subcommand appearing with the same symptom.
+- **Status**: completed by `exit-after-a-one-shot-subcommand-instead-of-hanging-under`.
+- **Resolution**: commands are now one-shot by default and `src/main.ts` exits once `runMain` returns; `runServer` declares itself long-running so `dev start` is unaffected. The three one-shot subcommands inherit the fix rather than each calling exit.
+- **Scope correction**: the report named `auth`, but the bug was general. A differential probe showed `bun run start -- debug` exiting code 0 in 976ms while `bun run dev debug` hung with identical output, so `debug` and `check-usage` were affected too — the command logic was always fine and Bun's `--watch` watcher was holding the process.
+- **Why the obvious fix was wrong**: `runServer` returns as soon as `serve()` has been called rather than awaiting the server, so `await runMain(main)` resolves for `start` as well. Exiting unconditionally there would have killed the development server the moment it started listening.
+- **Why the polarity is opt-out**: a future server command that forgets to declare itself exits immediately and is noticed on the first run, whereas a one-shot command that forgot to opt into exiting would hang silently — the exact bug being fixed.
+- **Historical note**: `c9e35aa` fixed the same watcher symptom for `start`, but only for SIGINT and only beside `serve()`, so no other command could reach it. The regression test spawns a real subprocess because the hang belongs to the watcher and is invisible in-process; it was confirmed hanging against the unfixed entrypoint.
 
 ---
 

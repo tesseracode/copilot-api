@@ -1,0 +1,31 @@
+{
+  "id": "exit-after-a-one-shot-subcommand-instead-of-hanging-under",
+  "slug": "exit-after-a-one-shot-subcommand-instead-of-hanging-under",
+  "title": "Exit after a one-shot subcommand instead of hanging under bun --watch. bun run dev auth completes its work, prints the token path, then hangs until the user presses Ctrl-C. A differential probe shows the same failure for debug: bun run start -- debug exits code 0 in 976ms while bun run dev debug hangs, with identical output, so the command logic is fine and Bun's watcher is holding the process. check-usage shares the shape, so all three one-shot subcommands are affected while start was already fixed for SIGINT in c9e35aa. Treat commands as one-shot by default and exit after runMain returns, and have runServer declare itself long-running. That polarity is the safer one: a server that forgets to declare itself exits immediately and is noticed at once, whereas a one-shot command that forgets to exit hangs silently, which is the bug being fixed.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-09-08T02:13:14Z",
+  "updated_at": "2026-09-08T02:13:57Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-09-08T02:13:53Z",
+    "base_commit": "20f619a199e2dcff484b1663e35ff3ef8d7c04fc",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "copilot-pricing-cache",
+      "kind": "hard"
+    },
+    {
+      "slug": "srvx-signal-fix",
+      "kind": "hard"
+    },
+    {
+      "slug": "derive-model-identifiers-instead-of-enumerating-them-so-a",
+      "kind": "hard"
+    }
+  ]
+}

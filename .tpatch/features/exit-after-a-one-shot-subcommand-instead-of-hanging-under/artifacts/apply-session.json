@@ -1,0 +1,8 @@
+{
+  "slug": "exit-after-a-one-shot-subcommand-instead-of-hanging-under",
+  "completed_at": "2026-09-08T02:13:53Z",
+  "base_commit": "20f619a199e2dcff484b1663e35ff3ef8d7c04fc",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 372 tests, build pass; subprocess test verified hanging against the unfixed entrypoint, and dev start confirmed still serving, exiting on one SIGINT and releasing its port"
+}
