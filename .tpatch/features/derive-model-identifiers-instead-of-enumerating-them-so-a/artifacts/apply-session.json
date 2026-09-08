@@ -1,0 +1,8 @@
+{
+  "slug": "derive-model-identifiers-instead-of-enumerating-them-so-a",
+  "completed_at": "2026-09-08T01:00:20Z",
+  "base_commit": "a557f020a6fd7756358d72ba45081395526d1c23",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 369 tests, build pass; 4 mapping tests verified failing against the enumeration, pricing coverage measured 4/14 to 14/14 against live data"
+}

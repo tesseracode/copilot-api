@@ -56,6 +56,44 @@ describe("anthropicToCopilotModelId", () => {
     expect(anthropicToCopilotModelId("gpt-4o", false)).toBe("gpt-4o")
   })
 
+  // Versions are derived, not enumerated: a model released after this file was
+  // last edited must still map without a code change.
+  it("maps versions with no explicit map entry", () => {
+    expect(anthropicToCopilotModelId("claude-opus-4-8", false)).toBe(
+      "claude-opus-4.8",
+    )
+    expect(anthropicToCopilotModelId("claude-opus-4-9", false)).toBe(
+      "claude-opus-4.9",
+    )
+    expect(anthropicToCopilotModelId("claude-haiku-5-2", false)).toBe(
+      "claude-haiku-5.2",
+    )
+  })
+
+  it("leaves single-segment versions alone", () => {
+    expect(anthropicToCopilotModelId("claude-sonnet-5", false)).toBe(
+      "claude-sonnet-5",
+    )
+    expect(anthropicToCopilotModelId("claude-opus-5", false)).toBe(
+      "claude-opus-5",
+    )
+  })
+
+  it("never reads a date suffix as a minor version", () => {
+    expect(anthropicToCopilotModelId("claude-sonnet-4-20250514", false)).toBe(
+      "claude-sonnet-4",
+    )
+    expect(anthropicToCopilotModelId("claude-opus-4-20250514", false)).toBe(
+      "claude-opus-4",
+    )
+  })
+
+  it("combines a derived version with an effort suffix", () => {
+    expect(anthropicToCopilotModelId("claude-opus-4-8-xhigh", false)).toBe(
+      "claude-opus-4.8",
+    )
+  })
+
   it("handles haiku models", () => {
     expect(anthropicToCopilotModelId("claude-haiku-4-5", false)).toBe(
       "claude-haiku-4.5",
@@ -114,6 +152,22 @@ describe("copilotToAnthropicModelId", () => {
   it("maps dot format to dash format", () => {
     expect(copilotToAnthropicModelId("claude-opus-4.6")).toBe("claude-opus-4-6")
     expect(copilotToAnthropicModelId("claude-opus-4.7")).toBe("claude-opus-4-7")
+  })
+
+  it("maps versions with no explicit map entry", () => {
+    expect(copilotToAnthropicModelId("claude-opus-4.8")).toBe("claude-opus-4-8")
+    expect(copilotToAnthropicModelId("claude-opus-4.9")).toBe("claude-opus-4-9")
+  })
+
+  it("round-trips a derived version", () => {
+    const copilotId = anthropicToCopilotModelId("claude-opus-4-8", false)
+    expect(copilotId).toBe("claude-opus-4.8")
+    expect(copilotToAnthropicModelId(copilotId)).toBe("claude-opus-4-8")
+  })
+
+  it("leaves single-segment versions alone", () => {
+    expect(copilotToAnthropicModelId("claude-sonnet-5")).toBe("claude-sonnet-5")
+    expect(copilotToAnthropicModelId("claude-opus-5")).toBe("claude-opus-5")
   })
 
   it("handles -1m suffix → [1m]", () => {

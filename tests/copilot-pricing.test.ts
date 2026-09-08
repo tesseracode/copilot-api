@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 
 import {
   parseCopilotPricingYaml,
+  pricingNameToModelId,
   pricingEtagMatches,
   pricingForModel,
   publishCopilotPricing,
@@ -76,11 +77,27 @@ describe("Copilot pricing parser", () => {
     })
   })
 
-  it("reports unmatched model names rather than guessing", () => {
+  // Reversal of an earlier "report unmatched rather than guess" rule. That
+  // rule was conservative about billing data, but it was measured dropping
+  // pricing for ten live models, two of which regressed only because a
+  // promotion footnote appeared or disappeared. Deriving is inert when wrong,
+  // since lookups are keyed by live catalog IDs and an entry for a model that
+  // does not exist is never read; not deriving is silently wrong for models
+  // that do exist.
+  it("derives an ID for a well-formed unknown name", () => {
     const pricing = parseCopilotPricingYaml(
       `${FIXTURE}\n- model: Future Model\n  input: $1\n  output: $2\n`,
     )
-    expect(pricing.unmatched_models).toContain("Future Model")
+    expect(pricing.unmatched_models).toEqual([])
+    expect(pricingForModel(pricing, "future-model")).toBeTruthy()
+  })
+
+  it("attaches a derived entry to no other model", () => {
+    const pricing = parseCopilotPricingYaml(
+      `${FIXTURE}\n- model: Future Model\n  input: $1\n  output: $2\n`,
+    )
+    expect(pricingForModel(pricing, "gpt-5.6-sol")).toBeTruthy()
+    expect(pricingForModel(pricing, "nonexistent-model")).toBeFalsy()
   })
 
   it("rejects structurally empty sources", () => {
@@ -172,5 +189,58 @@ describe("Copilot pricing parser", () => {
   it("matches strong and weak conditional ETags", () => {
     expect(pricingEtagMatches('W/"abc", "other"', '"abc"')).toBe(true)
     expect(pricingEtagMatches('"other"', '"abc"')).toBe(false)
+  })
+})
+
+describe("pricing display name derivation", () => {
+  it("lowercases and dashes ordinary names", () => {
+    expect(pricingNameToModelId("GPT-6 Astra")).toBe("gpt-6-astra")
+    expect(pricingNameToModelId("Claude Opus 5")).toBe("claude-opus-5")
+    expect(pricingNameToModelId("Grok 4.6")).toBe("grok-4.6")
+    expect(pricingNameToModelId("GPT-5.4 mini")).toBe("gpt-5.4-mini")
+    expect(pricingNameToModelId("MAI-Code-1.1-Flash")).toBe(
+      "mai-code-1.1-flash",
+    )
+  })
+
+  // Promotions add and remove these markers, which silently broke exact-string
+  // aliases for Gemini 3.6 Flash and Claude Sonnet 5.
+  it("strips markdown footnote markers", () => {
+    expect(pricingNameToModelId("Gemini 3.6 Flash[^gemini-flash-promo]")).toBe(
+      "gemini-3.6-flash",
+    )
+    expect(pricingNameToModelId("Claude Sonnet 5[^sonnet-5-promo]")).toBe(
+      "claude-sonnet-5",
+    )
+  })
+
+  it("is unaffected by a marker appearing or disappearing", () => {
+    expect(pricingNameToModelId("Claude Sonnet 5")).toBe(
+      pricingNameToModelId("Claude Sonnet 5[^sonnet-5-promo]"),
+    )
+  })
+
+  it("attaches pricing for a model with no explicit alias", () => {
+    const parsed = parseCopilotPricingYaml(`
+- model: GPT-6 Astra
+  provider: openai
+  input: $1.00
+  cached_input: $0.10
+  output: $2.00
+`)
+    expect(pricingForModel(parsed, "gpt-6-astra")).toBeTruthy()
+    expect(parsed.unmatched_models).toEqual([])
+  })
+
+  it("leaves a prose documentation row unattached", () => {
+    const parsed = parseCopilotPricingYaml(`
+- model: Claude Opus 4.8 (fast mode) (preview)
+  provider: anthropic
+  input: $1.00
+  output: $2.00
+`)
+    expect(parsed.unmatched_models).toEqual([
+      "Claude Opus 4.8 (fast mode) (preview)",
+    ])
   })
 })

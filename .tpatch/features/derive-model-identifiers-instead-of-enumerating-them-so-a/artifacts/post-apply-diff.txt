@@ -1,0 +1,5 @@
+ src/lib/copilot-pricing.ts    | 46 ++++++++++++++++-----------
+ src/lib/model-mapping.test.ts | 54 +++++++++++++++++++++++++++++++
+ src/lib/model-mapping.ts      | 21 ++++++++++--
+ tests/copilot-pricing.test.ts | 74 +++++++++++++++++++++++++++++++++++++++++--
+ 4 files changed, 171 insertions(+), 24 deletions(-)

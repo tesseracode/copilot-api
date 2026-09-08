@@ -2,7 +2,9 @@ import type { EffortLevel } from "./effort"
 
 import { state } from "./state"
 
-// Forward map: Anthropic dash format → Copilot dot format
+// Explicit overrides, for models whose IDs do not follow the version
+// convention below. The derived rule handles every ordinary model, so this
+// map only needs an entry when a model breaks the pattern.
 const MODEL_ID_MAP: Record<string, string> = {
   "claude-opus-4-7": "claude-opus-4.7",
   "claude-opus-4-6": "claude-opus-4.6",
@@ -13,6 +15,18 @@ const MODEL_ID_MAP: Record<string, string> = {
   "claude-opus-4": "claude-opus-4",
   "claude-haiku-4-5": "claude-haiku-4.5",
 }
+
+/**
+ * Anthropic writes a minor version as `-N`, Copilot writes it as `.N`. That is
+ * a format convention between the two APIs rather than a model capability, so
+ * it is derived rather than enumerated — an enumerated list silently drops
+ * every model released after it was last edited.
+ *
+ * The minor version is bounded to two digits so an unstripped date suffix
+ * (`claude-sonnet-4-20250514`) can never be read as one.
+ */
+const ANTHROPIC_VERSION = /^(claude-[a-z]+-\d+)-(\d{1,2})$/
+const COPILOT_VERSION = /^(claude-[a-z]+-\d+)\.(\d{1,2})$/
 
 /** Legacy effort suffixes that may appear in model names from old configs */
 const EFFORT_SUFFIXES: ReadonlyArray<`-${EffortLevel}`> = [
@@ -81,7 +95,7 @@ export function anthropicToCopilotModelId(
     base = "claude-opus-4"
   }
 
-  const mapped = MODEL_ID_MAP[base] ?? base
+  const mapped = MODEL_ID_MAP[base] ?? base.replace(ANTHROPIC_VERSION, "$1.$2")
 
   const use1M = is1M || has1MBracket || has1MDash
 
@@ -111,6 +125,7 @@ export function copilotToAnthropicModelId(copilotModel: string): string {
   const is1M = base.endsWith("-1m")
   if (is1M) base = base.slice(0, -3)
 
-  const mapped = REVERSE_MODEL_ID_MAP[base] ?? base
+  const mapped =
+    REVERSE_MODEL_ID_MAP[base] ?? base.replace(COPILOT_VERSION, "$1-$2")
   return is1M ? `${mapped}[1m]` : mapped
 }

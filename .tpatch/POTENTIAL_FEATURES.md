@@ -114,6 +114,19 @@ Non-standard tracking file for issues identified during the streaming-stability 
 
 ---
 
+## `bun run dev auth` needs a second Ctrl-C, like `dev start` did
+
+- **Status**: confirmed by user report, same root cause as a fix we already shipped
+- **File**: `package.json` (`dev` runs Bun `--watch`), `src/auth.ts`, `src/start.ts:140`
+- **Symptom**: `bun run dev auth` completes its work and prints `GitHub token written to ...`, then hangs until the user presses Ctrl-C. Observed 2026-09-07 during a routine re-auth.
+- **Root cause**: identical to the bug fixed in `c9e35aa` for `dev start`. `runAuth` returns cleanly, but the `dev` script runs Bun in `--watch` mode and the watcher keeps the process alive after the command finishes. `start` was fixed with a development-only SIGINT handler that closes the server and exits; `auth` never got equivalent treatment because it owns no server to close.
+- **Why the existing fix does not cover it**: the `start` handler is installed alongside `serve()` in `src/start.ts`, so it is only reachable on the server path. `auth` exits its own logic normally and simply has nothing that calls `process.exit`.
+- **Possible solution**: exit explicitly at the end of `runAuth` when not in production, mirroring the `start` handler; or move the watch-mode exit into a shared place both commands reach, so any future subcommand inherits it rather than reproducing the bug.
+- **Scope note**: cosmetic for interactive use, but it makes `dev auth` unusable in any script that waits for the process to exit.
+- **Trigger to file**: any automation that shells out to `dev auth`, or a third subcommand appearing with the same symptom.
+
+---
+
 ## How to use this file
 
 When evidence for one of these flips from "could happen" to "happened in production" (a log line, a user report, a failing test, or a Copilot proxy change), promote it:

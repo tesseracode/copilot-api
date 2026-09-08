@@ -10,29 +10,33 @@ import { PATHS } from "./paths"
 export const COPILOT_PRICING_SOURCE =
   "https://raw.githubusercontent.com/github/docs/main/data/tables/copilot/models-and-pricing.yml"
 
+/**
+ * Explicit overrides, for pricing rows whose display name does not reduce to
+ * the catalog model ID. The derived rule below covers every ordinary name, so
+ * this map only needs an entry when a model breaks the pattern.
+ */
 const MODEL_ALIASES: Record<string, string> = {
-  "GPT-5 mini": "gpt-5-mini",
-  "GPT-5.3-Codex": "gpt-5.3-codex",
-  "GPT-5.4": "gpt-5.4",
-  "GPT-5.4 mini": "gpt-5.4-mini",
-  "GPT-5.5": "gpt-5.5",
-  "GPT-5.6 Luna": "gpt-5.6-luna",
-  "GPT-5.6 Sol": "gpt-5.6-sol",
-  "GPT-5.6 Terra": "gpt-5.6-terra",
-  "Claude Haiku 4.5": "claude-haiku-4.5",
-  "Claude Sonnet 4.5": "claude-sonnet-4.5",
-  "Claude Sonnet 4.6": "claude-sonnet-4.6",
-  "Claude Opus 4.6": "claude-opus-4.6",
-  "Claude Opus 4.7": "claude-opus-4.7",
-  "Claude Opus 4.8": "claude-opus-4.8",
-  "Claude Sonnet 5[^sonnet-5-promo]": "claude-sonnet-5",
-  "Gemini 2.5 Pro": "gemini-2.5-pro",
   "Gemini 3 Flash": "gemini-3-flash-preview",
   "Gemini 3.1 Pro": "gemini-3.1-pro-preview",
-  "Gemini 3.5 Flash": "gemini-3.5-flash",
-  "Gemini 3.6 Flash": "gemini-3.6-flash",
   "MAI-Code-1-Flash": "mai-code-1-flash-picker",
 }
+
+/**
+ * Reduce a pricing-table display name to a catalog model ID.
+ *
+ * The pricing table is documentation, so names carry markdown footnote markers
+ * that come and go with promotions — `Claude Sonnet 5[^sonnet-5-promo]` lost
+ * its marker and `Gemini 3.6 Flash` gained one, and each change silently broke
+ * an exact-string alias. Deriving the ID keeps pricing attached across those
+ * edits and across newly released models.
+ */
+export function pricingNameToModelId(displayName: string): string {
+  const withoutFootnotes = displayName.replaceAll(/\[\^[^\]]*\]/g, "")
+  return withoutFootnotes.trim().toLowerCase().replaceAll(/\s+/g, "-")
+}
+
+/** Characters a Copilot model ID is made of. */
+const MODEL_ID_SHAPE = /^[a-z0-9.-]+$/
 
 interface RawPricingRow {
   model?: string
@@ -137,7 +141,11 @@ export function parseCopilotPricingYaml(
 
   const unmatched: Array<string> = []
   const data = [...grouped.entries()].map(([displayName, modelRows]) => {
-    const model = MODEL_ALIASES[displayName] ?? null
+    const derived =
+      MODEL_ALIASES[displayName] ?? pricingNameToModelId(displayName)
+    // A derived name that still carries prose (e.g. "(fast mode) (preview)")
+    // is a documentation row rather than a model, so it stays unattached.
+    const model = MODEL_ID_SHAPE.test(derived) ? derived : null
     if (!model) unmatched.push(displayName)
     const tiers = modelRows.map((row, index): PricingTier => {
       const input = parsePrice(row.input)

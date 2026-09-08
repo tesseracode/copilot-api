@@ -1,0 +1,31 @@
+{
+  "id": "derive-model-identifiers-instead-of-enumerating-them-so-a",
+  "slug": "derive-model-identifiers-instead-of-enumerating-them-so-a",
+  "title": "Derive model identifiers instead of enumerating them, so a catalog release does not silently break mapping. Two hardcoded lists had rotted in the three weeks since the last session. MODEL_ID_MAP in model-mapping.ts had six of eight targets dead and was missing claude-opus-4.8, so an Anthropic client sending claude-opus-4-8 got the unresolvable claude-opus-4-8 back in both directions while claude-opus-4.8 is live in the catalog. MODEL_ALIASES in copilot-pricing.ts matched pricing-table display names by exact string, which left ten live models with no pricing metadata including gpt-6-astra, grok-4.5, grok-4.6 and claude-opus-5, and regressed gemini-3.6-flash and claude-sonnet-5 purely because a promotion footnote marker appeared on one name and disappeared from the other. Replace both with derived rules, dash-to-dot for Anthropic versions and footnote-stripped lowercase dashing for pricing names, keeping each map only for genuine exceptions.",
+  "state": "applied",
+  "compatibility": "unknown",
+  "requested_at": "2026-09-08T00:58:37Z",
+  "updated_at": "2026-09-08T01:00:25Z",
+  "last_command": "record",
+  "notes": "Patch recorded",
+  "apply": {
+    "completed_at": "2026-09-08T01:00:20Z",
+    "base_commit": "a557f020a6fd7756358d72ba45081395526d1c23",
+    "has_patch": true
+  },
+  "reconcile": {},
+  "depends_on": [
+    {
+      "slug": "copilot-pricing-cache",
+      "kind": "hard"
+    },
+    {
+      "slug": "anthropic-beta-1m-detection",
+      "kind": "hard"
+    },
+    {
+      "slug": "tolerate-catalog-entries-that-omit-capabilities-limits-the",
+      "kind": "hard"
+    }
+  ]
+}
