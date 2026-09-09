@@ -12,7 +12,7 @@
   "rejection": {
     "reason": "premise-disproved",
     "note": "Live measurement disproved the premise: Claude Chat passthrough already preserves developer instructions across Sonnet 4.6, Opus 4.8 and Haiku 4.5, so there is nothing to fix. Reopen only on an upstream regression or if native Messages rerouting returns.",
-    "actor": "jdbencardinop@unal.edu.co",
+    "actor": "25491170+jdbencardinop@users.noreply.github.com",
     "evidence": [
       {
         "path": "request.md",

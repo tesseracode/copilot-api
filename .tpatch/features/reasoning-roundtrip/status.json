@@ -18,7 +18,7 @@
   "rejection": {
     "reason": "premise-disproved",
     "note": "Measured against the live gateway: the malformed empty-ID reasoning item this feature was written to prevent cannot originate from the current /v1/messages path, because thinking is flattened into assistant text before translateRequestToResponses, and two-turn tool loops returned 200 with no reasoning input. Authentic provider-issued reasoning replays with 200 while an empty id is rejected locally with a structured 400, so the reported 502 did not come from this repository. The stated blocker is also stale: it is no longer 'Copilot must populate summaries' but that Anthropic history has no safe representation for a provider-issued opaque reasoning id, its encrypted content and its provenance. A future opaque reasoning-state carrier must be proposed as its own feature rather than resumed here.",
-    "actor": "jdbencardinop@unal.edu.co",
+    "actor": "25491170+jdbencardinop@users.noreply.github.com",
     "evidence": [
       {
         "path": "request.md",
