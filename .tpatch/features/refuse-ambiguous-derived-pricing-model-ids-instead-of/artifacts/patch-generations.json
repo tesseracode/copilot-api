@@ -1,7 +1,7 @@
 {
   "version": 1,
   "feature": "refuse-ambiguous-derived-pricing-model-ids-instead-of",
-  "current_generation": 1,
+  "current_generation": 2,
   "generations": [
     {
       "generation": 1,
@@ -11,7 +11,7 @@
       "git_patch_id": "ba8e395b4610a81276b5e151ff4195d37f5d00c2",
       "git_patch_id_algorithm": "git-patch-id-stable",
       "recipe_sha256": "3c4b8ddc9834b6748524878446e73baba7a89ae7945e91439fc40410e1747c3d",
-      "canonical_patch": "artifacts/post-apply.patch",
+      "canonical_patch": "",
       "audit_patch": "",
       "base_commit": "e374a673892f5680d21079b985cf337a1c009373",
       "upper": {
@@ -34,6 +34,65 @@
         "tests/process-lifetime.test.ts"
       ],
       "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    },
+    {
+      "generation": 2,
+      "generation_id": "pg_aeacca21d4bc",
+      "kind": "amend-refresh",
+      "reason": "publish-boundary defense against a stale cache",
+      "patch_sha256": "33b250c7fb67501b0482fb52fd640f8b3813e2da4f59e3074500fa8fc343084b",
+      "git_patch_id": "bd2b42d25867e24b341b6de70a09735ef66bc3cd",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "2ab02acc7519a29015bfcd314b99490a4359312dc66387e499daa4e2f3154d96",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "patches/002-refresh.patch",
+      "base_commit": "e374a673892f5680d21079b985cf337a1c009373",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-pricing.ts",
+        "tests/copilot-pricing.test.ts"
+      ],
+      "dependencies": [
+        {
+          "slug": "copilot-pricing-cache",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 3,
+          "parent_patch_sha256": "0895319a4a105c88ae2f3fd86d5f7bf2c65ca82b2a7983663183363ecca2acbc",
+          "parent_recipe_sha256": "0548668f21cda20729fe2e39e2ceb61016574d842540dd77f632328acb6c4d76"
+        },
+        {
+          "slug": "derive-model-identifiers-instead-of-enumerating-them-so-a",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "6f123c41ff3b4f1197b7f573a452485de8d3533ea9652e830df4a053524ba5b2",
+          "parent_recipe_sha256": "7ca2926869ee90df280935f8daaf3a8fed1c103b47c87ef00687f2502deb7f22"
+        },
+        {
+          "slug": "exit-after-a-one-shot-subcommand-instead-of-hanging-under",
+          "kind": "hard",
+          "satisfied_by": "",
+          "parent_generation": 1,
+          "parent_patch_sha256": "ca8340a8ebaea061671ea1c0c82936a840d46fbd74dc7937589e6b910f70346c",
+          "parent_recipe_sha256": "3526af50c13b481954aaa56ef77bd31e34e264ba233ae4244a82aec3f3fafc31"
+        }
+      ],
       "refs": {
         "anchors": "",
         "fingerprints": "",

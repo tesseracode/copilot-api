@@ -11,3 +11,11 @@ This is a defect I introduced in `8655580`, when enumerated aliases were replace
 Scope is bounded by measurement. The current pricing table produces 30 entries with zero duplicate identifiers, so no collision exists in production today and this is a latent defect rather than an active outage. The mechanism is nonetheless plausible on the same evidence that motivated derivation: footnote markers were observed appearing on `Gemini 3.6 Flash` and disappearing from `Claude Sonnet 5`, so a transition that lists both forms briefly is the natural trigger.
 
 Repeated identical display names are unaffected, because those are the multi-tier rows the existing grouping already merges by exact name into one entry with `default` and `long-context` tiers. Only *distinct* names that collide after derivation are refused, which the live table confirms is currently none.
+
+## Follow-up: the publish boundary must re-check (2026-09-09)
+
+A parallel review in an isolated checkout produced an equivalent parse-time guard, and comparing the two exposed a gap in both. The parse guard cannot help a cache that was already written to disk by the pre-fix code, and `readCopilotPricing` loads exactly such a file from `~/.local/share/copilot-api/copilot_pricing.json`.
+
+Feeding a hand-built stale cache to `publishCopilotPricing` reproduced the original failure in full: two rows sharing `claude-sonnet-5` were published, and `mapped_but_inaccessible` reported the ID twice. The other review deduplicated the diagnostic but left the published rows duplicated, so neither implementation closed the path that actually reaches a consumer.
+
+The boundary now re-derives duplicates from `cache.data` and drops every copy, matching the parse-time decision rather than trusting an upstream stage. Unambiguous entries in the same cache are unaffected, so an operator upgrading with a poisoned cache loses only the genuinely ambiguous rows and regains them on the next refresh.

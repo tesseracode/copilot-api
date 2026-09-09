@@ -297,14 +297,34 @@ export function publishCopilotPricing(
   models: ModelsResponse | undefined,
 ): PublishedPricing {
   const accessible = new Set(models?.data.map((model) => model.id) ?? [])
+  // A cache written before collision detection existed can still hold
+  // duplicate model IDs on disk, so the publish boundary re-checks rather
+  // than trusting the parse. Refusing every copy matches the parse-time
+  // decision: with two prices for one ID, neither can be shown to be right.
+  const duplicateIds = new Set(
+    cache.data
+      .map((item) => item.model)
+      .filter(
+        (model, index, all): model is string =>
+          Boolean(model) && all.indexOf(model) !== index,
+      ),
+  )
   const publishedData = cache.data.filter(
     (item): item is CopilotModelPricing & { model: string } =>
-      Boolean(item.model && accessible.has(item.model)),
+      Boolean(
+        item.model
+          && accessible.has(item.model)
+          && !duplicateIds.has(item.model),
+      ),
   )
   const priced = new Set(publishedData.map((item) => item.model))
-  const mappedButInaccessible = cache.data.flatMap((item) =>
-    item.model && !accessible.has(item.model) ? [item.model] : [],
-  )
+  const mappedButInaccessible = [
+    ...new Set(
+      cache.data.flatMap((item) =>
+        item.model && !accessible.has(item.model) ? [item.model] : [],
+      ),
+    ),
+  ]
   const accessibleWithoutPricing = [...accessible].filter(
     (model) => !priced.has(model),
   )

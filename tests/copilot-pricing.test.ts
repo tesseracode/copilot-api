@@ -310,3 +310,68 @@ describe("ambiguous derived model IDs", () => {
     ])
   })
 })
+
+/**
+ * The parse-time guard cannot help a cache that was written to disk before
+ * that guard existed, so the publish boundary re-checks what it was handed.
+ */
+function staleCache() {
+  return {
+    object: "pricing.list",
+    provider: "github-copilot",
+    currency: "USD",
+    unit: "per_1m_tokens",
+    credit: { usd_per_credit: 0.01 },
+    source: {
+      url: "x",
+      version: "sha256:x",
+      fetched_at: "",
+      validated_at: "",
+      stale: false,
+    },
+    data: [
+      {
+        model: "claude-sonnet-5",
+        display_name: "Claude Sonnet 5",
+        tiers: [],
+      },
+      {
+        model: "claude-sonnet-5",
+        display_name: "Claude Sonnet 5[^promo]",
+        tiers: [],
+      },
+      { model: "gpt-6-astra", display_name: "GPT-6 Astra", tiers: [] },
+    ],
+    unmatched_models: [],
+  } as never
+}
+
+describe("a stale cache carrying duplicate model IDs", () => {
+  it("publishes no duplicate rows", () => {
+    const published = publishCopilotPricing(staleCache(), {
+      object: "list",
+      data: [{ id: "claude-sonnet-5" }, { id: "gpt-6-astra" }],
+    } as never)
+    const ids = published.data.map((row) => row.model)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).not.toContain("claude-sonnet-5")
+  })
+
+  it("still publishes the unambiguous models in that cache", () => {
+    const published = publishCopilotPricing(staleCache(), {
+      object: "list",
+      data: [{ id: "claude-sonnet-5" }, { id: "gpt-6-astra" }],
+    } as never)
+    expect(published.data.map((row) => row.model)).toContain("gpt-6-astra")
+  })
+
+  it("deduplicates the mapped_but_inaccessible diagnostic", () => {
+    const published = publishCopilotPricing(staleCache(), {
+      object: "list",
+      data: [{ id: "gpt-6-astra" }],
+    } as never)
+    expect(published.diagnostics.mapped_but_inaccessible).toEqual([
+      "claude-sonnet-5",
+    ])
+  })
+})
