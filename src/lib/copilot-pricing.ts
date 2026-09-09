@@ -140,12 +140,31 @@ export function parseCopilotPricingYaml(
   }
 
   const unmatched: Array<string> = []
+
+  // Footnote stripping is many-to-one, so a table carrying both "Claude
+  // Sonnet 5" and "Claude Sonnet 5[^promo]" would derive one ID twice and
+  // publish duplicate rows. Their prices differ by design — a promotion row
+  // is often $0.00 — so picking either one would state a confident wrong
+  // price. Refuse both and report them instead.
+  const derivedFor = new Map<string, string>()
+  const collidingIds = new Set<string>()
+  for (const displayName of grouped.keys()) {
+    const derived =
+      MODEL_ALIASES[displayName] ?? pricingNameToModelId(displayName)
+    if (!MODEL_ID_SHAPE.test(derived)) continue
+    if (derivedFor.has(derived)) collidingIds.add(derived)
+    derivedFor.set(derived, displayName)
+  }
+
   const data = [...grouped.entries()].map(([displayName, modelRows]) => {
     const derived =
       MODEL_ALIASES[displayName] ?? pricingNameToModelId(displayName)
     // A derived name that still carries prose (e.g. "(fast mode) (preview)")
     // is a documentation row rather than a model, so it stays unattached.
-    const model = MODEL_ID_SHAPE.test(derived) ? derived : null
+    const model =
+      MODEL_ID_SHAPE.test(derived) && !collidingIds.has(derived) ?
+        derived
+      : null
     if (!model) unmatched.push(displayName)
     const tiers = modelRows.map((row, index): PricingTier => {
       const input = parsePrice(row.input)
@@ -196,7 +215,7 @@ export function parseCopilotPricingYaml(
       stale: false,
     },
     data,
-    unmatched_models: unmatched,
+    unmatched_models: [...new Set(unmatched)],
   }
 }
 

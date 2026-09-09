@@ -1,0 +1,137 @@
+diff --git a/src/lib/copilot-pricing.ts b/src/lib/copilot-pricing.ts
+index c9d1da9..f3e679b 100644
+--- a/src/lib/copilot-pricing.ts
++++ b/src/lib/copilot-pricing.ts
+@@ -140,12 +140,31 @@ export function parseCopilotPricingYaml(
+   }
+ 
+   const unmatched: Array<string> = []
++
++  // Footnote stripping is many-to-one, so a table carrying both "Claude
++  // Sonnet 5" and "Claude Sonnet 5[^promo]" would derive one ID twice and
++  // publish duplicate rows. Their prices differ by design — a promotion row
++  // is often $0.00 — so picking either one would state a confident wrong
++  // price. Refuse both and report them instead.
++  const derivedFor = new Map<string, string>()
++  const collidingIds = new Set<string>()
++  for (const displayName of grouped.keys()) {
++    const derived =
++      MODEL_ALIASES[displayName] ?? pricingNameToModelId(displayName)
++    if (!MODEL_ID_SHAPE.test(derived)) continue
++    if (derivedFor.has(derived)) collidingIds.add(derived)
++    derivedFor.set(derived, displayName)
++  }
++
+   const data = [...grouped.entries()].map(([displayName, modelRows]) => {
+     const derived =
+       MODEL_ALIASES[displayName] ?? pricingNameToModelId(displayName)
+     // A derived name that still carries prose (e.g. "(fast mode) (preview)")
+     // is a documentation row rather than a model, so it stays unattached.
+-    const model = MODEL_ID_SHAPE.test(derived) ? derived : null
++    const model =
++      MODEL_ID_SHAPE.test(derived) && !collidingIds.has(derived) ?
++        derived
++      : null
+     if (!model) unmatched.push(displayName)
+     const tiers = modelRows.map((row, index): PricingTier => {
+       const input = parsePrice(row.input)
+@@ -196,7 +215,7 @@ export function parseCopilotPricingYaml(
+       stale: false,
+     },
+     data,
+-    unmatched_models: unmatched,
++    unmatched_models: [...new Set(unmatched)],
+   }
+ }
+ 
+diff --git a/tests/copilot-pricing.test.ts b/tests/copilot-pricing.test.ts
+index 78b2bf8..cec4a1c 100644
+--- a/tests/copilot-pricing.test.ts
++++ b/tests/copilot-pricing.test.ts
+@@ -244,3 +244,69 @@ describe("pricing display name derivation", () => {
+     ])
+   })
+ })
++
++describe("ambiguous derived model IDs", () => {
++  const AMBIGUOUS = `
++- model: Claude Sonnet 5
++  input: $1.00
++  output: $2.00
++- model: Claude Sonnet 5[^sonnet-5-promo]
++  input: $0.00
++  output: $0.00
++`
++
++  it("refuses both rows rather than picking a price", () => {
++    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
++    expect(parsed.data.map((row) => row.model)).toEqual([null, null])
++    expect(pricingForModel(parsed, "claude-sonnet-5")).toBeUndefined()
++  })
++
++  it("preserves both display names as diagnostics", () => {
++    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
++    expect(parsed.unmatched_models).toEqual([
++      "Claude Sonnet 5",
++      "Claude Sonnet 5[^sonnet-5-promo]",
++    ])
++  })
++
++  it("never publishes duplicate rows for one model ID", () => {
++    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
++    const published = publishCopilotPricing(parsed, {
++      object: "list",
++      data: [{ id: "claude-sonnet-5" }],
++    } as never)
++    const ids = published.data.map((row) => row.model)
++    expect(new Set(ids).size).toBe(ids.length)
++    expect(ids).not.toContain("claude-sonnet-5")
++  })
++
++  it("leaves unambiguous models in the same source untouched", () => {
++    const parsed = parseCopilotPricingYaml(
++      `${AMBIGUOUS}\n- model: GPT-6 Astra\n  input: $3.00\n  output: $4.00\n`,
++    )
++    expect(pricingForModel(parsed, "gpt-6-astra")).toBeTruthy()
++  })
++
++  it("still resolves a single footnoted name with no plain twin", () => {
++    const parsed = parseCopilotPricingYaml(
++      `- model: Gemini 3.6 Flash[^gemini-flash-promo]\n  input: $1\n  output: $2\n`,
++    )
++    expect(pricingForModel(parsed, "gemini-3.6-flash")).toBeTruthy()
++    expect(parsed.unmatched_models).toEqual([])
++  })
++
++  it("treats an explicit alias colliding with a derived name as ambiguous", () => {
++    const parsed = parseCopilotPricingYaml(
++      `- model: MAI-Code-1-Flash\n  input: $1\n  output: $2\n- model: mai code 1 flash picker\n  input: $9\n  output: $9\n`,
++    )
++    expect(pricingForModel(parsed, "mai-code-1-flash-picker")).toBeUndefined()
++    expect(parsed.unmatched_models).toHaveLength(2)
++  })
++
++  it("reports each unmatched display name once", () => {
++    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
++    expect(parsed.unmatched_models).toEqual([
++      ...new Set(parsed.unmatched_models),
++    ])
++  })
++})
+diff --git a/tests/process-lifetime.test.ts b/tests/process-lifetime.test.ts
+index 007cf83..8cc1414 100644
+--- a/tests/process-lifetime.test.ts
++++ b/tests/process-lifetime.test.ts
+@@ -42,8 +42,10 @@ describe("process lifetime", () => {
+  */
+ describe("dev watch mode exits after a one-shot command", () => {
+   it("exits without needing a signal", async () => {
+-    const result = await runCommand(["run", "dev", "debug"], 20_000)
++    // Generous margins: a passing run exits in well under a second, so the
++    // ceiling exists to catch a genuine hang, not to time a loaded machine.
++    const result = await runCommand(["run", "dev", "debug"], 45_000)
+     expect(result.exited).toBe(true)
+     expect(result.code).toBe(0)
+-  }, 30_000)
++  }, 60_000)
+ })

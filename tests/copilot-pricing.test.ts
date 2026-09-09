@@ -244,3 +244,69 @@ describe("pricing display name derivation", () => {
     ])
   })
 })
+
+describe("ambiguous derived model IDs", () => {
+  const AMBIGUOUS = `
+- model: Claude Sonnet 5
+  input: $1.00
+  output: $2.00
+- model: Claude Sonnet 5[^sonnet-5-promo]
+  input: $0.00
+  output: $0.00
+`
+
+  it("refuses both rows rather than picking a price", () => {
+    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
+    expect(parsed.data.map((row) => row.model)).toEqual([null, null])
+    expect(pricingForModel(parsed, "claude-sonnet-5")).toBeUndefined()
+  })
+
+  it("preserves both display names as diagnostics", () => {
+    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
+    expect(parsed.unmatched_models).toEqual([
+      "Claude Sonnet 5",
+      "Claude Sonnet 5[^sonnet-5-promo]",
+    ])
+  })
+
+  it("never publishes duplicate rows for one model ID", () => {
+    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
+    const published = publishCopilotPricing(parsed, {
+      object: "list",
+      data: [{ id: "claude-sonnet-5" }],
+    } as never)
+    const ids = published.data.map((row) => row.model)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).not.toContain("claude-sonnet-5")
+  })
+
+  it("leaves unambiguous models in the same source untouched", () => {
+    const parsed = parseCopilotPricingYaml(
+      `${AMBIGUOUS}\n- model: GPT-6 Astra\n  input: $3.00\n  output: $4.00\n`,
+    )
+    expect(pricingForModel(parsed, "gpt-6-astra")).toBeTruthy()
+  })
+
+  it("still resolves a single footnoted name with no plain twin", () => {
+    const parsed = parseCopilotPricingYaml(
+      `- model: Gemini 3.6 Flash[^gemini-flash-promo]\n  input: $1\n  output: $2\n`,
+    )
+    expect(pricingForModel(parsed, "gemini-3.6-flash")).toBeTruthy()
+    expect(parsed.unmatched_models).toEqual([])
+  })
+
+  it("treats an explicit alias colliding with a derived name as ambiguous", () => {
+    const parsed = parseCopilotPricingYaml(
+      `- model: MAI-Code-1-Flash\n  input: $1\n  output: $2\n- model: mai code 1 flash picker\n  input: $9\n  output: $9\n`,
+    )
+    expect(pricingForModel(parsed, "mai-code-1-flash-picker")).toBeUndefined()
+    expect(parsed.unmatched_models).toHaveLength(2)
+  })
+
+  it("reports each unmatched display name once", () => {
+    const parsed = parseCopilotPricingYaml(AMBIGUOUS)
+    expect(parsed.unmatched_models).toEqual([
+      ...new Set(parsed.unmatched_models),
+    ])
+  })
+})

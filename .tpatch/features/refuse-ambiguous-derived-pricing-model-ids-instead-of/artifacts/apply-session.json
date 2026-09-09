@@ -1,0 +1,8 @@
+{
+  "slug": "refuse-ambiguous-derived-pricing-model-ids-instead-of",
+  "completed_at": "2026-09-09T20:59:17Z",
+  "base_commit": "e374a673892f5680d21079b985cf337a1c009373",
+  "has_patch": true,
+  "validation_status": "passed",
+  "validation_notes": "typecheck, eslint, 379 tests, build pass; 7 new tests verified failing 4 against the unguarded code; live coverage unchanged at 14/14 with zero duplicates"
+}

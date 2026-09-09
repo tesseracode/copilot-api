@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "feature": "refuse-ambiguous-derived-pricing-model-ids-instead-of",
+  "current_generation": 1,
+  "generations": [
+    {
+      "generation": 1,
+      "generation_id": "pg_ba46c01dc3f9",
+      "kind": "record",
+      "patch_sha256": "7fbd23af58279af9ca6f609885b697e5c5b2b21600169976b342740477c88dcb",
+      "git_patch_id": "ba8e395b4610a81276b5e151ff4195d37f5d00c2",
+      "git_patch_id_algorithm": "git-patch-id-stable",
+      "recipe_sha256": "3c4b8ddc9834b6748524878446e73baba7a89ae7945e91439fc40410e1747c3d",
+      "canonical_patch": "artifacts/post-apply.patch",
+      "audit_patch": "",
+      "base_commit": "e374a673892f5680d21079b985cf337a1c009373",
+      "upper": {
+        "kind": "working-tree",
+        "ref": "working-tree",
+        "commit": ""
+      },
+      "capture": {
+        "mode": "working-tree-all",
+        "pathspecs": [
+          "src/lib/copilot-pricing.ts",
+          "tests/copilot-pricing.test.ts",
+          "tests/process-lifetime.test.ts"
+        ],
+        "claim_ids": []
+      },
+      "touched_paths": [
+        "src/lib/copilot-pricing.ts",
+        "tests/copilot-pricing.test.ts",
+        "tests/process-lifetime.test.ts"
+      ],
+      "dependencies": [],
+      "refs": {
+        "anchors": "",
+        "fingerprints": "",
+        "relations": "",
+        "vector_manifest": ""
+      }
+    }
+  ]
+}

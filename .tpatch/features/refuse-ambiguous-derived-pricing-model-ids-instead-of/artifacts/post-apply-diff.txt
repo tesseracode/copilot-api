@@ -1,0 +1,4 @@
+ src/lib/copilot-pricing.ts     | 23 +++++++++++++--
+ tests/copilot-pricing.test.ts  | 66 ++++++++++++++++++++++++++++++++++++++++++
+ tests/process-lifetime.test.ts |  6 ++--
+ 3 files changed, 91 insertions(+), 4 deletions(-)

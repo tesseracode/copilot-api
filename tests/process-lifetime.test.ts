@@ -42,8 +42,10 @@ describe("process lifetime", () => {
  */
 describe("dev watch mode exits after a one-shot command", () => {
   it("exits without needing a signal", async () => {
-    const result = await runCommand(["run", "dev", "debug"], 20_000)
+    // Generous margins: a passing run exits in well under a second, so the
+    // ceiling exists to catch a genuine hang, not to time a loaded machine.
+    const result = await runCommand(["run", "dev", "debug"], 45_000)
     expect(result.exited).toBe(true)
     expect(result.code).toBe(0)
-  }, 30_000)
+  }, 60_000)
 })
