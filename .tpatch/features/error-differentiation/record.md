@@ -20,7 +20,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/error.ts, tests/non-stream-error-normalization.test.ts, tests/anthropic-error-envelope.test.ts, tests/messages-tool-result-validation.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `aa8601b65c43cfd64cfdd1c9eb35112ade0020bf`
+- **base_commit**: `8b3c720bb4178e66c1f788c5fac9f4277785969f`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

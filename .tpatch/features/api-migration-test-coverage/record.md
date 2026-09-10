@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/model-mapping.test.ts, src/services/copilot/forward-native-messages.test.ts, tests/responses-effort-forwarding.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `71a56f7ac32a1144f30147497eee9b89ee0a4849`
+- **base_commit**: `fc52f38a68b45f8b4030e25a0d6f34b4b6d8f069`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/services/copilot/create-responses.ts, tests/responses-instruction-role-preservation.test.ts, .tpatch/POTENTIAL_FEATURES.md
 - **claim_ids**: (none)
-- **base_commit**: `f410ac08471b26572517495ac7c95c9f4be361f8`
+- **base_commit**: `925cf6214b0a7d22e79c6bf4c311852b79d40ba9`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

@@ -20,7 +20,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/copilot-pricing.ts, tests/copilot-pricing.test.ts, tests/process-lifetime.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `e374a673892f5680d21079b985cf337a1c009373`
+- **base_commit**: `a4afb6dc0772222ff88eec576bc366854080b24a`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

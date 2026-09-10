@@ -18,7 +18,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/start.ts, tests/claude-code-setup.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `a04009fd75627cfa1a0a8d28b351763943e19334`
+- **base_commit**: `0101fcc757ea8d46826e430a63c831e395bfe06c`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

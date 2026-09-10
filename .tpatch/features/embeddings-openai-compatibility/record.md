@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/routes/embeddings/route.ts, src/services/copilot/create-embeddings.ts, tests/embeddings-compatibility.test.ts, scripts/reports/gateway-live-acceptance.md
 - **claim_ids**: (none)
-- **base_commit**: `c09bd7568f8ac522872ddc4b089f781d2e206c26`
+- **base_commit**: `0de41992d13962e4f70f62c2760cb06de5680b07`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

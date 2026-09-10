@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/process-lifetime.ts, src/main.ts, src/start.ts, tests/process-lifetime.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `20f619a199e2dcff484b1663e35ff3ef8d7c04fc`
+- **base_commit**: `e4addaed4401f763da64a7f409571ba052b77436`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/services/copilot/create-responses.ts, tests/responses-dropped-sampling-params.test.ts, README.md
 - **claim_ids**: (none)
-- **base_commit**: `5bf7700bf079a98088b9811cb1e8e8f87060a384`
+- **base_commit**: `de820aceaeea1609b9f33b199953d5e03b35456d`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

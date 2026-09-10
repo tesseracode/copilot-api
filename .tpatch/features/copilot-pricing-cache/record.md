@@ -22,7 +22,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/copilot-pricing.ts, src/lib/paths.ts, src/routes/pricing/route.ts, src/routes/models/route.ts, src/services/copilot/get-models.ts, src/services/copilot/pricing-scheduler.ts, src/start.ts, src/server.ts, scripts/update-copilot-pricing.ts, tests/copilot-pricing.test.ts, tests/pricing-scheduler.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `6f391928ccd259a91b8609dd9e17cc8215a6c4da`
+- **base_commit**: `87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

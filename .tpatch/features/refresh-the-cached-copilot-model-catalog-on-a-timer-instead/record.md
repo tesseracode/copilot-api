@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/services/copilot/catalog-scheduler.ts, tests/catalog-scheduler.test.ts, src/start.ts, README.md
 - **claim_ids**: (none)
-- **base_commit**: `ad3717c3839fa294ca2b5f215a35a57d5d95633a`
+- **base_commit**: `4654991c72bacf4cd886df674118f90dc8925428`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

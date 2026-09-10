@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/routes/chat-completions/handler.ts, src/services/copilot/create-chat-completions.ts, tests/chat-token-limit-injection.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `8552825973e6238c0f0b4d95cef4e26e48c487bb`
+- **base_commit**: `bf8da791fdb041f04ed7ebfe83d6fbf29f5830ef`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

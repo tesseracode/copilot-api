@@ -24,7 +24,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/token.ts, src/lib/copilot-fetch.ts, src/services/github/get-copilot-token.ts, src/services/copilot/create-responses.ts, src/services/copilot/create-chat-completions.ts, src/services/copilot/forward-native-messages.ts, src/services/copilot/create-embeddings.ts, src/services/copilot/get-models.ts, tests/copilot-fetch-refresh.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `6f391928ccd259a91b8609dd9e17cc8215a6c4da`
+- **base_commit**: `87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

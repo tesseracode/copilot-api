@@ -10,7 +10,7 @@
   "notes": "Patch recorded",
   "apply": {
     "completed_at": "2026-07-29T23:37:03Z",
-    "base_commit": "d916dda9ff5bbbf46dde570621978a4614d7b95d",
+    "base_commit": "c07c90ed3ed2d46acde7583af603ec69222c2a17",
     "has_patch": true
   },
   "reconcile": {},

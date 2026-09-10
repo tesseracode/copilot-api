@@ -23,7 +23,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/build-info.ts, src/lib/build-info.test.ts, src/lib/state.ts, src/lib/utils.ts, src/routes/models/route.ts, tests/operational-hardening.test.ts, Dockerfile, README.md
 - **claim_ids**: (none)
-- **base_commit**: `c9e35aa50e3b8c0ea4a4748326ad956d1c3dda2f`
+- **base_commit**: `e80c56a77f619ce0c77b940af0baec40532b0ec9`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

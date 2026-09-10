@@ -23,7 +23,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/streaming.ts, src/lib/responses-stream-wrapper.ts, src/routes/chat-completions/handler.ts, src/routes/messages/handler.ts, src/routes/responses/route.ts, tests/streaming-abort-handling.test.ts, tests/streaming-helpers.test.ts, tests/stream-failure-visibility.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `da17e527531645635e788c1b784a591e28f17dcc`
+- **base_commit**: `2111fc69f1026e2ce92d3bf067168555149ee1cc`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

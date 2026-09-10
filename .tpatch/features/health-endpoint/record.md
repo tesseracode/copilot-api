@@ -25,4 +25,4 @@ To re-apply this feature to a clean checkout:
 git apply .tpatch/features/health-endpoint/artifacts/post-apply.patch
 ```
 
-*Patch was captured as a committed diff from `643762993f47cb9b058b1c89627ba9a641139355` to `HEAD`.*
+*Patch was captured as a committed diff from `abdefd7c2088160d3b66792f5517bc2a23a41cb2` to `HEAD`.*

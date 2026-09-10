@@ -13,7 +13,7 @@
       "recipe_sha256": "d8bd4b0311984bf2f0f120cf74f1920b7652811184052cb5a3cea0bc599bba8e",
       "canonical_patch": "",
       "audit_patch": "",
-      "base_commit": "20461a29e0bf06100d8e0e540ca66a50a5c449b5",
+      "base_commit": "f9526427916e42be6cd43e09d6fac1394360fde4",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -54,7 +54,7 @@
       "recipe_sha256": "84e15557a6169a28a944d6d05a8f98bf1daee47ef56b0dd7a88822f5e0cf89a0",
       "canonical_patch": "",
       "audit_patch": "patches/002-record.patch",
-      "base_commit": "50e81df42f7446909e09e575c677dd683776c6cd",
+      "base_commit": "e254910929a1c128cb3b6ea83e8d0fb21c9c17d4",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -90,7 +90,7 @@
       "upper": {
         "kind": "commit",
         "ref": "HEAD",
-        "commit": "1cd27a4d26a365c7dcbc007213a40e6f9e8d287e"
+        "commit": "693fdc6acd49ace756c53bc0d20fc506077eee49"
       },
       "capture": {
         "mode": "committed-range",

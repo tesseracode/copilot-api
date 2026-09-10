@@ -25,7 +25,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/effort.ts, src/lib/effort.test.ts, src/lib/model-mapping.ts, src/routes/messages/anthropic-types.ts, src/routes/messages/handler.ts, src/routes/messages/non-stream-translation.ts, src/routes/chat-completions/handler.ts, src/services/copilot/get-models.ts, src/services/copilot/create-chat-completions.ts, src/services/copilot/forward-native-messages.ts, tests/effort-translation.test.ts, tests/native-effort-normalization.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `6f391928ccd259a91b8609dd9e17cc8215a6c4da`
+- **base_commit**: `87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

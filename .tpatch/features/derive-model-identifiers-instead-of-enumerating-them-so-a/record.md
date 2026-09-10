@@ -21,7 +21,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/model-mapping.ts, src/lib/model-mapping.test.ts, src/lib/copilot-pricing.ts, tests/copilot-pricing.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `a557f020a6fd7756358d72ba45081395526d1c23`
+- **base_commit**: `a9d7b4fc2799874d396bfa553b1d17fe74a6e4f4`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

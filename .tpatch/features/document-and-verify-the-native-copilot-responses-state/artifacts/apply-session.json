@@ -1,7 +1,7 @@
 {
   "slug": "document-and-verify-the-native-copilot-responses-state",
   "completed_at": "2026-08-14T03:06:37Z",
-  "base_commit": "cd4eeffc792620826d7563dce0bb85325e70d72f",
+  "base_commit": "07243229b2cb894039c83f17458e4c3feed8b276",
   "has_patch": true,
   "operator_notes": "Path B: documentation and regression tests only, no proxy behavior change",
   "validation_status": "passed",

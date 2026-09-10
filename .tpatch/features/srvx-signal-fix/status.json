@@ -9,7 +9,7 @@
   "last_command": "verify",
   "notes": "Patch recorded",
   "apply": {
-    "base_commit": "601559f317a24b853919b72d8c7f5f5c99eaf8c1",
+    "base_commit": "04c3302b489fd93af8db03895c2d743f2bb0dd6b",
     "has_patch": true
   },
   "reconcile": {},

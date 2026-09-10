@@ -18,7 +18,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/services/copilot/create-responses.ts, tests/responses-stream-delta-before-added.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `422b7bfe8228cf2b81cc6faa9165dc1cc45944fa`
+- **base_commit**: `5fb88bbac9223a288b60049eee12b06846303555`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

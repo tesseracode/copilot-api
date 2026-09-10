@@ -23,7 +23,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/lib/copilot-pricing.ts, src/routes/pricing/route.ts, src/start.ts, package.json, bun.lock, tests/copilot-pricing.test.ts, tests/pricing-conditional-route.test.ts, tests/pricing-updater-recovery.test.ts, scripts/reports/gateway-live-acceptance.md
 - **claim_ids**: (none)
-- **base_commit**: `c09bd7568f8ac522872ddc4b089f781d2e206c26`
+- **base_commit**: `0de41992d13962e4f70f62c2760cb06de5680b07`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

@@ -13,7 +13,7 @@
       "recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
       "canonical_patch": "",
       "audit_patch": "patches/001-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -60,7 +60,7 @@
       "recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
       "canonical_patch": "",
       "audit_patch": "patches/002-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -107,7 +107,7 @@
       "recipe_sha256": "a055533e0e0d9253326a67c79d696a7642cef1c555b8ddd4fe39740a3f98776c",
       "canonical_patch": "artifacts/post-apply.patch",
       "audit_patch": "patches/003-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",

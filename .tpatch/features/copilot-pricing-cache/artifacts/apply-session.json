@@ -1,7 +1,7 @@
 {
   "slug": "copilot-pricing-cache",
   "completed_at": "2026-07-23T04:14:10Z",
-  "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+  "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
   "has_patch": true,
   "validation_status": "passed",
   "validation_notes": "tpatch test — command: bun test tests/copilot-pricing.test.ts tests/pricing-scheduler.test.ts \u0026\u0026 bun run build"

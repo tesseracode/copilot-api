@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: tests/native-responses-route.test.ts, README.md
 - **claim_ids**: (none)
-- **base_commit**: `cd4eeffc792620826d7563dce0bb85325e70d72f`
+- **base_commit**: `07243229b2cb894039c83f17458e4c3feed8b276`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

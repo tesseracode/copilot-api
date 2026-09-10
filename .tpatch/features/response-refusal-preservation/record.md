@@ -23,7 +23,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/routes/messages/utils.ts, src/services/copilot/create-chat-completions.ts, src/services/copilot/create-responses.ts, src/routes/messages/non-stream-translation.ts, src/routes/messages/stream-translation.ts, tests/response-refusal-preservation.test.ts, .tpatch/POTENTIAL_FEATURES.md
 - **claim_ids**: (none)
-- **base_commit**: `d916dda9ff5bbbf46dde570621978a4614d7b95d`
+- **base_commit**: `c07c90ed3ed2d46acde7583af603ec69222c2a17`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

@@ -1,7 +1,7 @@
 {
   "slug": "expose-a-stable-non-secret-copilot-api-translation-contract",
   "completed_at": "2026-08-14T03:03:46Z",
-  "base_commit": "c9e35aa50e3b8c0ea4a4748326ad956d1c3dda2f",
+  "base_commit": "e80c56a77f619ce0c77b940af0baec40532b0ec9",
   "has_patch": true,
   "operator_notes": "Path B: implemented by agent in-session",
   "validation_status": "passed",

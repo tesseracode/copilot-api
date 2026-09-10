@@ -23,7 +23,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: src/services/copilot/get-models.ts, src/routes/chat-completions/handler.ts, src/routes/embeddings/route.ts, scripts/lib/context-boundary.ts, scripts/context-boundary-validation.ts, scripts/lib/copilot-test-lib.ts, tests/catalog-shape-resilience.test.ts
 - **claim_ids**: (none)
-- **base_commit**: `67222dcc6c32e83da6f33bf424c9e9de84ed253e`
+- **base_commit**: `7e45bf0b1a04c0b40a1a8a6974fc51b3ecf980a6`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

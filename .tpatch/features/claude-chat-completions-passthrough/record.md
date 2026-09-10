@@ -19,7 +19,7 @@
 - **capture_mode**: `working-tree-all`
 - **pathspecs**: (none)
 - **claim_ids**: (none)
-- **base_commit**: `16f190276417c7710390f2b7119cfc10ccbe296d`
+- **base_commit**: `80b3d86af056bc5c9bf972d142e2bbd5435959d4`
 - **upper_commit**: `working-tree`
 
 ## Replay Instructions

@@ -13,7 +13,7 @@
       "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
       "canonical_patch": "",
       "audit_patch": "patches/001-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -71,7 +71,7 @@
       "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
       "canonical_patch": "",
       "audit_patch": "patches/002-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -129,7 +129,7 @@
       "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
       "canonical_patch": "",
       "audit_patch": "patches/003-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -187,7 +187,7 @@
       "recipe_sha256": "e14d629b9740667285df7e09b5c15e15e1d0f422c10db8bd5b60f0109d96396f",
       "canonical_patch": "",
       "audit_patch": "patches/004-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -245,7 +245,7 @@
       "recipe_sha256": "68c146d66666eb547c0030079fd8ce08c260635d80ac61692dc95e5407fb5e70",
       "canonical_patch": "",
       "audit_patch": "patches/005-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
@@ -305,7 +305,7 @@
       "recipe_sha256": "68c146d66666eb547c0030079fd8ce08c260635d80ac61692dc95e5407fb5e70",
       "canonical_patch": "artifacts/post-apply.patch",
       "audit_patch": "patches/006-record.patch",
-      "base_commit": "6f391928ccd259a91b8609dd9e17cc8215a6c4da",
+      "base_commit": "87cbb64cbc9ecadb8fa6562edf53c8a2864a6f9c",
       "upper": {
         "kind": "working-tree",
         "ref": "working-tree",
