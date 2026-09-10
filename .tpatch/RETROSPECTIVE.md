@@ -595,3 +595,92 @@ Item 2 is small and fully diagnosed; fixing it took this repository from 0 to 1 
 after we backfilled the sidecar by hand. Item 1 is the blocking one, and item 5 is the strategic
 one: together they are why `verify --all` still reports 52 failures on a repository whose own gates
 are green.
+
+---
+
+## Part 6 — History rewrite for author privacy, September 2026
+
+The fork is public, so commit metadata is public. An audit found no credentials, but it did find two
+personal email addresses in commit author/committer fields. This records what was changed, what was
+deliberately preserved, and what is still outstanding.
+
+### Audit result
+
+No credentials of any kind. Every blob across all 519 commits was scanned for GitHub tokens
+(`gho_`/`ghp_`/`ghu_`/`ghs_`/`ghr_`/`github_pat_`), OpenAI keys, Slack tokens, AWS access keys and
+PEM private-key headers; nothing matched, and no `.env`, `.pem`, `.key`, `.p12` or credential file
+was ever tracked. The exposure was PII only:
+
+- `jdbencardinop@unal.edu.co` and `juanbe@microsoft.com` across 110 commits;
+- the same address in two tpatch rejection records;
+- a local username in `/Users/jbencardino` paths inside 27 tracked tpatch artifacts.
+
+Secret scanning and push protection were enabled at the same time. Both are free on public
+repositories; the cost applies only to private repositories under Advanced Security.
+
+### Why the rewrite was scoped to a commit range
+
+The obvious approach — `git filter-repo --mailmap` over the whole repository — was tried first in a
+throwaway clone and **rejected**. `filter-repo` strips signatures, and the upstream base carries
+**27 SSH-signed commits, none of them ours**. A full rewrite would have destroyed another
+maintainer's cryptographic attestations and changed all 519 SHAs, including the base shared with
+`ericc-ch/copilot-api`.
+
+Restricting the rewrite to `7bd47b9^..master` rewrites only our own 112 commits. A second dry run
+using `7bd47b9..master` was also wrong: that range excludes its own start, leaving the first commit
+untouched. The `^` is required.
+
+The rewrite therefore preserved the 407 upstream commits byte-for-byte, their 27 signatures, and the
+fork's shared base SHA `0ea08fe`. Source content was unchanged: `src`, `tests` and `scripts` hash
+identically before and after.
+
+### tpatch metadata
+
+112 commit IDs changed, and every tpatch record pinning one was remapped from `filter-repo`'s own
+`commit-map` — 176 files, 195 replacements. Afterwards no tracked `base_commit` was unreachable, the
+dependency graph validated, and the 382-test suite passed.
+
+52 forty-hex strings remain unresolvable, against a pre-rewrite baseline of 51. All are
+`git_patch_id` values, which are diff digests rather than commit objects and were never reachable;
+the extra one came from a patch refresh made earlier the same day.
+
+### Outstanding: GitHub has not purged the old objects
+
+**The rewrite is not complete remediation.** Force-pushing replaced the branch but did not remove the
+old commits from GitHub, which still serves them by SHA. Verified after the push:
+
+```
+8655580 → jdbencardinop@unal.edu.co
+404a55a → jdbencardinop@unal.edu.co
+```
+
+A support request is required to garbage-collect the unreachable objects; the drafted text lives
+outside the repository with the session artifacts. Until it completes, the old SHAs should be treated
+as public, and any clone taken before 2026-09-09 retains them permanently regardless.
+
+### Commit IDs communicated to downstream teams are now stale
+
+Every SHA previously given to the gateway and downstream consumers was orphaned by the rewrite. The
+mapping is:
+
+| Change | Old | New |
+| --- | --- | --- |
+| Provenance markers | `cd4eeff` | `0724322` |
+| max_tokens injection fix | `ad3717c` | `4654991` |
+| Catalog refresh timer | `6bc53bc` | `44dba0e` |
+| Tool-delta recovery | `c981266` | `6aac6db` |
+| temperature/top_p reporting | `154ad2b` | `877eff2` |
+| Pricing collision guard | `404a55a` | `044e65a` |
+
+Anyone pinning a copilot-api revision must re-pin. The provenance headers make this self-service:
+`X-Copilot-API-Build` reports the injected revision, so a consumer can confirm what is deployed
+without asking us — provided the build sets `COPILOT_API_BUILD_REVISION`.
+
+### Prevention
+
+Repository-local `user.email` is pinned to the GitHub noreply address, so new commits cannot
+reintroduce the exposure. That setting is per-clone, so it must be re-applied on any fresh clone:
+
+```sh
+git config user.email "25491170+jdbencardinop@users.noreply.github.com"
+```
